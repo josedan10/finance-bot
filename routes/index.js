@@ -6,4 +6,6 @@ router.get('/', function (req, res, next) {
 	res.send('Server is Working with live reload!');
 });
 
+router.use('/telegram', require('./telegram'));
+
 module.exports = router;

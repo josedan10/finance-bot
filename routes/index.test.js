@@ -5,7 +5,7 @@ const router = require('./index.js');
 const app = new Express();
 app.use('/', router);
 
-describe('Test App', function () {
+describe('>> Test App', function () {
 	test('responds to /', async () => {
 		const res = await request(app).get('/');
 		expect(res.statusCode).toBe(200);
