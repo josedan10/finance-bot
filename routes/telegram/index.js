@@ -9,4 +9,6 @@ router.get('/', async function (req, res, next) {
 	res.send(JSON.stringify(response.data));
 });
 
+// TODO: set endpoint to set the webhook url
+
 module.exports = router;
