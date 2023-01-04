@@ -1,4 +1,8 @@
 // Add any custom config to be passed to Jest
+const dotenv = require('dotenv');
+
+dotenv.config({ path: './.env' });
+
 const customJestConfig = {
 	moduleDirectories: ['node_modules'],
 	verbose: true,

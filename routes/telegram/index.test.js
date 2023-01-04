@@ -15,9 +15,7 @@ describe('>> Telegram Routes: ', function () {
     */
 		const mockResponse = require('../../mocks/telegram/getMe.json');
 
-		nock(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`)
-			.get('/getMe')
-			.reply(200, { data: mockResponse });
+		nock(`http://localhost:3000`).get('/telegram').reply(200, { data: mockResponse });
 	});
 
 	afterAll(() => {
@@ -27,7 +25,5 @@ describe('>> Telegram Routes: ', function () {
 	test('Service response', async () => {
 		const res = await request(app).get('/telegram');
 		expect(res.statusCode).toBe(200);
-
-		console.log(res);
 	});
 });
