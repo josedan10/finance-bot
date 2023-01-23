@@ -4,6 +4,7 @@ const telegramController = require('./telegram.controller');
 
 const res = {
 	send: jest.fn(),
+	status: jest.fn(),
 };
 describe('>> Telegram Controller: ', function () {
 	beforeAll(() => {
@@ -17,6 +18,9 @@ describe('>> Telegram Controller: ', function () {
 		nock(`${TELEGRAM_URL}`).post('/getMe').reply(200, mockResponse);
 
 		nock(`${TELEGRAM_URL}`).post('/sendMessage').reply(200, 'Message sent');
+		nock(`${TELEGRAM_URL}`)
+			.post('/sendMessage')
+			.reply(200, { text: 'Registered transaction', chat_id: process.env.TEST_CHAT_ID });
 
 		nock(`${TELEGRAM_URL}`).post('/setWebhook').reply(200, 'Webhook set');
 	});
@@ -59,12 +63,47 @@ describe('>> Telegram Controller: ', function () {
 		const req = {
 			body: {
 				message: {
-					text: 'Hello World',
+					text: '/test 1000',
+					chat: {
+						id: process.env.TEST_CHAT_ID,
+					},
 				},
 			},
 		};
 
 		await telegramController.webhookHandler(req, res);
 		expect(res.send).toBeCalledWith('ok');
+	});
+
+	test('Webhook handler not found command', async () => {
+		const req = {
+			body: {
+				message: {
+					text: '/notFound 1000',
+					chat: {
+						id: process.env.TEST_CHAT_ID,
+					},
+				},
+			},
+		};
+
+		await telegramController.webhookHandler(req, res);
+		expect(res.send).toBeCalledWith('Command notFound not found');
+	});
+
+	test('Webhook handler not command message', async () => {
+		const req = {
+			body: {
+				message: {
+					text: 'Hello bot',
+					chat: {
+						id: process.env.TEST_CHAT_ID,
+					},
+				},
+			},
+		};
+
+		await telegramController.webhookHandler(req, res);
+		expect(res.send).toBeCalledWith("I don't understand you");
 	});
 });

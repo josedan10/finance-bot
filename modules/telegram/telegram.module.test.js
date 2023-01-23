@@ -38,4 +38,10 @@ describe('>> Telegram Bot Module: ', function () {
 		expect(res.status).toBe(200);
 		expect(res.data).toBe('Webhook set');
 	});
+
+	test('Command parser', () => {
+		const command = telegramModule.commandParser('/cashTransaction 1234');
+		expect(command.commandName).toBe('cashTransaction');
+		expect(command.commandArgs).toContain('1234');
+	});
 });

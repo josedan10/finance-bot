@@ -23,6 +23,16 @@ class TelegramBot {
 			url,
 		});
 	}
+
+	commandParser(command) {
+		const commandArray = command.split(' ');
+		const commandName = commandArray[0].substring(1);
+		const commandArgs = commandArray.slice(1);
+		return {
+			commandName,
+			commandArgs,
+		};
+	}
 }
 
 module.exports = new TelegramBot();

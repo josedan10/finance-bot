@@ -10,11 +10,14 @@
 		"test": "jest --coverage --watchAll=false"
 	},
 	"dependencies": {
+		"@google-cloud/local-auth": "^2.1.0",
+		"@prisma/client": "^4.9.0",
 		"axios": "^1.2.2",
 		"cookie-parser": "~1.4.4",
 		"debug": "~2.6.9",
 		"dotenv": "^16.0.3",
 		"express": "^4.18.2",
+		"googleapis": "^105.0.0",
 		"http-errors": "~1.6.3",
 		"jade": "^1.9.2",
 		"morgan": "~1.9.1"

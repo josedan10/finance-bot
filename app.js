@@ -6,6 +6,9 @@ const logger = require('morgan');
 require('dotenv').config();
 
 const indexRouter = require('./routes/index');
+const googleSheetsModule = require('./modules/google-sheets/google-sheets.module');
+
+googleSheetsModule.authorize();
 
 const app = express();
 
@@ -14,6 +17,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(logger('combined'));
 
 app.use('/', indexRouter);
 
@@ -21,7 +25,6 @@ app.use('/', indexRouter);
 app.use(function (req, res, next) {
 	next(createError(404));
 });
-
 // error handler
 app.use(function (err, req, res, next) {
 	// set locals, only providing error in development
@@ -31,7 +34,8 @@ app.use(function (err, req, res, next) {
 	// render the error page
 	res.status(err.status || 500);
 	res.send('An error occurred!');
-	logger.error(err);
+
+	console.error(err);
 });
 
 module.exports = app;
