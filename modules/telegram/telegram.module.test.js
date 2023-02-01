@@ -1,6 +1,10 @@
-const nock = require('nock');
-const { TELEGRAM_URL } = require('../../src/telegram/variables');
-const telegramModule = require('./telegram.module');
+import nock from 'nock';
+import { TELEGRAM_URL } from '../../src/telegram/variables';
+import telegramModule from './telegram.module';
+import fs from 'fs';
+
+const loadJSON = (path) => JSON.parse(fs.readFileSync(new URL(path, import.meta.url)));
+const mockResponse = loadJSON('../../mocks/telegram/getMe.json');
 
 describe('>> Telegram Bot Module: ', function () {
 	beforeAll(() => {
@@ -9,7 +13,6 @@ describe('>> Telegram Bot Module: ', function () {
         Endpoint. Any calls to URL https://api.telegram.org/bot
         will be intercepted by the fake_api nock  
     */
-		const mockResponse = require('../../mocks/telegram/getMe.json');
 
 		nock(`${TELEGRAM_URL}`).post('/getMe').reply(200, mockResponse);
 

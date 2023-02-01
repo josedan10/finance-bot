@@ -2,12 +2,16 @@
 	"name": "finance-bot",
 	"version": "0.0.0",
 	"private": true,
+	"type": "module",
 	"scripts": {
-		"start": "node ./bin/www",
-		"dev": "nodemon ./bin/www",
+		"start": "node ./bin/www.js",
+		"dev": "nodemon ./bin/www.js",
 		"prepare": "husky install",
 		"lint": "npx lint-staged",
-		"test": "jest --coverage --watchAll=false"
+		"init-db": "docker-compose -f docker/docker-compose.yml up",
+		"migrations": "npx prisma migrate deploy",
+		"seed": "npx prisma db seed",
+		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false"
 	},
 	"dependencies": {
 		"@google-cloud/local-auth": "^2.1.0",
@@ -20,9 +24,12 @@
 		"googleapis": "^105.0.0",
 		"http-errors": "~1.6.3",
 		"jade": "^1.9.2",
-		"morgan": "~1.9.1"
+		"morgan": "~1.9.1",
+		"pdfreader": "^3.0.0"
 	},
 	"devDependencies": {
+		"@jest/globals": "^29.4.1",
+		"cross-env": "^7.0.3",
 		"eslint": "^8.31.0",
 		"eslint-config-prettier": "8.6.0",
 		"eslint-config-standard": "^17.0.0",
@@ -43,5 +50,9 @@
 			"npx prettier --write",
 			"npx eslint --fix --ext .js"
 		]
+	},
+	"prisma": {
+		"seed": "node prisma/seed.js",
+		"schema": "prisma/schema.prisma"
 	}
 }

@@ -1,16 +1,9 @@
-const googleSheetsModule = require('../google-sheets/google-sheets.module');
-
 class CommandsModule {
 	constructor() {
 		this.commands = {
 			cashTransaction: async (data) => {
-				try {
-					console.log(data);
-					return await googleSheetsModule.getSheetData();
-				} catch (error) {
-					console.log(error);
-					throw new Error(error);
-				}
+				console.log(data);
+				return 'Cash transaction';
 			},
 			test: async (data) => data,
 		};
@@ -25,4 +18,4 @@ class CommandsModule {
 	}
 }
 
-module.exports = new CommandsModule();
+export default new CommandsModule();

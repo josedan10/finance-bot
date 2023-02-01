@@ -1,24 +1,24 @@
-const commandsModule = require('../../modules/commands/commands.module.js');
-const telegramBot = require('../../modules/telegram/telegram.module.js');
+import commandsModule from '../../modules/commands/commands.module.js';
+import telegramBot from '../../modules/telegram/telegram.module.js';
 
-async function setWebhook(req, res) {
+export async function setWebhook(req, res) {
 	const { url } = req.body;
 	await telegramBot.setWebhook(`${url}/telegram/webhook`);
 	res.send('Webhook set');
 }
 
-async function sendMessage(req, res) {
+export async function sendMessage(req, res) {
 	const { chatId, message } = req.body;
 	await telegramBot.sendMessage(message, chatId);
 	res.send('Message sent');
 }
 
-async function getMe(req, res) {
+export async function getMe(req, res) {
 	const response = await telegramBot.sendRequest('getMe');
 	res.send(JSON.stringify(response.data));
 }
 
-async function webhookHandler(req, res) {
+export async function webhookHandler(req, res) {
 	try {
 		if (req?.body?.message?.text[0] === '/') {
 			const command = telegramBot.commandParser(req.body.message.text);
@@ -35,10 +35,3 @@ async function webhookHandler(req, res) {
 		res.send(error.message);
 	}
 }
-
-module.exports = {
-	setWebhook,
-	sendMessage,
-	getMe,
-	webhookHandler,
-};

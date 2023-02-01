@@ -1,7 +1,11 @@
-const request = require('supertest');
-const Express = require('express');
-const router = require('./index.js');
-const nock = require('nock');
+import request from 'supertest';
+import Express from 'express';
+import router from './index.js';
+import nock from 'nock';
+import fs from 'fs';
+
+const loadJSON = (path) => JSON.parse(fs.readFileSync(new URL(path, import.meta.url)));
+const mockResponse = loadJSON('../../mocks/telegram/getMe.json');
 
 const app = new Express();
 app.use('/telegram', router);
@@ -13,7 +17,6 @@ describe('>> Telegram Routes: ', function () {
         Endpoint. Any calls to URL https://api.telegram.org/bot
         will be intercepted by the fake_api nock  
     */
-		const mockResponse = require('../../mocks/telegram/getMe.json');
 
 		nock(`http://localhost:3000`).get('/telegram').reply(200, { data: mockResponse });
 	});

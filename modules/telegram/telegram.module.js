@@ -1,5 +1,5 @@
-const axios = require('axios');
-const { TELEGRAM_URL } = require('../../src/telegram/variables');
+import axios from 'axios';
+import { TELEGRAM_URL } from '../../src/telegram/variables.js';
 
 class TelegramBot {
 	constructor() {
@@ -35,4 +35,4 @@ class TelegramBot {
 	}
 }
 
-module.exports = new TelegramBot();
+export default new TelegramBot();

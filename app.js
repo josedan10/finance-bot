@@ -1,14 +1,16 @@
-const createError = require('http-errors');
-const express = require('express');
-const path = require('path');
-const cookieParser = require('cookie-parser');
-const logger = require('morgan');
-require('dotenv').config();
+import createError from 'http-errors';
+import express from 'express';
+import path from 'path';
+import cookieParser from 'cookie-parser';
+import logger from 'morgan';
+import * as dotenv from 'dotenv';
+import indexRouter from './routes/index.js';
+import { fileURLToPath } from 'url';
 
-const indexRouter = require('./routes/index');
-const googleSheetsModule = require('./modules/google-sheets/google-sheets.module');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-googleSheetsModule.authorize();
+dotenv.config();
 
 const app = express();
 
@@ -38,4 +40,4 @@ app.use(function (err, req, res, next) {
 	console.error(err);
 });
 
-module.exports = app;
+export default app;

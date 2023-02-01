@@ -1,6 +1,6 @@
-const request = require('supertest');
-const Express = require('express');
-const router = require('./index.js');
+import request from 'supertest';
+import Express from 'express';
+import router from './index.js';
 
 const app = new Express();
 app.use('/', router);

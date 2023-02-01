@@ -1,22 +1,24 @@
 // Add any custom config to be passed to Jest
-const dotenv = require('dotenv');
+import * as dotenv from 'dotenv';
 
 dotenv.config({ path: './.env' });
 
 const customJestConfig = {
 	testTimeout: 8000,
+	transform: {},
 	moduleDirectories: ['node_modules'],
 	verbose: true,
 	collectCoverage: true,
 	collectCoverageFrom: [
 		'!**/node_modules/**',
+		'!**/bin/**',
 		'!**/*.test.js',
 		'!**/*.json',
 		'!**/*.config.js',
 		'!**/app.js',
 		'!**/mock/**',
 		'!**/coverage/**',
-		'!**/modules/google-sheets/*.js',
+		'!**/prisma/**',
 	],
 	coverageThreshold: {
 		'./routes/**/*.js': {
@@ -31,4 +33,4 @@ const customJestConfig = {
 	},
 };
 
-module.exports = customJestConfig;
+export default customJestConfig;
