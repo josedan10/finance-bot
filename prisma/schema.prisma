@@ -1,0 +1,78 @@
+datasource db {
+  url      = env("DATABASE_URL")
+  provider = "mysql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Category {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique @db.VarChar(20)
+  description  String?        @db.VarChar(255)
+  amountLimit  Decimal        @db.Decimal(10, 2)
+  keywords     String?        @db.Text()
+  transaction  Transaction[]
+  ShopCategory ShopCategory[]
+}
+
+model PaymentMethod {
+  id                      Int                       @id @default(autoincrement())
+  name                    String                    @unique @db.VarChar(20)
+  transaction             Transaction[]
+  platformMonthlyRegister PlatformMonthlyRegister[]
+}
+
+model Transaction {
+  id              Int            @id @default(autoincrement())
+  date            DateTime       @db.DateTime(6)
+  description     String?        @db.VarChar(255)
+  amount          Decimal        @db.Decimal(10, 2)
+  currency        String         @db.VarChar(3)
+  type            String         @db.VarChar(10)
+  isMonthly       Boolean        @default(false)
+  category        Category       @relation(fields: [categoryId], references: [id])
+  categoryId      Int
+  shopId          Int?
+  shop            Shop?          @relation(fields: [shopId], references: [id])
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodId Int?
+}
+
+model PlatformMonthlyRegister {
+  id              Int           @id @default(autoincrement())
+  startAmount     Decimal       @db.Decimal(10, 2)
+  endAmount       Decimal       @db.Decimal(10, 2)
+  year            Int           @db.Int
+  month           Int           @db.Int
+  paymentMethodId Int
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  @@unique([paymentMethodId, year, month])
+  @@index([paymentMethodId, year, month])
+}
+
+model Suscription {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique @db.VarChar(20)
+  keyWord     String? @db.VarChar(20)
+  paymentDate String? @db.VarChar(10)
+  type        String  @db.VarChar(20)
+}
+
+model Shop {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique @db.VarChar(20)
+  keyWord      String?        @db.VarChar(20)
+  ShopCategory ShopCategory[]
+  Transaction  Transaction[]
+}
+
+model ShopCategory {
+  id         Int      @id @default(autoincrement())
+  categoryId Int
+  shopId     Int
+  category   Category @relation(fields: [categoryId], references: [id])
+  shop       Shop     @relation(fields: [shopId], references: [id])
+}
