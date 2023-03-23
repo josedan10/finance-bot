@@ -2,7 +2,7 @@ import commandsModule from './commands.module.js';
 
 describe('>> Commands Module: ', function () {
 	test('Commands initialized', () => {
-		expect(Object.keys(commandsModule.commands)).toHaveLength(2);
+		expect(Object.keys(commandsModule.commands)).toHaveLength(3);
 	});
 
 	test('Execute command', async () => {

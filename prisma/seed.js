@@ -1,8 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
+import { PrismaClient } from '@prisma/client';
+import { CATEGORIES, PAYMENT_METHODS, suscriptions } from '../src/enums/paymentMethods.js';
 const prisma = new PrismaClient();
 
 async function main() {
-	const paymentMethods = ['Payoneer', 'Mercantil Panamá', 'Paypal', 'Cash'];
+	const paymentMethods = Object.values(PAYMENT_METHODS).map((method) => method);
 
 	for (const paymentMethod of paymentMethods) {
 		await prisma.paymentMethod.upsert({
@@ -16,78 +17,23 @@ async function main() {
 		});
 	}
 
-	const categories = [
-		'Pet',
-		'Purchase',
-		'Food/Home',
-		'Entertaiment',
-		'Other',
-		'Health',
-		'Donation',
-		'Transport',
-		'Vehicle',
-		'Loans',
-		'Exchange',
-		'Work',
-	];
+	const categories = Object.values(CATEGORIES).map((cat) => cat);
 
 	const categoryLimits = [120, 200, 400, 200, 150, 200, 150, 100, 100, 200, 0, 0];
 
 	for (const catInd in categories) {
 		await prisma.category.upsert({
 			where: {
-				name: categories[catInd].toUpperCase(),
+				name: categories[catInd].name.toUpperCase(),
 			},
 			update: {},
 			create: {
-				name: categories[catInd].toUpperCase(),
+				name: categories[catInd].name.toUpperCase(),
+				keywords: categories[catInd].keywords?.join(','),
 				amountLimit: categoryLimits[catInd],
 			},
 		});
 	}
-
-	const suscriptions = [
-		{
-			name: 'AMAZON PRIME',
-			type: 'MONTHLY',
-		},
-		{
-			name: 'MEDIUM',
-			type: 'ANNUAL',
-		},
-		{
-			name: 'DISNEY PLUS',
-			type: 'MONTHLY',
-		},
-		{
-			name: 'PLATZI',
-			type: 'ANNUAL',
-		},
-		{
-			name: 'LASTPASS',
-			type: 'ANNUAL',
-		},
-		{
-			name: 'DIGITAL OCEAN',
-			type: 'MONTHLY',
-		},
-		{
-			name: 'EXPRESSVPN',
-			type: 'ANNUAL',
-		},
-		{
-			name: 'GOOGLE ONE',
-			type: 'ANNUAL',
-		},
-		{
-			name: 'GYM',
-			type: 'MONTHLY',
-		},
-		{
-			name: 'CÓDIGO FACILITO',
-			type: 'ANNUAL',
-		},
-	];
 
 	for (const suscription of suscriptions) {
 		await prisma.suscription.upsert({

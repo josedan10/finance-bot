@@ -1,5 +1,6 @@
 import express from 'express';
 import telegramRouter from './telegram/index.js';
+import reportsRouter from './reports/index.js';
 
 const router = express.Router();
 
@@ -9,5 +10,6 @@ router.get('/', function (req, res, next) {
 });
 
 router.use('/telegram', telegramRouter);
+router.use('/reports', reportsRouter);
 
 export default router;

@@ -1,3 +1,5 @@
+import { MercantilPanama } from '../mercantil-panama/index.js';
+
 class CommandsModule {
 	constructor() {
 		this.commands = {
@@ -5,6 +7,7 @@ class CommandsModule {
 				console.log(data);
 				return 'Cash transaction';
 			},
+			mercantil: MercantilPanama.registerMercantilTransactionsFromCSVData,
 			test: async (data) => data,
 		};
 	}

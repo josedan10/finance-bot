@@ -1,5 +1,5 @@
 import nock from 'nock';
-import { TELEGRAM_URL } from '../../src/telegram/variables';
+import { TELEGRAM_BOT_URL, TELEGRAM_FILE_URL } from '../../src/telegram/variables';
 import telegramModule from './telegram.module';
 import fs from 'fs';
 
@@ -14,11 +14,15 @@ describe('>> Telegram Bot Module: ', function () {
         will be intercepted by the fake_api nock  
     */
 
-		nock(`${TELEGRAM_URL}`).post('/getMe').reply(200, mockResponse);
+		nock(`${TELEGRAM_BOT_URL}`).post('/getMe').reply(200, mockResponse);
 
-		nock(`${TELEGRAM_URL}`).post('/sendMessage').reply(200, 'Message sent');
+		nock(`${TELEGRAM_BOT_URL}`).post('/sendMessage').reply(200, 'Message sent');
 
-		nock(`${TELEGRAM_URL}`).post('/setWebhook').reply(200, 'Webhook set');
+		nock(`${TELEGRAM_BOT_URL}`).post('/setWebhook').reply(200, 'Webhook set');
+
+		nock(`${TELEGRAM_BOT_URL}`).post('/getFile').query(true).reply(200, 'File found');
+
+		nock(`${TELEGRAM_FILE_URL}`).get('/documents/file_46.xlsx').reply(200, 'File content');
 	});
 
 	afterAll(() => {
@@ -40,6 +44,18 @@ describe('>> Telegram Bot Module: ', function () {
 		const res = await telegramModule.setWebhook('https://webhook.site/0d9a2f3a-5b2f-4b1c-8b3f-3e7f1a9d9b9b');
 		expect(res.status).toBe(200);
 		expect(res.data).toBe('Webhook set');
+	});
+
+	test('Get file path using fileId', async () => {
+		const res = await telegramModule.getFilePath('1234');
+		expect(res.status).toBe(200);
+		expect(res.data).toBe('File found');
+	});
+
+	test('Get file content using file path', async () => {
+		const res = await telegramModule.getFileContent('documents/file_46.xlsx');
+		expect(res.status).toBe(200);
+		expect(res.data).toBe('File content');
 	});
 
 	test('Command parser', () => {

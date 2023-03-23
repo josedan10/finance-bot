@@ -20,9 +20,19 @@ export async function getMe(req, res) {
 
 export async function webhookHandler(req, res) {
 	try {
-		if (req?.body?.message?.text[0] === '/') {
+		if (req?.body?.message?.text?.[0] === '/') {
 			const command = telegramBot.commandParser(req.body.message.text);
 			await commandsModule.executeCommand(command.commandName, command.commandArgs);
+			telegramBot.sendMessage('Registered transaction', req.body.message.chat.id);
+			res.send('ok');
+			return;
+		}
+
+		if (req?.body?.message?.caption?.[0] === '/') {
+			const command = telegramBot.commandParser(req.body.message.caption);
+			const filePath = await telegramBot.getFilePath(req.body.message.document.file_id);
+			const fileContent = await telegramBot.getFileContent(filePath.data.result.file_path);
+			await commandsModule.executeCommand(command.commandName, fileContent.data);
 			telegramBot.sendMessage('Registered transaction', req.body.message.chat.id);
 			res.send('ok');
 			return;
@@ -30,8 +40,9 @@ export async function webhookHandler(req, res) {
 		telegramBot.sendMessage("I don't understand you", req.body.message.chat.id);
 		res.send("I don't understand you");
 	} catch (error) {
-		telegramBot.sendMessage(error.message, req.body.message.chat.id);
-		res.status(500);
+		console.debug(error);
+		telegramBot.sendMessage(error.message?.slice(0, 250), req.body.message.chat.id);
+		res.status(200);
 		res.send(error.message);
 	}
 }
