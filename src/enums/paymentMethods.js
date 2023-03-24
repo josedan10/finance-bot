@@ -8,18 +8,22 @@ export const PAYMENT_METHODS = {
 export const CATEGORIES = {
 	PET: {
 		name: 'Pet',
+		emoji: '🐾',
 		// keywords: [],
 	},
 	PURCHASE: {
 		name: 'Purchase',
+		emoji: '🛍️',
 		keywords: ['amazon'],
 	},
 	FOOD_HOME: {
 		name: 'Food/Home',
+		emoji: '🍽️',
 		keywords: ['forum', 'pedidosya', 'pedidos ya'],
 	},
 	ENTERTAIMENT: {
 		name: 'Entertaiment',
+		emoji: '🎬',
 		keywords: [
 			'netflix',
 			'spotify',
@@ -38,35 +42,58 @@ export const CATEGORIES = {
 	},
 	OTHER: {
 		name: 'Other',
+		emoji: '💼',
 		// keywords: [],
 	},
 	HEALTH: {
 		name: 'Health',
+		emoji: '🩺',
 		keywords: ['gym', 'doctor', 'dentist', 'pharmacy', 'hospital'],
 	},
 	DONATION: {
 		name: 'Donation',
+		emoji: '💰',
 		keywords: ['donation', 'donaciones'],
 	},
 	TRANSPORT: {
 		name: 'Transport',
+		emoji: '🚕',
 		keywords: ['uber', 'cabify', 'taxi', 'gas', 'gasolina', 'gasoline', 'transporte', 'transport', 'ridery'],
 	},
 	VEHICLE: {
 		name: 'Vehicle',
+		emoji: '🚗',
 		// keywords: [],
 	},
 	LOANS: {
 		name: 'Loans',
+		emoji: '💳',
 		keywords: ['loan', 'prestamo', 'prestamos'],
 	},
 	EXCHANGE: {
 		name: 'Exchange',
+		emoji: '💱',
 		keywords: ['exchange', 'cambio', 'cambios', 'pp'],
 	},
 	WORK: {
 		name: 'Work',
+		emoji: '👔',
 		// keywords: []
+	},
+	TRAVEL: {
+		name: 'Travel',
+		emoji: '✈️',
+		keywords: ['flight', 'hotel', 'airbnb', 'booking', 'expedia', 'tripadvisor'],
+	},
+	BEAUTY: {
+		name: 'Beauty',
+		emoji: '💅',
+		keywords: ['salon', 'barber', 'cosmetics', 'makeup', 'skincare'],
+	},
+	EDUCATION: {
+		name: 'Education',
+		emoji: '🎓',
+		keywords: ['university', 'school', 'online courses', 'udemy', 'coursera'],
 	},
 };
 

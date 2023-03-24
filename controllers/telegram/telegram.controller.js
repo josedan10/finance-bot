@@ -22,8 +22,8 @@ export async function webhookHandler(req, res) {
 	try {
 		if (req?.body?.message?.text?.[0] === '/') {
 			const command = telegramBot.commandParser(req.body.message.text);
-			await commandsModule.executeCommand(command.commandName, command.commandArgs);
-			telegramBot.sendMessage('Registered transaction', req.body.message.chat.id);
+			const commandResponse = await commandsModule.executeCommand(command.commandName, command.commandArgs);
+			telegramBot.sendMessage(commandResponse, req.body.message.chat.id);
 			res.send('ok');
 			return;
 		}
@@ -32,8 +32,8 @@ export async function webhookHandler(req, res) {
 			const command = telegramBot.commandParser(req.body.message.caption);
 			const filePath = await telegramBot.getFilePath(req.body.message.document.file_id);
 			const fileContent = await telegramBot.getFileContent(filePath.data.result.file_path);
-			await commandsModule.executeCommand(command.commandName, fileContent.data);
-			telegramBot.sendMessage('Registered transaction', req.body.message.chat.id);
+			const commandResponse = await commandsModule.executeCommand(command.commandName, fileContent.data);
+			telegramBot.sendMessage(commandResponse, req.body.message.chat.id);
 			res.send('ok');
 			return;
 		}

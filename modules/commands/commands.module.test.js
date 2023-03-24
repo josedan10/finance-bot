@@ -14,6 +14,11 @@ describe('>> Commands Module: ', function () {
 		await expect(commandsModule.executeCommand('test1', 'test')).rejects.toThrow();
 	});
 
+	test('Execute monthlyReport command', async () => {
+		const data = await commandsModule.executeCommand('monthlyReport', '01');
+		expect(data).toBeDefined();
+	});
+
 	test('Execute cashTransaction command', async () => {
 		await expect(commandsModule.executeCommand('cashTransaction', 'test')).toBeDefined();
 	});

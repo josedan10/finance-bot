@@ -9,7 +9,10 @@ class CommandsModule {
 				return 'Cash transaction';
 			},
 			mercantil: MercantilPanama.registerMercantilTransactionsFromCSVData,
-			monthlyReport: Reports.getMonthlyReport,
+			monthlyReport: async (monthDate) => {
+				const reportData = await Reports.getMonthlyReport(monthDate);
+				return Reports.reportMessageOnMarkdown(reportData);
+			},
 			test: async (data) => data,
 		};
 	}
