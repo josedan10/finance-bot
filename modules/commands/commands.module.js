@@ -1,4 +1,5 @@
 import { MercantilPanama } from '../mercantil-panama/index.js';
+import { Reports } from '../reports/reports.module.js';
 
 class CommandsModule {
 	constructor() {
@@ -8,6 +9,7 @@ class CommandsModule {
 				return 'Cash transaction';
 			},
 			mercantil: MercantilPanama.registerMercantilTransactionsFromCSVData,
+			monthlyReport: Reports.getMonthlyReport,
 			test: async (data) => data,
 		};
 	}
