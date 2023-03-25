@@ -9,7 +9,7 @@ class MercantilPanamaModule {
 	}
 
 	async registerMercantilTransactionsFromCSVData(data) {
-		const arrayData = await excelModule.parseCSVDataToJs(data).filter((transaction) => transaction[0] !== '');
+		const arrayData = await excelModule.parseCSVDataToJs(data, 2).filter((transaction) => transaction[0] !== '');
 		const paymentMethod = await this._prisma.paymentMethod.findUnique({
 			where: {
 				name: PAYMENT_METHODS.MERCANTIL_PANAMA,

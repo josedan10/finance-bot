@@ -1,15 +1,15 @@
 class ExcelModule {
 	// constructor() {}
-	parseCSVDataToJs(csvData) {
+	parseCSVDataToJs(csvData, shiftCount = 1) {
 		const data = csvData.split('\n').map((row) => {
 			const cleanRow = row.split(',').map((value) => value.replace('\r', '').trim());
 			return cleanRow;
 		});
 
-		// Remove the titles
-		data.shift();
-		data.shift();
-
+		for (let i = 0; i < shiftCount; i++) {
+			// Remove the titles
+			data.shift();
+		}
 		return data;
 	}
 }
