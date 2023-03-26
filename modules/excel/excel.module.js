@@ -2,7 +2,12 @@ class ExcelModule {
 	// constructor() {}
 	parseCSVDataToJs(csvData, shiftCount = 1) {
 		const data = csvData.split('\n').map((row) => {
-			const cleanRow = row.split(',').map((value) => value.replace('\r', '').trim());
+			// eslint-disable-next-line no-useless-escape
+			const regex = /(\"[^\"]+\")/g;
+			const result = row.replace(regex, function (match) {
+				return match.replace(/,/g, '&comma;');
+			});
+			const cleanRow = result.split(',').map((value) => value.replace('\r', '').trim());
 			return cleanRow;
 		});
 

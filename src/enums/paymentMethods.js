@@ -19,7 +19,7 @@ export const CATEGORIES = {
 	FOOD_HOME: {
 		name: 'Food/Home',
 		emoji: '🍽️',
-		keywords: ['forum', 'pedidosya', 'pedidos ya'],
+		keywords: ['forum', 'pedidosya', 'pedidos ya', 'excelsior gama', 'panaderia'],
 	},
 	ENTERTAIMENT: {
 		name: 'Entertaiment',
@@ -73,7 +73,7 @@ export const CATEGORIES = {
 	EXCHANGE: {
 		name: 'Exchange',
 		emoji: '💱',
-		keywords: ['exchange', 'cambio', 'cambios', 'pp'],
+		keywords: ['exchange', 'cambio', 'cambios', 'pp', 'maffi', 'productora audiovisual'],
 	},
 	WORK: {
 		name: 'Work',
@@ -93,7 +93,16 @@ export const CATEGORIES = {
 	EDUCATION: {
 		name: 'Education',
 		emoji: '🎓',
-		keywords: ['university', 'school', 'online courses', 'udemy', 'coursera'],
+		keywords: [
+			'university',
+			'school',
+			'online courses',
+			'udemy',
+			'coursera',
+			'platzi',
+			'codigo facilito',
+			'codigofacilito',
+		],
 	},
 };
 
