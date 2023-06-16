@@ -4,3 +4,4 @@ src/*.test.js
 README.md
 prisma/migrations
 prisma/schema.prisma
+*.png
