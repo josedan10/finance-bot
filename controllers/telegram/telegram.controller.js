@@ -1,6 +1,14 @@
 import commandsModule from '../../modules/commands/commands.module.js';
 import telegramBot from '../../modules/telegram/telegram.module.js';
 
+export async function setCommands(req, res) {
+	const commands = commandsModule.getCommandsArray();
+
+	const response = await telegramBot.sendRequest('setMyCommands', commands);
+	console.log(response.data);
+	res.send('Commands set');
+}
+
 export async function setWebhook(req, res) {
 	const { url } = req.body;
 	await telegramBot.setWebhook(`${url}/telegram/webhook`);

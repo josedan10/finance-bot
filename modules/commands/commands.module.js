@@ -4,6 +4,14 @@ import { Reports } from '../reports/reports.module.js';
 
 class CommandsModule {
 	constructor() {
+		this.publishedCommandsDefinitions = {
+			mercantil:
+				'Register Mercantil Panama transactions from CSV data. Upload a CSV file with the Mercantil Panama transactions',
+			paypal: 'Register PayPal transactions from CSV data. Upload a CSV file with the PayPal transactions',
+			monthlyReport:
+				'Get a monthly report. Send a month number as example: 01 for January, 02 for February, etc. Example command: /monthlyReport 01',
+		};
+
 		this.commands = {
 			cashTransaction: async (data) => {
 				console.log(data);
@@ -31,6 +39,13 @@ class CommandsModule {
 		}
 
 		throw new Error(`Command ${command} not found`);
+	}
+
+	getCommandsArray() {
+		return Object.entries(this.publishedCommandsDefinitions).map(([cmd, description]) => ({
+			command: cmd,
+			description,
+		}));
 	}
 }
 
