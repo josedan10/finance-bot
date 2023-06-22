@@ -1,8 +1,9 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import prisma from '../database/database.module.js';
 
 export class ReportsModule {
 	constructor() {
-		this._prisma = new PrismaClient();
+		this._prisma = prisma;
 	}
 
 	async getMonthlyReport(monthDate = '01') {

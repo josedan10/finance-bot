@@ -80,3 +80,11 @@ model ShopCategory {
   category   Category @relation(fields: [categoryId], references: [id])
   shop       Shop     @relation(fields: [shopId], references: [id])
 }
+
+model DailyPrices {
+  id           Int      @id @default(autoincrement())
+  monitorPrice Decimal? @db.Decimal(10, 2)
+  bcvPrice     Decimal? @db.Decimal(10, 2)
+  date         String   @unique @db.VarChar(10)
+  createdAt    DateTime @default(now())
+}

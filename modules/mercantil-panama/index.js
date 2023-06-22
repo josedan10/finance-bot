@@ -1,11 +1,11 @@
-import { PrismaClient } from '@prisma/client';
 import { MONTHS_TO_NUMBERS } from '../../src/enums/months.js';
 import { PAYMENT_METHODS } from '../../src/enums/paymentMethods.js';
 import excelModule from '../excel/excel.module.js';
+import prisma from '../database/database.module.js';
 
 class MercantilPanamaModule {
 	constructor() {
-		this._prisma = new PrismaClient();
+		this._prisma = prisma;
 	}
 
 	async registerMercantilTransactionsFromCSVData(data) {

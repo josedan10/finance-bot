@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { CATEGORIES, PAYMENT_METHODS, suscriptions } from '../src/enums/paymentMethods.js';
-const prisma = new PrismaClient();
-
+import prisma from '../modules/database/database.module.js';
 async function main() {
 	const paymentMethods = Object.values(PAYMENT_METHODS).map((method) => method);
 
