@@ -1,7 +1,7 @@
 version: '3'
 
 services:
-  mysql-development:
+  mysql-finance-bot:
     image: mysql
     platform: linux/amd64
     environment:

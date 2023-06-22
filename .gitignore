@@ -3,3 +3,5 @@
 .env
 client_secret.json
 token.json
+/screenshots
+/cookies
