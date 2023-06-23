@@ -5,3 +5,4 @@ README.md
 prisma/migrations
 prisma/schema.prisma
 *.png
+docker/

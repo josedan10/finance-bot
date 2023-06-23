@@ -1,7 +1,7 @@
-import { PrismaClient } from '@prisma/client';
 import dayjs from 'dayjs';
 import { PAYMENT_METHODS } from '../../src/enums/paymentMethods.js';
 import excelModule from '../excel/excel.module.js';
+import prisma from '../database/database.module.js';
 
 export class PaypalModule {
 	constructor() {
@@ -9,7 +9,7 @@ export class PaypalModule {
 		this.columnNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'J', 'M', 'P', 'AL', 'AM', 'AO'];
 		this.columnIndexes = this.columnNames.map((columnName) => this.getColumnIndex(columnName));
 		this.numberOfColumns = 41;
-		this._prisma = new PrismaClient();
+		this._prisma = prisma;
 	}
 
 	// Función para calcular el índice de una columna de Excel basado en su nombre

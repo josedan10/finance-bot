@@ -4,11 +4,13 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: './.env' });
 
 const customJestConfig = {
-	testTimeout: 8000,
+	testEnvironment: 'node',
+	testTimeout: 40000,
 	transform: {},
 	moduleDirectories: ['node_modules'],
 	verbose: true,
 	collectCoverage: true,
+	preset: 'jest-puppeteer',
 	collectCoverageFrom: [
 		'!**/node_modules/**',
 		'!**/bin/**',
@@ -19,6 +21,8 @@ const customJestConfig = {
 		'!**/mock/**',
 		'!**/coverage/**',
 		'!**/prisma/**',
+		'!**/modules/database/**',
+		'!**/scraper.*',
 	],
 	coverageThreshold: {
 		'./routes/**/*.js': {
@@ -28,7 +32,7 @@ const customJestConfig = {
 			lines: 85,
 		},
 		'./modules/**/*.js': {
-			lines: 83,
+			lines: 85,
 		},
 	},
 };
