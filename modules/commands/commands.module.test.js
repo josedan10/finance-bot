@@ -1,10 +1,13 @@
 import { faker } from '@faker-js/faker';
 import dayjs from 'dayjs';
 import commandsModule from './commands.module.js';
+import Sinon from 'sinon';
+import { ManualTransaction } from '../manual-transactions/index.js';
+import { expect } from '@jest/globals';
 
 describe('>> Commands Module: ', function () {
 	test('Commands initialized', () => {
-		expect(Object.keys(commandsModule.commands)).toHaveLength(5);
+		expect(Object.keys(commandsModule.commands)).toHaveLength(6);
 	});
 
 	test('Execute command', async () => {
@@ -23,6 +26,17 @@ describe('>> Commands Module: ', function () {
 
 	test('Execute cashTransaction command', async () => {
 		await expect(commandsModule.executeCommand('cashTransaction', 'test')).toBeDefined();
+	});
+
+	test('Execute manualTransaction command', async () => {
+		ManualTransaction.registerManualTransaction = Sinon.stub().resolves({});
+
+		const response = await commandsModule.executeCommand(
+			'manualTransaction',
+			'100; My Description; Mercantil Venezuela; debit; CATEGORY_NAME'
+		);
+		Sinon.assert.calledOnce(ManualTransaction.registerManualTransaction);
+		expect(response).toBe('Manual transaction registered');
 	});
 
 	test('Execute mercantil command', async () => {

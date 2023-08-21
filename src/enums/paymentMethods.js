@@ -3,13 +3,25 @@ export const PAYMENT_METHODS = {
 	PAYONEER: 'Payoneer',
 	PAYPAL: 'Paypal',
 	CASH: 'Cash',
+	BINANCE: 'Binance',
+	MERCANTIL_VENEZUELA: 'Mercantil Venezuela',
 };
 
 export const CATEGORIES = {
 	PET: {
 		name: 'Pet',
 		emoji: '🐾',
-		// keywords: [],
+		keywords: [
+			'mascotalandia',
+			'mascotas',
+			'pet',
+			'pets',
+			'petshop',
+			'pet shop',
+			'veterinaria',
+			'veterinary',
+			'Cooper',
+		],
 	},
 	PURCHASE: {
 		name: 'Purchase',
@@ -19,7 +31,17 @@ export const CATEGORIES = {
 	FOOD_HOME: {
 		name: 'Food/Home',
 		emoji: '🍽️',
-		keywords: ['forum', 'pedidosya', 'pedidos ya', 'excelsior gama', 'panaderia'],
+		keywords: [
+			'forum',
+			'pedidosya',
+			'pedidos ya',
+			'excelsior gama',
+			'panaderia',
+			'supermercado',
+			'supermarket',
+			'market',
+			'mercado',
+		],
 	},
 	ENTERTAIMENT: {
 		name: 'Entertaiment',
@@ -48,7 +70,7 @@ export const CATEGORIES = {
 	HEALTH: {
 		name: 'Health',
 		emoji: '🩺',
-		keywords: ['gym', 'doctor', 'dentist', 'pharmacy', 'hospital'],
+		keywords: ['gym', 'doctor', 'dentist', 'pharmacy', 'hospital', 'consulta médica'],
 	},
 	DONATION: {
 		name: 'Donation',
@@ -123,6 +145,7 @@ export const SUSCRIPTION_NAMES = {
 	GYM: 'Gym',
 	CODIGO_FACILITO: 'Código Facilito',
 	DASHLANE: 'Dashlane',
+	GITHUB_COPILOT: 'Github Copilot',
 };
 
 export const suscriptions = [

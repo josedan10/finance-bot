@@ -27,7 +27,16 @@ export class ReportsModule {
 	}
 
 	reportMessageOnMarkdown(reportData) {
-		const [balance, ...categories] = reportData;
+		const categories = reportData;
+		const balance = {
+			total_credits: 0,
+			total_debits: 0,
+		};
+
+		for (const category of categories) {
+			balance.total_credits += Number(category.total_credits);
+			balance.total_debits += Number(category.total_debits);
+		}
 
 		// Calculate maximum length of each column
 		const columns = [
@@ -58,7 +67,7 @@ Debits: ${balance.total_debits}
 		message +=
 			columns
 				.map((col) => {
-					return `|${'-'.repeat(maxColumnLengths[col.key] + 2)}`;
+					return `|${'_'.repeat(maxColumnLengths[col.key] + 2)}`;
 				})
 				.join('') + '|\n';
 

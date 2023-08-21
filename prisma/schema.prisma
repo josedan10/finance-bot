@@ -25,21 +25,22 @@ model PaymentMethod {
 }
 
 model Transaction {
-  id              Int            @id @default(autoincrement())
-  date            DateTime       @db.DateTime()
-  description     String?        @db.VarChar(255)
-  amount          Decimal        @db.Decimal(10, 2)
-  referenceId     String?        @db.VarChar(30)
-  currency        String         @db.VarChar(3)
-  type            String         @db.VarChar(10)
-  isMonthly       Boolean        @default(false)
-  isAnnually      Boolean        @default(false)
-  category        Category?      @relation(fields: [categoryId], references: [id])
-  categoryId      Int?
-  shopId          Int?
-  shop            Shop?          @relation(fields: [shopId], references: [id])
-  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  paymentMethodId Int?
+  id                     Int            @id @default(autoincrement())
+  date                   DateTime       @db.DateTime()
+  description            String?        @db.VarChar(255)
+  amount                 Decimal        @db.Decimal(10, 2)
+  originalCurrencyAmount Decimal?       @db.Decimal(10, 2)
+  referenceId            String?        @db.VarChar(30)
+  currency               String         @db.VarChar(3)
+  type                   String         @db.VarChar(10)
+  isMonthly              Boolean        @default(false)
+  isAnnually             Boolean        @default(false)
+  category               Category?      @relation(fields: [categoryId], references: [id])
+  categoryId             Int?
+  shopId                 Int?
+  shop                   Shop?          @relation(fields: [shopId], references: [id])
+  paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodId        Int?
 
   @@unique(fields: [description, referenceId, date])
 }
@@ -81,7 +82,7 @@ model ShopCategory {
   shop       Shop     @relation(fields: [shopId], references: [id])
 }
 
-model DailyPrices {
+model DailyExchangeRate {
   id           Int      @id @default(autoincrement())
   monitorPrice Decimal? @db.Decimal(10, 2)
   bcvPrice     Decimal? @db.Decimal(10, 2)

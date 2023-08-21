@@ -16,12 +16,6 @@ describe('ReportsModule: ', () => {
 	test('generateMarkdownString generates correct markdown string', async () => {
 		const data = [
 			{
-				category: null,
-				total_debits: 1174.56,
-				total_credits: 1194.01,
-				category_balance: -19.45,
-			},
-			{
 				category: 'TRANSPORT',
 				total_debits: 535.08,
 				total_credits: 173.06,
@@ -49,7 +43,7 @@ describe('ReportsModule: ', () => {
 
 		const mdString = Reports.reportMessageOnMarkdown(data);
 
-		expect(mdString).toEqual(expect.stringContaining('Credits: 1194.01'));
-		expect(mdString).toEqual(expect.stringContaining('Debits: 1174.56'));
+		expect(mdString).toEqual(expect.stringContaining('Credits: 173.06'));
+		expect(mdString).toEqual(expect.stringContaining('Debits: 938.9'));
 	});
 });
