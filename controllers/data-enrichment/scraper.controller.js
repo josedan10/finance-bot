@@ -6,18 +6,18 @@ export async function getDailyPriceFromMonitor(req, res) {
 	try {
 		res.send('Starting scraping process...');
 		const scraper = new InstagramScraper();
-		const price = await scraper.getLatestPriceFromPost();
-		const todayDate = Dayjs().format('YYYY-MM-DD');
+		const { price, date } = await scraper.getLatestPriceFromPost();
+		const postDate = Dayjs(date).format('YYYY-MM-DD');
 
-		const result = await prisma.dailyPrices.upsert({
+		const result = await prisma.dailyExchangeRate.upsert({
 			where: {
-				date: todayDate,
+				date: postDate,
 			},
 			update: {
 				monitorPrice: price,
 			},
 			create: {
-				date: todayDate,
+				date: postDate,
 				monitorPrice: price,
 			},
 		});

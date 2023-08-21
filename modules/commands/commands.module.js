@@ -1,3 +1,4 @@
+import { ManualTransaction } from '../manual-transactions/index.js';
 import { MercantilPanama } from '../mercantil-panama/index.js';
 import { PayPal } from '../paypal/paypal.module.js';
 import { Reports } from '../reports/reports.module.js';
@@ -28,6 +29,10 @@ class CommandsModule {
 			monthlyReport: async (monthDate) => {
 				const reportData = await Reports.getMonthlyReport(monthDate);
 				return Reports.reportMessageOnMarkdown(reportData);
+			},
+			manualTransaction: async (data) => {
+				await ManualTransaction.registerManualTransaction(data);
+				return 'Manual transaction registered';
 			},
 			test: async (data) => data,
 		};

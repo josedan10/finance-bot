@@ -3,7 +3,7 @@ import { executablePath } from 'puppeteer';
 import { mkdir } from 'node:fs/promises';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { extractPriceFromInstagramDescription } from '../../src/helpers/price.helper.js';
+import { extractDateFromDescription, extractPriceFromInstagramDescription } from '../../src/helpers/price.helper.js';
 
 dotenv.config();
 const cookieName = `./cookies-scraper.json`;
@@ -17,12 +17,12 @@ export class Scraper {
 		this.start = this.start.bind(this);
 		this.page = null;
 		this.url = 'https://www.instagram.com/';
-		this.responseTimeout = 15000;
+		this.responseTimeout = 20000;
 	}
 
 	async start() {
 		this.browser = await puppeteer.launch({
-			headless: 'new',
+			headless: true,
 			ignoreHTTPSErrors: true,
 			devtools: false,
 			executablePath: executablePath(),
@@ -130,7 +130,7 @@ export class CookiesGenerator {
 
 export class InstagramScraper extends Scraper {
 	postClassSelector =
-		'article ._ac7v._aang .x1i10hfl.xjbqb8w.x6umtig.x1b1mbwd.xaqea5y.xav7gou.x9f619.x1ypdohk.xt0psk2.xe8uvvx.xdj266r.x11i5rnm.xat24cr.x1mh8g0r.xexx8yu.x4uap5.x18d9i69.xkhd6sd.x16tdsg8.x1hl2dhg.xggy1nq.x1a2a7pz._a6hd';
+		'article ._ac7v .x1i10hfl.xjbqb8w.x6umtig.x1b1mbwd.xaqea5y.xav7gou.x9f619.x1ypdohk.xt0psk2.xe8uvvx.xdj266r.x11i5rnm.xat24cr.x1mh8g0r.xexx8yu.x4uap5.x18d9i69.xkhd6sd.x16tdsg8.x1hl2dhg.xggy1nq.x1a2a7pz._a6hd';
 
 	postDescriptionSelector = '._a9zn._a9zo h1._aacl._aaco._aacu._aacx._aad7._aade';
 
@@ -157,7 +157,10 @@ export class InstagramScraper extends Scraper {
 			await this.takeScreenshot('monitor-dolar-post');
 
 			const descriptionText = await this.page.$eval(this.postDescriptionSelector, (el) => el.innerText);
-			return extractPriceFromInstagramDescription(descriptionText);
+			return {
+				date: extractDateFromDescription(descriptionText),
+				price: extractPriceFromInstagramDescription(descriptionText),
+			};
 		} catch (error) {
 			console.log('Error getting latest price', error);
 		}

@@ -28,7 +28,6 @@ export class ReportsModule {
 
 	reportMessageOnMarkdown(reportData) {
 		const [balance, ...categories] = reportData;
-
 		// Calculate maximum length of each column
 		const columns = [
 			{ title: 'Category', key: 'category' },
