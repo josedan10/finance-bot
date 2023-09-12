@@ -144,13 +144,19 @@ describe('registerManualTransaction', () => {
 	// Tests that the method throws an error if any required field is missing
 	it('should throw an error if any required field is missing', async () => {
 		// Arrange
-		const data = ['amount=100;', 'desc=My description;', 'method=Mercantil Venezuela;', 'type=debit;'];
+		const data = ['amount=100;', 'desc=My description;', 'method=Mercantil Venezuela;', 'type=debit;', 'FOOD/HOME'];
 		const sampleData =
 			'amount=100; desc=My description; method=Mercantil Venezuela; type=debit; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
 
 		// Act & Assert
 		await expect(ManualTransaction.registerManualTransaction(data)).rejects.toThrow(
 			`Invalid data: ${data}... Try with ${sampleData}`
+		);
+
+		const data1 = ['100;', 'My description;', 'Mercantil Venezuela;', 'debit;', 'FOOD/HOME'];
+
+		await expect(ManualTransaction.registerManualTransaction(data1)).rejects.toThrow(
+			`Invalid data: ${data1}... Try with ${sampleData}`
 		);
 	});
 
