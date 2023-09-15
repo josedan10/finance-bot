@@ -28,7 +28,7 @@ model Transaction {
   id                     Int            @id @default(autoincrement())
   date                   DateTime       @db.DateTime()
   description            String?        @db.VarChar(255)
-  amount                 Decimal        @db.Decimal(10, 2)
+  amount                 Decimal?       @db.Decimal(10, 2)
   originalCurrencyAmount Decimal?       @db.Decimal(10, 2)
   referenceId            String?        @db.VarChar(30)
   currency               String         @db.VarChar(3)

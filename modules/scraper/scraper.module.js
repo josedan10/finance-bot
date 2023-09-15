@@ -140,7 +140,12 @@ export class InstagramScraper extends Scraper {
 	 */
 	async getLatestPriceFromPost() {
 		try {
-			const cookies = await CookiesGenerator.getCookies();
+			let cookies = await CookiesGenerator.getCookies();
+
+			if (!cookies) {
+				await CookiesGenerator.generateCookies();
+				cookies = await CookiesGenerator.getCookies();
+			}
 
 			await this.start();
 
