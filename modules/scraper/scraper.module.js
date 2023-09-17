@@ -82,7 +82,7 @@ export class Scraper {
 			try {
 				await mkdir('./pages', { recursive: true });
 
-				fs.writeFileSync(`./pages/${name}-${Date.now().valueOf()}.png`, productObj, { flag: 'w' });
+				fs.writeFileSync(`./pages/${name}-${Date.now().valueOf()}.html`, productObj, { flag: 'w' });
 			} catch (error) {
 				console.error('Error taking screenshot', error);
 			}
