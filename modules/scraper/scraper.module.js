@@ -101,6 +101,8 @@ export class CookiesGenerator {
 		await page.click('button[type="submit"]');
 		await page.waitForNavigation({ waitUntil: 'networkidle0' });
 
+		scraper.takeScreenshot('login');
+
 		try {
 			// replace with setTimeout
 			await new Promise((resolve) => setTimeout(resolve, 10000));
