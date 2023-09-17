@@ -1,6 +1,8 @@
 import { PayPal } from './paypal.module.js';
 import { faker } from '@faker-js/faker';
 import dayjs from 'dayjs';
+import Sinon from 'sinon';
+import prisma from '../database/database.module.js';
 
 describe('PaypalModule', () => {
 	let paypalModule;
@@ -274,6 +276,14 @@ describe('PaypalModule', () => {
 			return { date, time };
 		};
 
+		const paymentMethod = { id: 1 };
+		const categories = [{ id: 1 }];
+		const transaction = { id: 1 };
+
+		prisma.paymentMethod.findUnique = Sinon.stub().resolves(paymentMethod);
+		prisma.category.findMany = Sinon.stub().resolves(categories);
+		prisma.transaction.create = Sinon.stub().resolves(transaction);
+
 		const dateTime1 = generateDateAndTime();
 		const dateTime2 = generateDateAndTime();
 		const dateTime3 = generateDateAndTime();
@@ -288,6 +298,9 @@ describe('PaypalModule', () => {
 			const result = await PayPal.registerPaypalDataFromCSVData(csvData);
 			console.log(result);
 			expect(result).toHaveLength(4);
+			Sinon.assert.calledOnce(prisma.transaction.create);
+			Sinon.assert.calledOnce(prisma.paymentMethod.findUnique);
+			Sinon.assert.calledOnce(prisma.category.findMany);
 		});
 	});
 });

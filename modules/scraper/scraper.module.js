@@ -17,7 +17,7 @@ export class Scraper {
 		this.start = this.start.bind(this);
 		this.page = null;
 		this.url = 'https://www.instagram.com/';
-		this.responseTimeout = 20000;
+		this.responseTimeout = 30000;
 	}
 
 	async start() {

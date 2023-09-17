@@ -16,7 +16,7 @@ describe('>> Commands Module: ', function () {
 	});
 
 	test('Execute command with error', async () => {
-		await expect(commandsModule.executeCommand('test1', 'test')).rejects.toThrow();
+		await expect(commandsModule.executeCommand('test1', 'test')).rejects.toReturn();
 	});
 
 	test('Execute monthlyReport command', async () => {
