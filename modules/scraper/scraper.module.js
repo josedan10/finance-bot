@@ -112,10 +112,9 @@ export class CookiesGenerator {
 		await page.type('[name="username"]', scraper.username, { delay: 30 });
 		await page.type('[name="password"]', scraper.password, { delay: 30 });
 
+		scraper.takeScreenshot('login');
 		await page.click('button[type="submit"]');
 		await page.waitForNavigation({ waitUntil: 'networkidle0' });
-
-		scraper.takeScreenshot('login');
 
 		try {
 			// replace with setTimeout
@@ -167,7 +166,7 @@ export class InstagramScraper extends Scraper {
 
 			await this.page.setCookie(...cookies);
 			console.log('Cookies set');
-			await this.page.goto(this.targetURL, { waitUntil: 'networkidle2' });
+			await this.page.goto(this.targetURL, { waitUntil: 'networkidle0' });
 			await new Promise((resolve) => setTimeout(resolve, this.responseTimeout));
 			await this.takeScreenshot('monitor-dolar');
 			await this.savePageAsHTML('monitor-dolar');
