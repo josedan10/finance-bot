@@ -75,6 +75,20 @@ export class Scraper {
 		}
 	}
 
+	async savePageAsHTML(name) {
+		if (process.env.APP_MODE === 'development') {
+			const productObj = await this.page.evaluate(() => document.body.outerHTML);
+
+			try {
+				await mkdir('./pages', { recursive: true });
+
+				fs.writeFileSync(`./pages/${name}-${Date.now().valueOf()}.png`, productObj, { flag: 'w' });
+			} catch (error) {
+				console.error('Error taking screenshot', error);
+			}
+		}
+	}
+
 	async resetPuppeteer() {
 		try {
 			await this.closeBrowser();
@@ -156,6 +170,7 @@ export class InstagramScraper extends Scraper {
 			await this.page.goto(this.targetURL, { waitUntil: 'networkidle2' });
 			await new Promise((resolve) => setTimeout(resolve, this.responseTimeout));
 			await this.takeScreenshot('monitor-dolar');
+			await this.savePageAsHTML('monitor-dolar');
 
 			console.log('Getting post data');
 			await this.page.click(this.postClassSelector);
