@@ -1,6 +1,7 @@
 import prisma from '../../modules/database/database.module.js';
 import { InstagramScraper } from '../../modules/scraper/scraper.module.js';
 import Dayjs from 'dayjs';
+import telegramModule from '../../modules/telegram/telegram.module.js';
 
 export async function getDailyPriceFromMonitor(req, res) {
 	try {
@@ -26,5 +27,6 @@ export async function getDailyPriceFromMonitor(req, res) {
 		console.log(result);
 	} catch (error) {
 		console.error(error);
+		telegramModule.sendMessage('Error: scraping process failed', process.env.TELEGRAM_CHAT_ID);
 	}
 }
