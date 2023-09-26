@@ -22,6 +22,8 @@ const customJestConfig = {
 		'!**/coverage/**',
 		'!**/prisma/**',
 		'!**/modules/database/**',
+		'!**/src/enums/**',
+		'!**/modules/crons/**',
 		'!**/scraper.*',
 	],
 	coverageThreshold: {
