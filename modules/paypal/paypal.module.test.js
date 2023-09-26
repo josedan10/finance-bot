@@ -278,11 +278,14 @@ describe('PaypalModule', () => {
 
 		const paymentMethod = { id: 1 };
 		const categories = [{ id: 1 }];
-		const transaction = { id: 1 };
+		const transaction = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+
+		const transationTableResult = paymentMethod;
 
 		prisma.paymentMethod.findUnique = Sinon.stub().resolves(paymentMethod);
 		prisma.category.findMany = Sinon.stub().resolves(categories);
-		prisma.transaction.create = Sinon.stub().resolves(transaction);
+		prisma.$transaction = Sinon.stub().resolves(transaction);
+		prisma.transaction.create = Sinon.stub().resolves(transationTableResult);
 
 		const dateTime1 = generateDateAndTime();
 		const dateTime2 = generateDateAndTime();
@@ -298,7 +301,7 @@ describe('PaypalModule', () => {
 			const result = await PayPal.registerPaypalDataFromCSVData(csvData);
 			console.log(result);
 			expect(result).toHaveLength(4);
-			Sinon.assert.calledOnce(prisma.transaction.create);
+			Sinon.assert.calledOnce(prisma.$transaction);
 			Sinon.assert.calledOnce(prisma.paymentMethod.findUnique);
 			Sinon.assert.calledOnce(prisma.category.findMany);
 		});

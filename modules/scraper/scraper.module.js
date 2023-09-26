@@ -41,6 +41,10 @@ export class Scraper {
 		this.page = await context.newPage(this.url);
 		this.page.setViewport({ width: 1400, height: 980 });
 		this.page.setDefaultNavigationTimeout(this.responseTimeout);
+		await this.page.setJavaScriptEnabled(true);
+		await this.page.setUserAgent(
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36'
+		);
 	}
 
 	async takeScreenshot(name) {
@@ -166,7 +170,7 @@ export class InstagramScraper extends Scraper {
 
 			await this.page.setCookie(...cookies);
 			console.log('Cookies set');
-			await this.page.goto(this.targetURL, { waitUntil: 'networkidle0' });
+			await this.page.goto(this.targetURL, { waitUntil: 'networkidle2' });
 			await new Promise((resolve) => setTimeout(resolve, this.responseTimeout));
 			await this.takeScreenshot('monitor-dolar');
 			await this.savePageAsHTML('monitor-dolar');
