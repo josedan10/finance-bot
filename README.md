@@ -1,10 +1,12 @@
 # Setup
 
+We strongly recommend define the port number into the .env file. You can copy the .env.example file and rename it to .env. Then you can define the port number.
+
 1. `npm install`
 2. Use ngrok to setup the webhook.
    `ngrok http 5000`
 3. Copy the ngrok url and set the webhook url using the route
-   `/telegram/setWebhook`
+   `${your_local_url}/telegram/setWebhook`
 
 #### Example:
 
