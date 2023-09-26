@@ -17,7 +17,7 @@ The project has some strict validations related to the coverage tests. You can o
 
 # Database
 
-We use prisma as ORM. https://www.prisma.io/
+We use prisma as ORM. You must install it. https://www.prisma.io/
 As requirement you need to install first Docker. You can install the following extension for VSCode:
 
 Name: MySQL
