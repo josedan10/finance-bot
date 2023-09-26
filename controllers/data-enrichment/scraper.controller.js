@@ -4,7 +4,9 @@ import Dayjs from 'dayjs';
 
 export async function getDailyPriceFromMonitor(req, res) {
 	try {
-		res.send('Starting scraping process...');
+		if (res) {
+			res?.send('Starting scraping process...');
+		}
 		const scraper = new InstagramScraper();
 		const { price, date } = await scraper.getLatestPriceFromPost();
 		const [day, month, year] = date.split('/');

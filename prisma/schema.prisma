@@ -89,3 +89,14 @@ model DailyExchangeRate {
   date         String   @unique @db.VarChar(10)
   createdAt    DateTime @default(now())
 }
+
+model TaskQueue {
+  id                Int      @id @default(autoincrement())
+  name              String   @unique @db.VarChar(20)
+  body              String?  @db.Text()
+  type              String   @db.VarChar(20)
+  status            String   @default("pending") @db.VarChar(15)
+  attemptsRemaining Int      @default(10) @db.Int
+  createdBy         String?  @db.VarChar(20)
+  createdAt         DateTime @default(now())
+}
