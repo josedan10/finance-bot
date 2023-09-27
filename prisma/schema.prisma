@@ -92,7 +92,6 @@ model DailyExchangeRate {
 
 model TaskQueue {
   id                Int      @id @default(autoincrement())
-  name              String   @unique @db.VarChar(20)
   body              String?  @db.Text()
   type              String   @db.VarChar(20)
   status            String   @default("pending") @db.VarChar(15)

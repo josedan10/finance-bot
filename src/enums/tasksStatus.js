@@ -1,6 +1,6 @@
 export const TASK_STATUS = {
 	IN_PROGRESS: 'in_progress',
-	DONE: 'done',
+	COMPLETED: 'completed',
 	PENDING: 'pending',
 	ERROR: 'error',
 };
