@@ -6,7 +6,7 @@ import logger from 'morgan';
 import * as dotenv from 'dotenv';
 import indexRouter from './routes/index.js';
 import { fileURLToPath } from 'url';
-import cron from 'node-cron';
+import { TaskQueueModuleService } from './modules/crons/task-queue.cron.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,16 +41,6 @@ app.use(function (err, req, res, next) {
 	console.error(err);
 });
 
-// Runs every day at 9:00 AM America/Caracas during weekdays
-cron.schedule(
-	'0 9 * * 1-5',
-	() => {
-		// Hits the local scraper endpoint
-		fetch(`http://localhost:${process.env.PORT}/data-enrichment/daily-price-update-by-monitor`);
-	},
-	{
-		timezone: 'America/Caracas',
-	}
-);
+TaskQueueModuleService.start();
 
 export default app;

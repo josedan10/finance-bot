@@ -43,4 +43,3 @@ VS Marketplace Link: https://marketplace.visualstudio.com/items?itemName=cweijan
 - While running the database command, open another terminal and run `npx prisma migrate dev` to execute the migrations, and run the db seeders.
 - To run the seeders manually execute `npx prisma db seed`. (optional)
 - Inside the docker/docker-compose.yml file you can find the database configuration.
-   
