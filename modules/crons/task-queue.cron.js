@@ -20,6 +20,8 @@ export class TaskQueueModule {
 	start() {
 		this._isRunning = false;
 
+		console.log('Starting task queue module...');
+
 		this.startDailyUpdateMonitor.start();
 		this.createTheDailyUpdateMonitorTask.start();
 	}
