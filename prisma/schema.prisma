@@ -26,7 +26,7 @@ model PaymentMethod {
 
 model Transaction {
   id                     Int            @id @default(autoincrement())
-  date                   DateTime       @db.DateTime()
+  date                   DateTime
   description            String?        @db.VarChar(255)
   amount                 Decimal?       @db.Decimal(10, 2)
   originalCurrencyAmount Decimal?       @db.Decimal(10, 2)
