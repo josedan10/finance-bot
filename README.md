@@ -1,5 +1,7 @@
 # Setup
 
+We strongly recommend define the port number into the .env file. You can copy the .env.example file and rename it to .env. Then you can define the port number.
+
 1. `npm install`
 
 2. The project starts in development mode using the following command.
