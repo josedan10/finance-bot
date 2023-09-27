@@ -13,7 +13,7 @@ We strongly recommend define the port number into the .env file. You can copy th
 4. We recommend to use the postman extention to work as local host with the following link `https://marketplace.visualstudio.com/items?itemName=Postman.postman-for-vscode`.
 
 5. Copy the ngrok url and set the webhook url using the route
-   `/telegram/setWebhook`
+   `${your_local_url}/telegram/setWebhook`
 
 # .env Setup
 
