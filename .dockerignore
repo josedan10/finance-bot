@@ -1,0 +1,12 @@
+Dockerfile
+.dockerignore
+.vscode
+node_modules
+npm-debug.log
+README.md
+docker-compose.*
+mocks
+coverage
+.husky
+sample-excels
+screenshots

@@ -5,7 +5,8 @@ We strongly recommend define the port number into the .env file. You can copy th
 1. `npm install`
 
 2. The project starts in development mode using the following command.
-   `npm run dev`
+   `npm run docker:build`
+   `npm run docker:start`
 
 3. Use ngrok to setup the webhook.
    `ngrok http 5000`
@@ -39,7 +40,6 @@ Version: 6.7.0
 Publisher: Weijan Chen
 VS Marketplace Link: https://marketplace.visualstudio.com/items?itemName=cweijan.vscode-mysql-client2
 
-- To run the database you need to execute the command `npm run init-db`.
 - While running the database command, open another terminal and run `npx prisma migrate dev` to execute the migrations, and run the db seeders.
 - To run the seeders manually execute `npx prisma db seed`. (optional)
 - Inside the docker/docker-compose.yml file you can find the database configuration.
