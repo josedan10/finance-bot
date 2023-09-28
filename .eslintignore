@@ -1,6 +1,7 @@
 src/*.test.js
 /node_modules/
 *.json
+*.sh
 README.md
 prisma/migrations
 prisma/schema.prisma

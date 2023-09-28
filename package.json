@@ -8,8 +8,11 @@
 		"dev": "nodemon ./bin/www.js",
 		"prepare": "husky install",
 		"lint": "npx lint-staged",
-		"docker:start": "docker-compose -f docker/docker-compose.yml up",
-		"docker:build": "docker-compose -f docker/docker-compose.yml build --no-cache",
+		"docker:start-db": "docker-compose -f docker/local/docker-compose.db.yml up --build",
+		"docker:start-dev": "docker-compose -f docker/local/docker-compose.yml -f docker/local/docker-compose.db.yml up",
+		"docker:build-dev": "docker-compose -f docker/local/docker-compose.yml -f docker/local/docker-compose.db.yml build --no-cache",
+		"docker:start": "docker-compose -f docker/production/docker-compose.yml up",
+		"docker:build": "docker-compose -f docker/production/docker-compose.yml build --no-cache",
 		"migrations": "npx prisma migrate deploy",
 		"seed": "npx prisma db seed",
 		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false"

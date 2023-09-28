@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  express-bot-api:
+    image: express-api-bot
+    platform: linux/amd64
+    build:
+      context: ../../
+      dockerfile: docker/local/Dockerfile
+
+    environment:
+      - DATABASE_URL=mysql://root:d!YG19j06eXp@docker-mysql-finance-bot-1:3306/finance-bot
+    ports:
+      - '5000:5000'
+    networks:
+      - finance-bot-network
+    depends_on:
+      - mysql-finance-bot
