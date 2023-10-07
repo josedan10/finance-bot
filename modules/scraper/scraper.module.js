@@ -22,7 +22,7 @@ export class Scraper {
 
 	async start() {
 		this.browser = await puppeteer.launch({
-			headless: true,
+			headless: false,
 			ignoreHTTPSErrors: true,
 			devtools: false,
 			executablePath: executablePath(),

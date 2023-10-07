@@ -72,15 +72,26 @@ export class TaskQueueModule {
 					console.log('Error executing task, updating task queue...');
 					console.error(error);
 
-					await prisma.taskQueue.update({
-						where: {
-							id: pendingTask.id,
-						},
-						data: {
-							status: TASK_STATUS.ERROR,
-							attemptsRemaining: pendingTask.attemptsRemaining - 1,
-						},
-					});
+					if (pendingTask.attemptsRemaining === 1) {
+						await prisma.taskQueue.update({
+							where: {
+								id: pendingTask.id,
+							},
+							data: {
+								status: TASK_STATUS.ERROR,
+								attemptsRemaining: pendingTask.attemptsRemaining - 1,
+							},
+						});
+					} else {
+						await prisma.taskQueue.update({
+							where: {
+								id: pendingTask.id,
+							},
+							data: {
+								attemptsRemaining: pendingTask.attemptsRemaining - 1,
+							},
+						});
+					}
 
 					this._isRunning = false;
 
