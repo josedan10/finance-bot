@@ -182,12 +182,18 @@ export class InstagramScraper extends Scraper {
 			await this.takeScreenshot('monitor-dolar-post');
 
 			const descriptionText = await this.page.$eval(this.postDescriptionSelector, (el) => el.innerText);
+
+			if (!descriptionText) {
+				throw new Error('Description text not found');
+			}
+
 			return {
 				date: extractDateFromDescription(descriptionText),
 				price: extractPriceFromInstagramDescription(descriptionText),
 			};
 		} catch (error) {
 			console.log('Error getting latest price', error);
+			throw error;
 		}
 	}
 }
