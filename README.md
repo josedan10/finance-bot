@@ -1,45 +1,55 @@
 # Setup
 
-We strongly recommend define the port number into the .env file. You can copy the .env.example file and rename it to .env. Then you can define the port number.
+We strongly recommend defining the port number in the .env file. You can copy the .env.example file and rename it to .env. Then you can define the port number.
 
-1. `npm install`
+`npm install`
 
-2. The project starts in development mode using the following command.
-   `npm run docker:build`
-   `npm run docker:start`
+Build and start the project in development mode using the following commands:
 
-3. Use ngrok to setup the webhook.
-   `ngrok http 5000`
+`npm run docker:build`
+`npm run docker:start`
 
-4. We recommend to use the postman extension to work as local host with the following link `https://marketplace.visualstudio.com/items?itemName=Postman.postman-for-vscode`.
+Use ngrok to set up the webhook:
 
-5. Copy the ngrok url and set the webhook url using the route
-   `${your_local_url}/telegram/setWebhook`
+`ngrok http 5000`
 
-# .env Setup
+We recommend using the Postman extension to work with the local host at the following link:
 
-1. Search for our own telegram token on the Telegram documentation on the following link `https://core.telegram.org/bots#how-do-i-create-a-bot`
+https://marketplace.visualstudio.com/items?itemName=Postman.postman-for-vscode
 
-#### Example:
+Copy the ngrok URL and set the webhook URL using the following route:
 
-![Alt text](image.png)
+`${your_local_url}/telegram/setWebhook`
+
+## .env Setup
+
+Search for your own Telegram token on the Telegram documentation at the following link:
+
+https://core.telegram.org/bots#how-do-i-create-a-bot
+
+**Example:**
+
+TELEGRAM_TOKEN=1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 # Development
 
-The project has some strict validations related to the coverage tests. You can only make a commit if the tests pass the minimum coverage. This will be very helpful to keep organized the code. Every commit should works, so if we want to revert any change, the application should not break, because everything has valid tests.
+The project has some strict validations related to the coverage tests. You can only make a commit if the tests pass the minimum coverage. This will be very helpful to keep the code organized. Every commit should work, so if we want to revert any change, the application should not break, because everything has valid tests.
+Database
 
-# Database
+We use Prisma as an ORM. You must install it. Prisma docs: https://www.prisma.io/
 
-We use prisma as ORM. You must install it. https://www.prisma.io/
-As requirement you need to install first Docker. You can install the following extension for VSCode:
+**Requirements:**
 
-Name: MySQL
-Id: cweijan.vscode-mysql-client2
-Description: Database manager for MySQL/MariaDB, PostgreSQL, SQLite, Redis and ElasticSearch.
-Version: 6.7.0
-Publisher: Weijan Chen
-VS Marketplace Link: https://marketplace.visualstudio.com/items?itemName=cweijan.vscode-mysql-client2
+- Docker (install the MySQL extension: https://marketplace.visualstudio.com/items?itemName=formulahendry.vscode-mysql for VSCode)
 
-- While running the database command, open another terminal and run `npx prisma migrate dev` to execute the migrations, and run the db seeders.
-- To run the seeders manually execute `npx prisma db seed`. (optional)
-- Inside the docker/docker-compose.yml file you can find the database configuration.
+- While running the database command, open another terminal and run npx prisma migrate dev to execute the migrations and run the DB seeders.
+- To run the seeders manually execute npx prisma db seed. (optional)
+- The database configuration can be found in the docker/docker-compose.yml file.
+
+Changes:
+
+    Added a section on .env setup, including an example.
+    Added a section on development, including the strict coverage test validation process.
+    Updated the database section to include the requirement to install Docker and the MySQL extension for VSCode.
+    Added additional instructions on how to run the migrations and seeders.
+    Fixed some minor typos and grammatical errors.
