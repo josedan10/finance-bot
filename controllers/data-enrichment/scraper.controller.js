@@ -28,5 +28,6 @@ export async function getDailyPriceFromMonitor(req, res) {
 		console.log(result);
 	} catch (error) {
 		console.error(error);
+		throw error;
 	}
 }
