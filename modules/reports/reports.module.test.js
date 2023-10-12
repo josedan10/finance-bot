@@ -1,8 +1,38 @@
+import Sinon from 'sinon';
 import { Reports } from './reports.module.js';
+import prisma from '../database/database.module.js';
 
 describe('ReportsModule: ', () => {
 	test('should return monthly report for a given month date', async () => {
 		const monthDate = '01';
+
+		prisma.$queryRaw = Sinon.stub().resolves([
+			{
+				category: 'TRANSPORT',
+				total_debits: 535.08,
+				total_credits: 173.06,
+				category_balance: 362.02,
+			},
+			{
+				category: 'FOOD/HOME',
+				total_debits: 291.83,
+				total_credits: 0,
+				category_balance: 291.83,
+			},
+			{
+				category: 'ENTERTAIMENT',
+				total_debits: 19.99,
+				total_credits: 0,
+				category_balance: 19.99,
+			},
+			{
+				category: 'EXCHANGE',
+				total_debits: 92,
+				total_credits: 0,
+				category_balance: 92,
+			},
+		]);
+
 		const report = await Reports.getMonthlyReport(monthDate);
 
 		expect(report).toBeDefined();
