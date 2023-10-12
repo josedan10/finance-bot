@@ -86,6 +86,7 @@ export class TaskQueueModule {
 						await prisma.taskQueue.update({
 							where: {
 								id: pendingTask.id,
+								status: TASK_STATUS.PENDING,
 							},
 							data: {
 								attemptsRemaining: pendingTask.attemptsRemaining - 1,

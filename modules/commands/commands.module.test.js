@@ -2,8 +2,11 @@ import { faker } from '@faker-js/faker';
 import dayjs from 'dayjs';
 import commandsModule from './commands.module.js';
 import Sinon from 'sinon';
-import { ManualTransaction } from '../manual-transactions/index.js';
 import { expect } from '@jest/globals';
+import { ManualTransaction } from '../manual-transactions/index.js';
+import { MercantilPanama } from '../mercantil-panama/index.js';
+import { PayPal } from '../paypal/paypal.module.js';
+import { Reports } from '../reports/reports.module.js';
 
 describe('>> Commands Module: ', function () {
 	test('Commands initialized', () => {
@@ -20,8 +23,42 @@ describe('>> Commands Module: ', function () {
 	});
 
 	test('Execute monthlyReport command', async () => {
+		const categoriesData = [
+			{
+				category: 'TRANSPORT',
+				total_debits: 535.08,
+				total_credits: 173.06,
+				category_balance: 362.02,
+			},
+			{
+				category: 'FOOD/HOME',
+				total_debits: 291.83,
+				total_credits: 0,
+				category_balance: 291.83,
+			},
+			{
+				category: 'ENTERTAIMENT',
+				total_debits: 19.99,
+				total_credits: 0,
+				category_balance: 19.99,
+			},
+			{
+				category: 'EXCHANGE',
+				total_debits: 92,
+				total_credits: 0,
+				category_balance: 92,
+			},
+		];
+
+		const outputData = `Credits: 173.06
+Debits: 938.9000000000001`;
+
+		Reports.getMonthlyReport = Sinon.stub().resolves(categoriesData);
+
 		const data = await commandsModule.executeCommand('monthlyReport', '01');
+		Sinon.assert.calledOnce(Reports.getMonthlyReport);
 		expect(data).toBeDefined();
+		expect(data).toMatch(outputData);
 	});
 
 	test('Execute cashTransaction command', async () => {
@@ -40,12 +77,16 @@ describe('>> Commands Module: ', function () {
 	});
 
 	test('Execute mercantil command', async () => {
+		MercantilPanama.registerMercantilTransactionsFromCSVData = Sinon.stub().resolves({});
 		const exampleCSVData = `"Mercantil Banco, Sistema de Banca por Internet",,,,
-  Fecha,Descripción,No. de Referencia,Débito,Crédito
-  03/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/385571/TEST        0 021,385571,,5.09
-  01/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/386352/TEST        0 021,386352,2.08,
-  02/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/391248/TEST        0 021,391248,4.63,`;
+		Fecha,Descripción,No. de Referencia,Débito,Crédito
+		03/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/385571/TEST        0 021,385571,,5.09
+		01/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/386352/TEST        0 021,386352,2.08,
+		02/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/391248/TEST        0 021,391248,4.63,`;
 		const data = await commandsModule.executeCommand('mercantil', exampleCSVData);
+		Sinon.assert.calledOnce(ManualTransaction.registerManualTransaction);
+
+		expect(data).toBe('Mercantil transactions registered');
 		expect(data).toBeDefined();
 	});
 
@@ -57,6 +98,8 @@ describe('>> Commands Module: ', function () {
 			const time = dayjs(dateForTest).format('HH:mm:ss');
 			return { date, time };
 		};
+
+		PayPal.registerPaypalDataFromCSVData = Sinon.stub().resolves({});
 
 		const dateTime1 = generateDateAndTime();
 		const dateTime2 = generateDateAndTime();
@@ -70,6 +113,9 @@ describe('>> Commands Module: ', function () {
 		${dateTime4.date},${dateTime4.time},PDT,,TEST ,Completado,USD,"-1.320,00","0,00","-1.320,00",josedanq100@gmail.com,,54E08306FN9278418,,,,,,,,,,,,,,,,,"16,92",,,,,,,,,,,Cargo`;
 
 		const data = await commandsModule.executeCommand('paypal', csvData);
+
+		Sinon.assert.calledOnce(PayPal.registerPaypalDataFromCSVData);
 		expect(data).toBeDefined();
+		expect(data).toBe('Paypal transactions registered');
 	});
 });
