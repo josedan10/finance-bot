@@ -12,7 +12,7 @@ export class TaskQueueModule {
 		timezone: 'America/Caracas',
 	});
 
-	createTheDailyUpdateMonitorTask = cron.schedule('0 7 * * 1-5', this._createDailyMonitorTask.bind(this), {
+	createTheDailyUpdateMonitorTask = cron.schedule('0 10 * * 1-5', this._createDailyMonitorTask.bind(this), {
 		timezone: 'America/Caracas',
 		scheduled: true,
 	});
