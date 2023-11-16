@@ -89,8 +89,6 @@ export class TaskQueueModule {
 					console.log('Error executing task, updating task queue...');
 					console.error(error);
 
-					console.log(pendingTask);
-
 					if (pendingTask.attemptsRemaining === 1) {
 						await prisma.taskQueue.update({
 							where: {
