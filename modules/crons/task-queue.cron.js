@@ -7,14 +7,14 @@ import prisma from '../database/database.module.js';
 // https://medium.com/@kevinstonge/testing-scheduled-node-cron-tasks-6a808be30acd
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
 
-// const dailyUpdateMonitorTaskCronExpression = '0 * * * 1-5';
-// const createDailyUpdateMonitorTaskCronExpression = '0 10 * * 1-5';
+const dailyUpdateMonitorTaskCronExpression = '0 * * * 1-5';
+const createDailyUpdateMonitorTaskCronExpression = '0 10 * * 1-5';
 
 // run every 30 seconds
-const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
+// const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
 
 // run every 30 minutes
-const createDailyUpdateMonitorTaskCronExpression = '0 */30 * * * *';
+// const createDailyUpdateMonitorTaskCronExpression = '0 */30 * * * *';
 
 export class TaskQueueModule {
 	startDailyUpdateMonitor = cron.schedule(
