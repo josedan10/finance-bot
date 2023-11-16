@@ -7,15 +7,32 @@ import prisma from '../database/database.module.js';
 // https://medium.com/@kevinstonge/testing-scheduled-node-cron-tasks-6a808be30acd
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
 
-export class TaskQueueModule {
-	startDailyUpdateMonitor = cron.schedule('0 * * * 1-5', this._checkDailyUpdateMonitorFunction.bind(this), {
-		timezone: 'America/Caracas',
-	});
+// const dailyUpdateMonitorTaskCronExpression = '0 * * * 1-5';
+// const createDailyUpdateMonitorTaskCronExpression = '0 10 * * 1-5';
 
-	createTheDailyUpdateMonitorTask = cron.schedule('0 10 * * 1-5', this._createDailyMonitorTask.bind(this), {
-		timezone: 'America/Caracas',
-		scheduled: true,
-	});
+// run every 30 seconds
+const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
+
+// run every 30 minutes
+const createDailyUpdateMonitorTaskCronExpression = '0 */30 * * * *';
+
+export class TaskQueueModule {
+	startDailyUpdateMonitor = cron.schedule(
+		dailyUpdateMonitorTaskCronExpression,
+		this._checkDailyUpdateMonitorFunction.bind(this),
+		{
+			timezone: 'America/Caracas',
+		}
+	);
+
+	createTheDailyUpdateMonitorTask = cron.schedule(
+		createDailyUpdateMonitorTaskCronExpression,
+		this._createDailyMonitorTask.bind(this),
+		{
+			timezone: 'America/Caracas',
+			scheduled: true,
+		}
+	);
 
 	start() {
 		this._isRunning = false;
@@ -72,6 +89,8 @@ export class TaskQueueModule {
 					console.log('Error executing task, updating task queue...');
 					console.error(error);
 
+					console.log(pendingTask);
+
 					if (pendingTask.attemptsRemaining === 1) {
 						await prisma.taskQueue.update({
 							where: {
@@ -83,12 +102,13 @@ export class TaskQueueModule {
 							},
 						});
 					} else {
+						console.log('Task failed, updating task queue and setting up to pending...');
 						await prisma.taskQueue.update({
 							where: {
 								id: pendingTask.id,
-								status: TASK_STATUS.PENDING,
 							},
 							data: {
+								status: TASK_STATUS.PENDING,
 								attemptsRemaining: pendingTask.attemptsRemaining - 1,
 							},
 						});

@@ -16,3 +16,6 @@ services:
       - finance-bot-network
     depends_on:
       - mysql-finance-bot
+    volumes:
+      - ../../:/app
+      - /app/node_modules
