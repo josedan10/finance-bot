@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { extractDateFromDescription, extractPriceFromInstagramDescription } from '../../src/helpers/price.helper.js';
+import { randomSleep, sleep } from './scraper.helper.js';
 
 dotenv.config();
 const cookieName = `./cookies-scraper.json`;
@@ -48,7 +49,7 @@ export class Scraper {
 	}
 
 	async takeScreenshot(name) {
-		if (process.env.APP_MODE === 'development') {
+		if (Number(process.env.SAVE_SCREENSHOTS)) {
 			try {
 				await mkdir('./screenshots', { recursive: true });
 
@@ -101,6 +102,14 @@ export class Scraper {
 			console.log('There was an error resetting puppeteer', err);
 		}
 	}
+
+	async getCurrentUrl() {
+		try {
+			return this.page.url();
+		} catch (err) {
+			console.log('There was an error getting the current url', err);
+		}
+	}
 }
 
 export class CookiesGenerator {
@@ -110,7 +119,7 @@ export class CookiesGenerator {
 
 		console.log('Generating cookies for', scraper.username);
 
-		const page = await scraper.browser.newPage();
+		const page = await scraper.page;
 
 		await page.goto('https://www.instagram.com', { waitUntil: 'networkidle2' });
 		await page.type('[name="username"]', scraper.username, { delay: 30 });
@@ -118,12 +127,33 @@ export class CookiesGenerator {
 
 		scraper.takeScreenshot('login');
 		await page.click('button[type="submit"]');
-		await page.waitForNavigation({ waitUntil: 'networkidle0' });
+		scraper.takeScreenshot('login-submit');
+
+		await page.waitForNavigation({ waitUntil: 'networkidle2' });
+		randomSleep(2000);
+
+		const url = await page.url();
+
+		console.log('Current URL', url);
+
+		if (url.includes('accounts/onetap')) {
+			console.log('Saving Browser Information...');
+			await scraper.takeScreenshot('save-browser-info');
+			// Click on "Save info" button
+
+			// Button classes: "_acan _acap _acas _aj1- _ap30"
+			const buttonSelector = 'button._acan._acap._acas._aj1-._ap30';
+			await page.waitForSelector(buttonSelector);
+			await page.click(buttonSelector);
+
+			await page.waitForNavigation({ waitUntil: 'networkidle2' });
+		}
 
 		try {
 			// replace with setTimeout
-			await new Promise((resolve) => setTimeout(resolve, 10000));
-
+			console.log('Saving Cookies...');
+			sleep(5000);
+			await scraper.takeScreenshot('save-cookies');
 			await mkdir('./cookies', { recursive: true });
 			const currentCookies = await page.cookies();
 			fs.writeFileSync(`./cookies/${cookieName}`, JSON.stringify(currentCookies), { flag: 'w' });

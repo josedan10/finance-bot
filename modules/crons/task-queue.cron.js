@@ -3,12 +3,22 @@ import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus.js';
 import { getDailyPriceFromMonitor } from '../../controllers/data-enrichment/scraper.controller.js';
 
 import prisma from '../database/database.module.js';
+import { CookiesGenerator } from '../scraper/scraper.module.js';
 
 // https://medium.com/@kevinstonge/testing-scheduled-node-cron-tasks-6a808be30acd
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
 
+// once per hour
 const dailyUpdateMonitorTaskCronExpression = '0 * * * 1-5';
+
+// once per day
 const createDailyUpdateMonitorTaskCronExpression = '0 10 * * 1-5';
+
+// once per week
+const generateCookiesTaskCronExpression = '0 10 * * 1';
+
+// run every minute
+// const generateCookiesTaskCronExpression = '0 */1 * * * *';
 
 // run every 30 seconds
 // const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
@@ -33,6 +43,11 @@ export class TaskQueueModule {
 			scheduled: true,
 		}
 	);
+
+	cookiesGenerationTask = cron.schedule(generateCookiesTaskCronExpression, this._generateCookies.bind(this), {
+		timezone: 'America/Caracas',
+		scheduled: true,
+	});
 
 	start() {
 		this._isRunning = false;
@@ -134,6 +149,15 @@ export class TaskQueueModule {
 			}
 		} catch (error) {
 			console.log('Error checking daily update monitor function', error);
+		}
+	}
+
+	async _generateCookies() {
+		try {
+			console.log('Generating cookies...');
+			await CookiesGenerator.generateCookies();
+		} catch (error) {
+			console.log('Error generating cookies', error);
 		}
 	}
 }
