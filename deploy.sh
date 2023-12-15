@@ -31,7 +31,7 @@ fi
 
 # Run the Prisma migration
 echo "Running Prisma migration..."
-docker-compose exec express-api-bot npx prisma migrate dev
+docker compose exec express-api-bot npx prisma migrate dev
 
 # Print the deployment status
 echo "Deployment successful!"
