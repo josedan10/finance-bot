@@ -16,11 +16,13 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install --production --ignore-scripts
+RUN npm install --omit=dev --ignore-scripts
 
 COPY . .
 # COPY prisma/schema.prisma ./prisma
 RUN npx prisma generate
+
+RUN node node_modules/puppeteer/install.js
 
 # RUN npx prisma migrate dev
 
