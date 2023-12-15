@@ -7,4 +7,5 @@ export const TASK_STATUS = {
 
 export const TASK_TYPE = {
 	DAILY_UPDATE_MONITOR: 'daily_update_monitor',
+	GENERATE_COOKIES: 'generate_cookies',
 };

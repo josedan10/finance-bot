@@ -2,12 +2,9 @@ import prisma from '../../modules/database/database.module.js';
 import { InstagramScraper } from '../../modules/scraper/scraper.module.js';
 import Dayjs from 'dayjs';
 
-export async function getDailyPriceFromMonitor(req, res) {
+export async function getDailyPriceFromMonitor(taskId) {
 	try {
-		if (res) {
-			res?.send('Starting scraping process...');
-		}
-		const scraper = new InstagramScraper();
+		const scraper = new InstagramScraper(taskId);
 		const { price, date } = await scraper.getLatestPriceFromPost();
 		const [day, month, year] = date.split('/');
 		const postDate = Dayjs(`${month}/${day}/${year}`).format('YYYY-MM-DD');

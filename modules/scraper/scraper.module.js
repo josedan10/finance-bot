@@ -10,7 +10,7 @@ dotenv.config();
 const cookieName = `./cookies-scraper.json`;
 
 export class Scraper {
-	constructor() {
+	constructor(taskId) {
 		this.username = process.env.IG_USERNAME;
 		this.password = process.env.IG_PASSWORD;
 		this.targetURL = 'https://www.instagram.com/monitordolar3/';
@@ -19,6 +19,7 @@ export class Scraper {
 		this.page = null;
 		this.url = 'https://www.instagram.com/';
 		this.responseTimeout = 30000;
+		this.taskId = taskId;
 	}
 
 	async start() {
@@ -51,10 +52,10 @@ export class Scraper {
 	async takeScreenshot(name) {
 		if (Number(process.env.SAVE_SCREENSHOTS)) {
 			try {
-				await mkdir('./screenshots', { recursive: true });
+				await mkdir(`./screenshots/${this.taskId}`, { recursive: true });
 
 				await this.page.screenshot({
-					path: `./screenshots/${name}-${Date.now().valueOf()}.png`,
+					path: `./screenshots/${this.taskId}/${name}-${Date.now().valueOf()}.png`,
 					fullPage: true,
 					type: 'png',
 				});
@@ -113,8 +114,8 @@ export class Scraper {
 }
 
 export class CookiesGenerator {
-	static async generateCookies() {
-		const scraper = new Scraper();
+	static async generateCookies(taskId) {
+		const scraper = new Scraper(taskId);
 		await scraper.start();
 
 		console.log('Generating cookies for', scraper.username);
@@ -133,8 +134,6 @@ export class CookiesGenerator {
 		randomSleep(2000);
 
 		const url = await page.url();
-
-		console.log('Current URL', url);
 
 		if (url.includes('accounts/onetap')) {
 			console.log('Saving Browser Information...');
@@ -157,14 +156,14 @@ export class CookiesGenerator {
 			await mkdir('./cookies', { recursive: true });
 			const currentCookies = await page.cookies();
 			fs.writeFileSync(`./cookies/${cookieName}`, JSON.stringify(currentCookies), { flag: 'w' });
+			console.log('Saved Cookies');
 		} catch (err) {
-			console.log('Failed to login');
+			console.log('Failed to Save Cookies');
+			throw err;
+		} finally {
+			await page.close();
+			await scraper.browser.close();
 		}
-
-		await page.close();
-		await scraper.browser.close();
-
-		console.log('Saved Cookies');
 	}
 
 	static async getCookies() {
