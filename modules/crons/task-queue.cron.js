@@ -146,7 +146,7 @@ export class TaskQueueModule {
 				});
 
 				try {
-					await getDailyPriceFromMonitor();
+					await getDailyPriceFromMonitor(pendingTask.id);
 				} catch (error) {
 					console.log('Error executing task, updating task queue...');
 					console.error(error);
@@ -202,10 +202,9 @@ export class TaskQueueModule {
 			// Send screenshots
 			console.log('Sending screenshots...');
 			const screenshots = getScreenshotsByTaskId(pendingTask.id);
-			console.log(screenshots);
-			// for (const screenshot of screenshots) {
-			// 	await TelegramModule.sendImage(screenshot.path, screenshot.caption, process.env.TEST_CHAT_ID);
-			// }
+			for (const screenshot of screenshots) {
+				await TelegramModule.sendImage(screenshot.path, screenshot.caption, process.env.TEST_CHAT_ID);
+			}
 		} finally {
 			this._isRunningDailyTask = false;
 		}

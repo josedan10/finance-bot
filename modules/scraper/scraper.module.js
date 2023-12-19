@@ -205,7 +205,13 @@ export class InstagramScraper extends Scraper {
 			await this.savePageAsHTML('monitor-dolar');
 
 			console.log('Getting post data');
-			await this.page.click(this.postClassSelector);
+			try {
+				await this.page.click(this.postClassSelector);
+			} catch (error) {
+				console.log('Error clicking on post', error);
+				await this.takeScreenshot('monitor-dolar-post-error');
+				throw error;
+			}
 			await new Promise((resolve) => setTimeout(resolve, this.responseTimeout));
 			console.log('Post data loaded');
 			await this.takeScreenshot('monitor-dolar-post');
