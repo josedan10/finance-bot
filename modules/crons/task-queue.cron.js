@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import fs from 'fs/promises';
 import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus.js';
 import { getDailyPriceFromMonitor } from '../../controllers/data-enrichment/scraper.controller.js';
 
@@ -26,7 +27,7 @@ const createCookiesTaskCronExpression = '0 09 * * 1';
 // const createCookiesTaskCronExpression = '0 */1 * * * *';
 
 // run every 30 seconds
-// const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
+// const every30Secs = '*/30 * * * * *';
 
 // run every 30 minutes
 // const createDailyUpdateMonitorTaskCronExpression = '0 */30 * * * *';
@@ -63,6 +64,15 @@ export class TaskQueueModule {
 		}
 	);
 
+	deleteImagesFolderOlderThan5Days = cron.schedule(
+		createCookiesTaskCronExpression,
+		this._deleteImagesFolderOlderThan5Days.bind(this),
+		{
+			timezone: 'America/Caracas',
+			scheduled: true,
+		}
+	);
+
 	start() {
 		this._isRunningDailyTask = false;
 		this._isRunningCookiesTask = false;
@@ -72,6 +82,7 @@ export class TaskQueueModule {
 		this.startDailyUpdateMonitor.start();
 		this.createTheDailyUpdateMonitorTask.start();
 		this.cookiesGenerationTask.start();
+		this.deleteImagesFolderOlderThan5Days.start();
 	}
 
 	async _createDailyMonitorTask() {
@@ -250,6 +261,35 @@ export class TaskQueueModule {
 			}
 		} finally {
 			this._isRunningCookiesTask = false;
+		}
+	}
+
+	async _deleteImagesFolderOlderThan5Days() {
+		try {
+			console.log('Deleting images and folders older than 5 days...');
+			const fiveDaysAgo = new Date();
+			fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+
+			// Read files and folders inside screenshots folder
+			const items = await fs.readdir('./screenshots', { withFileTypes: true });
+
+			// Filter and delete images and older folders
+			for (const item of items) {
+				const itemPath = `./screenshots/${item.name}`;
+
+				if (item.isDirectory()) {
+					// Delete older folders
+					const folderDate = new Date(item.birthtimeMs);
+					if (folderDate < fiveDaysAgo) {
+						await fs.rm(itemPath, { recursive: true });
+					}
+				} else {
+					// Delete images
+					await fs.rm(itemPath);
+				}
+			}
+		} catch (error) {
+			console.log('Error deleting images and folders older than 5 days', error);
 		}
 	}
 }
