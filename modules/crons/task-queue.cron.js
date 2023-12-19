@@ -147,6 +147,16 @@ export class TaskQueueModule {
 
 				try {
 					await getDailyPriceFromMonitor(pendingTask.id);
+					await prisma.taskQueue.update({
+						where: {
+							id: pendingTask.id,
+						},
+						data: {
+							status: TASK_STATUS.COMPLETED,
+						},
+					});
+
+					console.log('Task executed successfully, updating task queue...');
 				} catch (error) {
 					console.log('Error executing task, updating task queue...');
 					console.error(error);
@@ -174,8 +184,6 @@ export class TaskQueueModule {
 						});
 					}
 
-					this._isRunningDailyTask = false;
-
 					await TelegramModule.sendMessage(
 						`Error checking daily update monitor function: ${error.message}`,
 						process.env.TEST_CHAT_ID
@@ -187,20 +195,7 @@ export class TaskQueueModule {
 					for (const screenshot of screenshots) {
 						await TelegramModule.sendImage(screenshot.path, screenshot.caption, process.env.TEST_CHAT_ID);
 					}
-
-					return;
 				}
-
-				await prisma.taskQueue.update({
-					where: {
-						id: pendingTask.id,
-					},
-					data: {
-						status: TASK_STATUS.COMPLETED,
-					},
-				});
-
-				console.log('Task executed successfully, updating task queue...');
 			} else {
 				console.log('No pending task found, skipping...');
 			}
