@@ -176,6 +176,18 @@ export class TaskQueueModule {
 
 					this._isRunningDailyTask = false;
 
+					await TelegramModule.sendMessage(
+						`Error checking daily update monitor function: ${error.message}`,
+						process.env.TEST_CHAT_ID
+					);
+
+					// Send screenshots
+					console.log('Sending screenshots...');
+					const screenshots = getScreenshotsByTaskId(pendingTask.id);
+					for (const screenshot of screenshots) {
+						await TelegramModule.sendImage(screenshot.path, screenshot.caption, process.env.TEST_CHAT_ID);
+					}
+
 					return;
 				}
 
@@ -194,17 +206,6 @@ export class TaskQueueModule {
 			}
 		} catch (error) {
 			console.log('Error checking daily update monitor function', error);
-			await TelegramModule.sendMessage(
-				`Error checking daily update monitor function: ${error.message}`,
-				process.env.TEST_CHAT_ID
-			);
-
-			// Send screenshots
-			console.log('Sending screenshots...');
-			const screenshots = getScreenshotsByTaskId(pendingTask.id);
-			for (const screenshot of screenshots) {
-				await TelegramModule.sendImage(screenshot.path, screenshot.caption, process.env.TEST_CHAT_ID);
-			}
 		} finally {
 			this._isRunningDailyTask = false;
 		}
