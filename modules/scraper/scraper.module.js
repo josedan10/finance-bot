@@ -208,7 +208,7 @@ export class InstagramScraper extends Scraper {
 
 			if (loginInputExists) {
 				console.log('Login input exists, cookies are invalid');
-				await CookiesGenerator.generateCookies();
+				await CookiesGenerator.generateCookies(this.taskId);
 				cookies = await CookiesGenerator.getCookies();
 				await this.page.setCookie(...cookies);
 				await this.page.goto(this.targetURL, { waitUntil: 'networkidle2' });
