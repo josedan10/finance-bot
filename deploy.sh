@@ -35,3 +35,8 @@ npm run docker:migrations
 
 # Print the deployment status
 echo "Deployment successful!"
+
+echo "Cleaning docker system"
+docker system prune
+
+echo "Done!"
