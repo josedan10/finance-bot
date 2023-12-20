@@ -12,7 +12,7 @@ import { getScreenshotsByTaskId } from '../scraper/scraper.helper.js';
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
 
 // once per hour
-const dailyUpdateMonitorTaskCronExpression = '0 * * * 1-5';
+// const dailyUpdateMonitorTaskCronExpression = '0 * * * 1-5';
 
 // once per day
 const createDailyUpdateMonitorTaskCronExpression = '0 10 * * 1-5';
@@ -27,7 +27,7 @@ const createCookiesTaskCronExpression = '0 09 * * 1';
 // const createCookiesTaskCronExpression = '0 */1 * * * *';
 
 // run every 30 seconds
-// const every30Secs = '*/30 * * * * *';
+const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
 
 // run every 30 minutes
 // const createDailyUpdateMonitorTaskCronExpression = '0 */30 * * * *';
