@@ -24,10 +24,10 @@ const createCookiesTaskCronExpression = '0 09 * * 1';
 // TEST CRON EXPRESSIONS
 // run every minute
 // const generateCookiesTaskCronExpression = '0 */2 * * * *';
-// const createCookiesTaskCronExpression = '0 */1 * * * *';
+const dailyUpdateMonitorTaskCronExpression = '0 */1 * * * *';
 
 // run every 30 seconds
-const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
+// const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
 
 // run every 30 minutes
 // const createDailyUpdateMonitorTaskCronExpression = '0 */30 * * * *';
