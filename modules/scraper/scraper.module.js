@@ -204,6 +204,19 @@ export class InstagramScraper extends Scraper {
 			await this.takeScreenshot('monitor-dolar');
 			await this.savePageAsHTML('monitor-dolar');
 
+			const loginInputExists = await this.page.$('input[name="username"]');
+
+			if (loginInputExists) {
+				console.log('Login input exists, cookies are invalid');
+				await CookiesGenerator.generateCookies();
+				cookies = await CookiesGenerator.getCookies();
+				await this.page.setCookie(...cookies);
+				await this.page.goto(this.targetURL, { waitUntil: 'networkidle2' });
+				await new Promise((resolve) => setTimeout(resolve, this.responseTimeout));
+				await this.takeScreenshot('monitor-dolar');
+				await this.savePageAsHTML('monitor-dolar');
+			}
+
 			console.log('Getting post data');
 			try {
 				await this.page.click(this.postClassSelector);
