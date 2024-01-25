@@ -245,3 +245,44 @@ export class InstagramScraper extends Scraper {
 		}
 	}
 }
+
+export class ExchangeMonitorScraper extends Scraper {
+	monitorContainerId = '2';
+	bcvContainerId = '5';
+	boxPriceSelector = '.precio';
+	exchangeUrl = 'https://www.exchangemonitor.net/dolar-venezuela';
+
+	async getPrice() {
+		try {
+			await this.start();
+			await this.page.goto(this.exchangeUrl, { waitUntil: 'networkidle2' });
+			await new Promise((resolve) => setTimeout(resolve, this.responseTimeout));
+			await this.takeScreenshot('exchange-monitor');
+			await this.savePageAsHTML('exchange-monitor');
+
+			const monitorPrice = await this.page.evaluate((monitorContainerId) => {
+				const monitorContainer = document.getElementById(monitorContainerId);
+				const priceElement = monitorContainer.querySelector('.precio');
+				return priceElement.innerText;
+			}, this.monitorContainerId);
+
+			const bcvPrice = await this.page.evaluate((bcvContainerId) => {
+				const bcvContainer = document.getElementById(bcvContainerId);
+				const priceElement = bcvContainer.querySelector('.precio');
+				return priceElement.innerText;
+			}, this.bcvContainerId);
+
+			if (!monitorPrice || !bcvPrice) {
+				throw new Error('Prices not found');
+			}
+
+			return {
+				monitorPrice: monitorPrice,
+				bcvPrice: bcvPrice,
+			};
+		} catch (error) {
+			console.log('Error getting latest price', error);
+			throw error;
+		}
+	}
+}

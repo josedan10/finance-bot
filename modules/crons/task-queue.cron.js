@@ -1,10 +1,9 @@
 import cron from 'node-cron';
 import fs from 'fs/promises';
 import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus.js';
-import { getDailyPriceFromMonitor } from '../../controllers/data-enrichment/scraper.controller.js';
 
 import prisma from '../database/database.module.js';
-import { CookiesGenerator } from '../scraper/scraper.module.js';
+import { ExchangeMonitorScraper } from '../scraper/scraper.module.js';
 import TelegramModule from '../telegram/telegram.module.js';
 import { getScreenshotsByTaskId } from '../scraper/scraper.helper.js';
 
@@ -12,61 +11,45 @@ import { getScreenshotsByTaskId } from '../scraper/scraper.helper.js';
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
 
 // once per hour
-const dailyUpdateMonitorTaskCronExpression = '0 * * * 1-5';
+const dailyUpdateExchangeRateTaskCronExpression = '0 * * * 1-5';
 
 // once per day
-const createDailyUpdateMonitorTaskCronExpression = '0 10 * * 1-5';
+const createDailyTaskCronExpression = '0 10 * * 1-5';
 
 // once per week
-const generateCookiesTaskCronExpression = '0 10 * * 1';
-const createCookiesTaskCronExpression = '0 09 * * 1';
+const deleteImagesOlderCronExpression = '0 09 * * 1';
 
 // TEST CRON EXPRESSIONS
 // run every minute
-// const generateCookiesTaskCronExpression = '0 */2 * * * *';
-// const dailyUpdateMonitorTaskCronExpression = '0 */1 * * * *';
+// const dailyUpdateExchangeRateTaskCronExpression = '0 */1 * * * *';
 
 // run every 30 seconds
-// const dailyUpdateMonitorTaskCronExpression = '*/30 * * * * *';
+// const dailyUpdateExchangeRateTaskCronExpression = '*/30 * * * * *';
 
 // run every 30 minutes
-// const createDailyUpdateMonitorTaskCronExpression = '0 */30 * * * *';
+// const createDailyTaskCronExpression = '0 */30 * * * *';
 
 export class TaskQueueModule {
-	startDailyUpdateMonitor = cron.schedule(
-		dailyUpdateMonitorTaskCronExpression,
-		this._checkDailyUpdateMonitorFunction.bind(this),
-		{
-			timezone: 'America/Caracas',
-		}
-	);
-
-	createTheDailyUpdateMonitorTask = cron.schedule(
-		createDailyUpdateMonitorTaskCronExpression,
-		this._createDailyMonitorTask.bind(this),
-		{
-			timezone: 'America/Caracas',
-			scheduled: true,
-		}
-	);
-
-	cookiesGenerationTask = cron.schedule(generateCookiesTaskCronExpression, this._generateCookies.bind(this), {
-		timezone: 'America/Caracas',
-		scheduled: true,
-	});
-
-	createGenerateCookiesTask = cron.schedule(
-		createCookiesTaskCronExpression,
-		this._createCookiesGenerationTask.bind(this),
-		{
-			timezone: 'America/Caracas',
-			scheduled: true,
-		}
-	);
-
 	deleteImagesFolderOlderThan5Days = cron.schedule(
-		createCookiesTaskCronExpression,
+		deleteImagesOlderCronExpression,
 		this._deleteImagesFolderOlderThan5Days.bind(this),
+		{
+			timezone: 'America/Caracas',
+			scheduled: true,
+		}
+	);
+
+	startDailyExchangeRateMonitor = cron.schedule(
+		dailyUpdateExchangeRateTaskCronExpression,
+		this._updateDailyExchangeRateFunction.bind(this),
+		{
+			timezone: 'America/Caracas',
+		}
+	);
+
+	createDailyExchangeRateTask = cron.schedule(
+		createDailyTaskCronExpression,
+		this._createDailyExchangeRateTask.bind(this),
 		{
 			timezone: 'America/Caracas',
 			scheduled: true,
@@ -79,188 +62,101 @@ export class TaskQueueModule {
 
 		console.log('Starting task queue module...');
 
-		this.startDailyUpdateMonitor.start();
-		this.createTheDailyUpdateMonitorTask.start();
-		this.cookiesGenerationTask.start();
+		this.createDailyExchangeRateTask.start();
 		this.deleteImagesFolderOlderThan5Days.start();
 	}
 
-	async _createDailyMonitorTask() {
+	async _createDailyExchangeRateTask() {
 		try {
-			console.log('Creating daily monitor task...');
+			console.log('Creating daily exchange rate task...');
 			await prisma.taskQueue.create({
 				data: {
-					type: TASK_TYPE.DAILY_UPDATE_MONITOR,
+					type: TASK_TYPE.DAILY_UPDATE_EXCHANGE_RATE,
 					status: TASK_STATUS.PENDING,
 					attemptsRemaining: 3,
 					createdBy: 'system',
 				},
 			});
 		} catch (error) {
-			console.log('Error creating daily monitor task', error);
+			console.log('Error creating daily exchange rate task', error);
 		}
 	}
 
-	async _createCookiesGenerationTask() {
+	async _updateDailyExchangeRateFunction() {
+		let getExistingTask;
+		console.log('Running cron job to get daily exchange rate...');
+
 		try {
-			console.log('Creating cookies generation task...');
-
-			const getExistingTask = await prisma.taskQueue.findFirst({
+			getExistingTask = await prisma.taskQueue.findFirst({
 				where: {
-					type: TASK_TYPE.GENERATE_COOKIES,
+					type: TASK_TYPE.DAILY_UPDATE_EXCHANGE_RATE,
 					status: TASK_STATUS.PENDING,
-				},
-			});
-
-			if (getExistingTask) {
-				console.log('Cookies generation task already exists, skipping...');
-				return;
-			}
-
-			await prisma.taskQueue.create({
-				data: {
-					type: TASK_TYPE.GENERATE_COOKIES,
-					status: TASK_STATUS.PENDING,
-					attemptsRemaining: 0,
-					createdBy: 'system',
 				},
 			});
 		} catch (error) {
-			console.log('Error creating cookies generation task', error);
-		}
-	}
-
-	async _checkDailyUpdateMonitorFunction() {
-		let pendingTask;
-
-		try {
-			// Reads the taskqueue table and executes the tasks related to daily price update
-			this._isRunningDailyTask = true;
-			console.log('Running cron job to get daily price...');
-			pendingTask = await prisma.taskQueue.findFirst({
-				where: {
-					status: TASK_STATUS.PENDING,
-					type: TASK_TYPE.DAILY_UPDATE_MONITOR,
-					attemptsRemaining: { gt: 0 },
-				},
-			});
-
-			if (pendingTask) {
-				console.log('Found pending task, executing...');
-				await prisma.taskQueue.update({
-					where: {
-						id: pendingTask.id,
-					},
-					data: {
-						status: TASK_STATUS.IN_PROGRESS,
-					},
-				});
-
-				try {
-					await getDailyPriceFromMonitor(pendingTask.id);
-					await prisma.taskQueue.update({
-						where: {
-							id: pendingTask.id,
-						},
-						data: {
-							status: TASK_STATUS.COMPLETED,
-						},
-					});
-
-					console.log('Task executed successfully, updating task queue...');
-				} catch (error) {
-					console.log('Error executing task, updating task queue...');
-					console.error(error);
-
-					if (pendingTask.attemptsRemaining === 1) {
-						await prisma.taskQueue.update({
-							where: {
-								id: pendingTask.id,
-							},
-							data: {
-								status: TASK_STATUS.ERROR,
-								attemptsRemaining: pendingTask.attemptsRemaining - 1,
-							},
-						});
-					} else {
-						console.log('Task failed, updating task queue and setting up to pending...');
-						await prisma.taskQueue.update({
-							where: {
-								id: pendingTask.id,
-							},
-							data: {
-								status: TASK_STATUS.PENDING,
-								attemptsRemaining: pendingTask.attemptsRemaining - 1,
-							},
-						});
-					}
-
-					await TelegramModule.sendMessage(
-						`Error checking daily update monitor function: ${error.message}`,
-						process.env.TEST_CHAT_ID
-					);
-
-					// Send screenshots
-					console.log('Sending screenshots...');
-					const screenshots = getScreenshotsByTaskId(pendingTask.id);
-					for (const screenshot of screenshots) {
-						await TelegramModule.sendImage(screenshot.path, screenshot.caption, process.env.TEST_CHAT_ID);
-					}
-				}
-			} else {
-				console.log('No pending task found, skipping...');
-			}
-		} catch (error) {
-			console.log('Error checking daily update monitor function', error);
-		} finally {
-			this._isRunningDailyTask = false;
-		}
-	}
-
-	async _generateCookies() {
-		if (this._isRunningCookiesTask) {
-			console.log('Cookies generation task already running, skipping...');
+			console.log('Error getting daily exchange rate task', error);
+			TelegramModule.sendMessage(`Error getting daily exchange rate task. \n\n${error.message}`);
 			return;
 		}
 
-		let pendingTask;
+		const scraper = new ExchangeMonitorScraper(getExistingTask.id);
 
 		try {
-			this._isRunningCookiesTask = true;
+			await scraper.start();
+			const price = await scraper.getPrice();
 
-			pendingTask = await prisma.taskQueue.findFirst({
-				where: {
-					status: TASK_STATUS.PENDING,
-					type: TASK_TYPE.GENERATE_COOKIES,
-				},
-			});
-
-			console.log('Generating cookies...');
-			await CookiesGenerator.generateCookies(pendingTask.id);
 			await prisma.taskQueue.update({
 				where: {
-					id: pendingTask.id,
+					id: getExistingTask.id,
 				},
 				data: {
 					status: TASK_STATUS.COMPLETED,
+					completedAt: new Date(),
 				},
 			});
 
-			console.log('🍪🍪 Cookies generated successfully!');
+			await TelegramModule.sendMessage(
+				`Daily exchange rate completed. \n\nMonitor Rate: ${price.monitorPrice} \nBCV Rate: ${price.bcvPrice}`,
+				process.env.TEST_CHAT_ID
+			);
+			console.log('Cron job to get daily exchange rate completed');
 
-			await TelegramModule.sendMessage('🍪🍪 Cookies generated successfully!', process.env.TEST_CHAT_ID);
+			// Save price on database
+			await prisma.dailyExchangeRate.create({
+				data: {
+					monitorPrice: Number(price.monitorPrice.replace(',', '.')),
+					bcvPrice: Number(price.bcvPrice.replace(',', '.')),
+					date: new Date(),
+				},
+			});
 		} catch (error) {
-			console.log('Error generating cookies', error);
-			await TelegramModule.sendMessage(`🔴 Error generating cookies: ${error.message}`, process.env.TEST_CHAT_ID);
+			console.log('Error checking daily exchange rate function', error);
 
-			// Send screenshots
-			console.log('Sending screenshots...');
-			const screenshots = getScreenshotsByTaskId(pendingTask.id);
+			if (getExistingTask) {
+				await prisma.taskQueue.update({
+					where: {
+						id: getExistingTask.id,
+					},
+					data: {
+						status: TASK_STATUS.ERROR,
+						completedAt: new Date(),
+						attemptsRemaining: getExistingTask.attemptsRemaining - 1,
+					},
+				});
+			}
+
+			await TelegramModule.sendMessage(
+				`Error checking daily exchange rate function. \n\n${error.message}`,
+				process.env.TEST_CHAT_ID
+			);
+
+			const screenshots = await getScreenshotsByTaskId(getExistingTask.id);
+
 			for (const screenshot of screenshots) {
-				await TelegramModule.sendImage(screenshot.path, screenshot.name, process.env.TEST_CHAT_ID);
+				await TelegramModule.sendImage(screenshot, screenshot.caption, process.env.TEST_CHAT_ID);
 			}
 		} finally {
-			this._isRunningCookiesTask = false;
+			await scraper.close();
 		}
 	}
 
