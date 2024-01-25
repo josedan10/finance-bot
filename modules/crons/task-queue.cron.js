@@ -138,8 +138,7 @@ export class TaskQueueModule {
 						id: getExistingTask.id,
 					},
 					data: {
-						status: TASK_STATUS.ERROR,
-						completedAt: new Date(),
+						status: getExistingTask.attemptsRemaining > 0 ? TASK_STATUS.PENDING : TASK_STATUS.ERROR,
 						attemptsRemaining: getExistingTask.attemptsRemaining - 1,
 					},
 				});
