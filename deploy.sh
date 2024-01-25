@@ -6,6 +6,11 @@ if [ "$#" -eq 0 ]; then
   exit 1
 fi
 
+echo "Cleaning docker system"
+docker system prune -f
+echo "Done!"
+
+
 mode=$1
 
 if [ "$mode" == "local" ]; then
@@ -36,8 +41,3 @@ npm run docker:migrations-dev
 
 # Print the deployment status
 echo "Deployment successful!"
-
-echo "Cleaning docker system"
-docker system prune
-
-echo "Done!"
