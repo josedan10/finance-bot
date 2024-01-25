@@ -32,6 +32,7 @@ fi
 # Run the Prisma migration
 echo "Running Prisma migration..."
 npm run docker:migrations
+npm run docker:migrations-dev
 
 # Print the deployment status
 echo "Deployment successful!"
