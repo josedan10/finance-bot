@@ -11,7 +11,7 @@ import { getScreenshotsByTaskId } from '../scraper/scraper.helper.js';
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
 
 // once per hour
-const dailyUpdateExchangeRateTaskCronExpression = '0 * * * 1-5';
+// const dailyUpdateExchangeRateTaskCronExpression = '0 * * * 1-5';
 
 // once per day
 const createDailyTaskCronExpression = '0 10 * * 1-5';
@@ -20,8 +20,8 @@ const createDailyTaskCronExpression = '0 10 * * 1-5';
 const deleteImagesOlderCronExpression = '0 09 * * 1';
 
 // TEST CRON EXPRESSIONS
-// run every minute
-// const dailyUpdateExchangeRateTaskCronExpression = '0 */1 * * * *';
+// run every 10 minutes
+const dailyUpdateExchangeRateTaskCronExpression = '0 */3 * * * *';
 
 // run every 30 seconds
 // const dailyUpdateExchangeRateTaskCronExpression = '*/30 * * * * *';
