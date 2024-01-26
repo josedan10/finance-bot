@@ -102,7 +102,6 @@ export class TaskQueueModule {
 		const scraper = new ExchangeMonitorScraper(getExistingTask.id);
 
 		try {
-			await scraper.start();
 			const price = await scraper.getPrice();
 
 			await prisma.taskQueue.update({
