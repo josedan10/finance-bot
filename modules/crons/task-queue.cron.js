@@ -73,7 +73,6 @@ export class TaskQueueModule {
 				data: {
 					type: TASK_TYPE.DAILY_UPDATE_EXCHANGE_RATE,
 					status: TASK_STATUS.PENDING,
-					attemptsRemaining: 3,
 					createdBy: 'system',
 				},
 			});
@@ -99,7 +98,7 @@ export class TaskQueueModule {
 			return;
 		}
 
-		const scraper = new ExchangeMonitorScraper(getExistingTask.id);
+		const scraper = new ExchangeMonitorScraper(getExistingTask.id, 'https://www.exchangemonitor.net/dolar-venezuela');
 
 		try {
 			const price = await scraper.getPrice();

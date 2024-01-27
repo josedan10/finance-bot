@@ -10,15 +10,15 @@ dotenv.config();
 const cookieName = `./cookies-scraper.json`;
 
 export class Scraper {
-	constructor(taskId) {
+	constructor(taskId, url = 'https://www.instagram.com/') {
 		this.username = process.env.IG_USERNAME;
 		this.password = process.env.IG_PASSWORD;
 		this.targetURL = 'https://www.instagram.com/monitordolar3/';
 		this.browser = null;
 		this.start = this.start.bind(this);
 		this.page = null;
-		this.url = 'https://www.instagram.com/';
-		this.responseTimeout = 30000;
+		this.url = url;
+		this.responseTimeout = 50000;
 		this.taskId = taskId;
 	}
 
@@ -256,7 +256,7 @@ export class ExchangeMonitorScraper extends Scraper {
 		try {
 			await this.start();
 			await this.page.goto(this.exchangeUrl, { waitUntil: 'networkidle2' });
-			await new Promise((resolve) => setTimeout(resolve, this.responseTimeout));
+			await new Promise((resolve) => setTimeout(resolve, 2000));
 			await this.takeScreenshot('exchange-monitor');
 			await this.savePageAsHTML('exchange-monitor');
 
@@ -277,8 +277,8 @@ export class ExchangeMonitorScraper extends Scraper {
 			}
 
 			return {
-				monitorPrice: monitorPrice,
-				bcvPrice: bcvPrice,
+				monitorPrice,
+				bcvPrice,
 			};
 		} catch (error) {
 			console.log('Error getting latest price', error);
