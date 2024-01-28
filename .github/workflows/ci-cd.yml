@@ -6,7 +6,7 @@ on:
       - master
 
 jobs:
-  build-and-deploy:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,22 +16,29 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Set Port for tests
-        run: |
-          echo ${{ vars.PORT }} > .env
-
       - name: Test
         run: npm run test
 
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Deploy
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.DROPLET_IP }}
-          username: ${{ secrets.SSH_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          script: |
+        uses: actions/checkout@v1
+
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY }}"
+
+      - name: Some task that fetches dependencies
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.DROPLET_IP }} << EOF
             cd /var/www/bot.my-finance-app.xyz/
-            ls -la
-            git pull
-            chmod +x ./deploy.sh
+            git pull origin master
             ./deploy.sh production
+          EOF
