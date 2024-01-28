@@ -3,9 +3,6 @@ import Express from 'express';
 import router from './index.js';
 import nock from 'nock';
 import fs from 'fs';
-import prisma from '../../modules/database/database.module.js';
-import Sinon from 'sinon';
-
 const loadJSON = (path) => JSON.parse(fs.readFileSync(new URL(path, import.meta.url)));
 const mockResponse = loadJSON('../../mocks/telegram/getMe.json');
 
@@ -20,7 +17,7 @@ describe('>> Telegram Routes: ', function () {
         will be intercepted by the fake_api nock  
     */
 
-		nock(`http://localhost:3000`).get('/telegram').reply(200, { data: mockResponse });
+		nock(`http://localhost:5000`).get('/telegram').reply(200, { data: mockResponse });
 	});
 
 	afterAll(() => {
@@ -28,7 +25,6 @@ describe('>> Telegram Routes: ', function () {
 	});
 
 	test('Service response', async () => {
-		prisma.paymentMethod.findUnique = Sinon.stub().resolves({ id: 1 });
 		const res = await request(app).get('/telegram');
 		expect(res.statusCode).toBe(200);
 	});

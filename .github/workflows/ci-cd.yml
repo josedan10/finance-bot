@@ -16,6 +16,10 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Set Port for tests
+        run: |
+          echo ${{ env.PORT }} > .env
+
       - name: Test
         run: npm run test
 
