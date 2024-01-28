@@ -18,7 +18,7 @@ jobs:
 
       - name: Set Port for tests
         run: |
-          echo ${{ env.PORT }} > .env
+          echo ${{ vars.PORT }} > .env
 
       - name: Test
         run: npm run test
