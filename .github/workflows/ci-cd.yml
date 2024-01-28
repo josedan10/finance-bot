@@ -27,6 +27,7 @@ jobs:
         run: |
           sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.DROPLET_IP }} << EOF
             cd /var/www/bot.my-finance-app.xyz/
-            git pull origin master
+            git pull
+            chmod +x ./deploy.sh
             ./deploy.sh production
           EOF
