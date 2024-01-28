@@ -53,3 +53,8 @@ Changes:
     Updated the database section to include the requirement to install Docker and the MySQL extension for VSCode.
     Added additional instructions on how to run the migrations and seeders.
     Fixed some minor typos and grammatical errors.
+
+# Deploy info
+
+The project is deployed using Digital Ocean. The server is a droplet with 1GB of RAM and 1 vCPU. The OS is Ubuntu 20.04. The server is running a Docker container with the project. The Docker image is built using the Dockerfile in the root of the project. The Docker image is built using the following command:
+`./deploy.sh production`
