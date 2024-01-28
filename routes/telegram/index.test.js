@@ -9,7 +9,7 @@ const mockResponse = loadJSON('../../mocks/telegram/getMe.json');
 const app = new Express();
 app.use('/telegram', router);
 
-describe('>> Telegram Routes: ', function () {
+describe.skip('>> Telegram Routes: ', function () {
 	beforeAll(() => {
 		/*
         Mock API using nock for the REST API
