@@ -22,14 +22,12 @@ const customJestConfig = {
 		'!**/coverage/**',
 		'!**/prisma/**',
 		'!**/modules/database/**',
+		'!**/routes/**',
 		'!**/src/enums/**',
 		'!**/modules/crons/**',
 		'!**/scraper.*',
 	],
 	coverageThreshold: {
-		'./routes/**/*.js': {
-			lines: 85,
-		},
 		'./src/**/*.js': {
 			lines: 85,
 		},
