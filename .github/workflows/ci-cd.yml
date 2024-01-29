@@ -24,18 +24,14 @@ jobs:
 
     steps:
       - name: Deploy
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: Setup SSH Keys and known_hosts
-        env:
-          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         run: |
           ssh-agent -a $SSH_AUTH_SOCK > /dev/null
           ssh-add - <<< "${{ secrets.SSH_KEY }}"
 
-      - name: Some task that fetches dependencies
-        env:
-          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+      - name: Execute the ssh code on the server
         run: |
           sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.DROPLET_IP }} << EOF
             cd /var/www/bot.my-finance-app.xyz/
