@@ -23,14 +23,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup SSH
-        uses: actions/checkout@v4
-
       - name: Deploy
-        run: |
-          sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.DROPLET_IP }} << EOF
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          script: |
             cd /var/www/bot.my-finance-app.xyz/
-            ls -la
+            ssh -T git@github.com
             git pull
             ./deploy.sh production
-          EOF
