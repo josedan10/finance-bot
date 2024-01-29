@@ -29,8 +29,7 @@ jobs:
           host: ${{ secrets.DROPLET_IP }}
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
-          key: ${{ secrets.SSH_KEY }}
           script: |
             cd /var/www/bot.my-finance-app.xyz/
-            git pull origin master
+            git pull
             ./deploy.sh production
