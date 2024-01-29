@@ -30,7 +30,9 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           script: |
+            eval "$(ssh-agent -s)"
+            ssh-add -l -E sha256
             cd /var/www/bot.my-finance-app.xyz/
-            ssh -T git@github.com
+            ssh -vT git@github.com
             git pull
             ./deploy.sh production
