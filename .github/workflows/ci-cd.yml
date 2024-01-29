@@ -24,17 +24,13 @@ jobs:
 
     steps:
       - name: Deploy
-        uses: actions/checkout@v4
-
-      - name: Setup SSH Keys and known_hosts
-        run: |
-          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
-          ssh-add - <<< "${{ secrets.SSH_KEY }}"
-
-      - name: Execute the ssh code on the server
-        run: |
-          sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.DROPLET_IP }} << EOF
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
             cd /var/www/bot.my-finance-app.xyz/
             git pull origin master
             ./deploy.sh production
-          EOF
