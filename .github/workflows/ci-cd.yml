@@ -32,7 +32,8 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             eval "$(ssh-agent -s)"
-            ssh-add -l -E sha256
+            ssh-add - <<< "${{ secrets.SSH_KEY }}"
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts
             cd /var/www/bot.my-finance-app.xyz/
             ssh -vT git@github.com
             git pull
