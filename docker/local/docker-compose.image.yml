@@ -9,5 +9,5 @@ services:
       - '4000:4000'
     volumes:
       - ../../services/image_recognition_service/:/app
-    # networks:
-    #   - finance-bot-network
+    networks:
+      - finance-bot-network

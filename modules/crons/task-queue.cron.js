@@ -63,6 +63,7 @@ export class TaskQueueModule {
 		console.log('Starting task queue module...');
 
 		this.createDailyExchangeRateTask.start();
+		this.startDailyExchangeRateMonitor.start();
 		this.deleteImagesFolderOlderThan5Days.start();
 	}
 

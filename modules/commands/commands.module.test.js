@@ -10,7 +10,7 @@ import { Reports } from '../reports/reports.module.js';
 
 describe('>> Commands Module: ', function () {
 	test('Commands initialized', () => {
-		expect(Object.keys(commandsModule.commands)).toHaveLength(6);
+		expect(Object.keys(commandsModule.commands)).toHaveLength(Object.keys(commandsModule.commandsList).length);
 	});
 
 	test('Execute command', async () => {

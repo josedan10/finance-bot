@@ -3,3 +3,5 @@ uvicorn;
 pytesseract;
 Pillow;
 python-multipart;
+requests;
+pydantic;
