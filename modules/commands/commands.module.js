@@ -20,7 +20,7 @@ class CommandsModule {
 			monthlyReport: 'monthlyReport',
 			cashTransaction: 'cashTransaction',
 			manualTransaction: 'manualTransaction',
-			transactionReceipt: 'transactionReceipt',
+			registerTransaction: 'registerTransaction',
 			test: 'test',
 		};
 
@@ -45,7 +45,7 @@ class CommandsModule {
 				await ManualTransaction.registerManualTransaction(data);
 				return 'Manual transaction registered';
 			},
-			transactionReceipt: async (images) => {
+			registerTransaction: async (images) => {
 				const texts = await Image2TextService.extractTextFromImages(images);
 				return texts;
 			},

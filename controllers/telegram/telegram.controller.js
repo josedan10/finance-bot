@@ -43,7 +43,7 @@ export async function webhookHandler(req, res) {
 		if (req?.body?.message?.caption?.[0] === '/') {
 			command = telegramBot.commandParser(req.body.message.caption);
 
-			if (command.commandName === commandsModule.commandsList.transactionReceipt) {
+			if (command.commandName === commandsModule.commandsList.registerTransaction) {
 				console.log('Transaction receipt');
 				const photos = req?.body?.message?.photo;
 
