@@ -1,7 +1,8 @@
 import dayjs from 'dayjs';
 import prisma from '../database/database.module.js';
+import { PendingTransactionAssignments } from '../pending-transaction-assignments/pending-transaction-assignments.module.js';
 
-class ManualTransactions {
+class BaseTransactionsModule {
 	constructor() {
 		this._db = prisma;
 	}
@@ -13,7 +14,7 @@ class ManualTransactions {
 	 * @param {array} data splitted data from the command by spaces
 	 * @returns {object} transaction created
 	 */
-	async registerManualTransaction(data) {
+	async registerManualTransactions(data) {
 		const joinedData = data.join(' ');
 		const splittedData = joinedData.split(';');
 
@@ -113,6 +114,80 @@ class ManualTransactions {
 
 		return transaction;
 	}
+
+	/**
+	 * @description
+	 * Receives an array of text from images, search for a category and payment method and create a transaction.
+	 * If there is no category that can match using the keywords, it will create a task, and a .txt file related to the image text, so the user can manually assign the category later.
+	 *
+	 * @param {Array} data array of text from images
+	 * @returns {Object} transaction created
+	 */
+	async registerTransactionFromImages(data) {
+		if (!data) {
+			throw new Error('No data found');
+		}
+		let category = null;
+		let amount;
+
+		const totalLine = data.find((d) => d.toLowerCase().includes('total'));
+		// Use a regex to get the amount. The format can be Bs 100.00 or Bs 100 or 100.00 or 100 or 100,000.00 or 100,000 or 100,00
+		const amountMatch = totalLine?.match(/(?:Bs\s)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)/);
+
+		if (amountMatch && amountMatch[1]) {
+			amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+		} else {
+			throw new Error(`Amount not found in text: ${data.join(' ')}`);
+		}
+
+		// Transform the line array into a words array
+		const words = data.join(' ').split(' ');
+
+		for (const word of words) {
+			category = await this._db.category.findFirst({
+				where: {
+					keywords: {
+						some: {
+							name: {
+								contains: word,
+							},
+						},
+					},
+				},
+			});
+
+			if (category) {
+				break;
+			}
+		}
+
+		const transaction = await this._db.transaction.create({
+			data: {
+				originalCurrencyAmount: Number(amount),
+				description: words.join(' ').slice(0, 100),
+				type: 'debit',
+				date: dayjs().toDate(),
+				currency: 'VES',
+				...(category
+					? {
+							category: {
+								connect: {
+									id: category.id,
+								},
+							},
+					  }
+					: {}),
+			},
+		});
+
+		if (!category) {
+			// If there is not category found
+			// Create a task and a .txt file
+			await PendingTransactionAssignments.createPendingTransactionAssignment(data, transaction.id);
+		}
+
+		return transaction;
+	}
 }
 
-export const ManualTransaction = new ManualTransactions();
+export const BaseTransactions = new BaseTransactionsModule();

@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import commandsModule from './commands.module.js';
 import Sinon from 'sinon';
 import { expect } from '@jest/globals';
-import { ManualTransaction } from '../manual-transactions/index.js';
+import { BaseTransactions } from '../base-transactions/index.js';
 import { MercantilPanama } from '../mercantil-panama/index.js';
 import { PayPal } from '../paypal/paypal.module.js';
 import { Reports } from '../reports/reports.module.js';
@@ -65,14 +65,14 @@ Debits: 938.9000000000001`;
 		await expect(commandsModule.executeCommand('cashTransaction', 'test')).toBeDefined();
 	});
 
-	test('Execute manualTransaction command', async () => {
-		ManualTransaction.registerManualTransaction = Sinon.stub().resolves({});
+	test('Execute BaseTransactions command', async () => {
+		BaseTransactions.registerBaseTransactions = Sinon.stub().resolves({});
 
 		const response = await commandsModule.executeCommand(
-			'manualTransaction',
+			'BaseTransactions',
 			'100; My Description; Mercantil Venezuela; debit; CATEGORY_NAME'
 		);
-		Sinon.assert.calledOnce(ManualTransaction.registerManualTransaction);
+		Sinon.assert.calledOnce(BaseTransactions.registerBaseTransactions);
 		expect(response).toBe('Manual transaction registered');
 	});
 
@@ -84,7 +84,7 @@ Debits: 938.9000000000001`;
 		01/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/386352/TEST        0 021,386352,2.08,
 		02/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/391248/TEST        0 021,391248,4.63,`;
 		const data = await commandsModule.executeCommand('mercantil', exampleCSVData);
-		Sinon.assert.calledOnce(ManualTransaction.registerManualTransaction);
+		Sinon.assert.calledOnce(BaseTransactions.registerBaseTransactions);
 
 		expect(data).toBe('Mercantil transactions registered');
 		expect(data).toBeDefined();

@@ -1,5 +1,5 @@
 import { Image2TextService } from '../image-2-text/image-2-text.module.js';
-import { ManualTransaction } from '../manual-transactions/index.js';
+import { BaseTransactions } from '../base-transactions/index.js';
 import { MercantilPanama } from '../mercantil-panama/index.js';
 import { PayPal } from '../paypal/paypal.module.js';
 import { Reports } from '../reports/reports.module.js';
@@ -19,7 +19,7 @@ class CommandsModule {
 			paypal: 'paypal',
 			monthlyReport: 'monthlyReport',
 			cashTransaction: 'cashTransaction',
-			manualTransaction: 'manualTransaction',
+			BaseTransactions: 'BaseTransactions',
 			registerTransaction: 'registerTransaction',
 			test: 'test',
 		};
@@ -41,8 +41,8 @@ class CommandsModule {
 				const reportData = await Reports.getMonthlyReport(monthDate);
 				return Reports.reportMessageOnMarkdown(reportData);
 			},
-			manualTransaction: async (data) => {
-				await ManualTransaction.registerManualTransaction(data);
+			BaseTransactions: async (data) => {
+				await BaseTransactions.registerBaseTransactions(data);
 				return 'Manual transaction registered';
 			},
 			registerTransaction: async (images) => {
