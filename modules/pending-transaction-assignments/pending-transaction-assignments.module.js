@@ -1,6 +1,6 @@
 import fs from 'fs';
-import prisma from '../database/database.module';
-import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus';
+import prisma from '../database/database.module.js';
+import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus.js';
 
 class PendingTransactionAssignmentsModule {
 	constructor(prismaService) {
