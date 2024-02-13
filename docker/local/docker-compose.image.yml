@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  image-text-extractor:
+    build:
+      context: ../../services/image_recognition_service/
+      dockerfile: ../../docker/local/image-service/Dockerfile
+    ports:
+      - '4000:4000'
+    volumes:
+      - ../../services/image_recognition_service/:/app
+    networks:
+      - finance-bot-network

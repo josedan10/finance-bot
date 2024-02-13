@@ -60,8 +60,8 @@ class TelegramBot {
 		);
 	}
 
-	getFileContent(filePath) {
-		return axios.get(`${TELEGRAM_FILE_URL}/${filePath}`);
+	getFileContent(filePath, config = {}) {
+		return axios.get(`${TELEGRAM_FILE_URL}/${filePath}`, config);
 	}
 
 	commandParser(command) {

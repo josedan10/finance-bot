@@ -1,3 +1,4 @@
+import { Image2TextService } from '../image-2-text/image-2-text.module.js';
 import { ManualTransaction } from '../manual-transactions/index.js';
 import { MercantilPanama } from '../mercantil-panama/index.js';
 import { PayPal } from '../paypal/paypal.module.js';
@@ -11,6 +12,16 @@ class CommandsModule {
 			paypal: 'Register PayPal transactions from CSV data. Upload a CSV file with the PayPal transactions',
 			monthlyReport:
 				'Get a monthly report. Send a month number as example: 01 for January, 02 for February, etc. Example command: /monthlyReport 01',
+		};
+
+		this.commandsList = {
+			mercantil: 'mercantil',
+			paypal: 'paypal',
+			monthlyReport: 'monthlyReport',
+			cashTransaction: 'cashTransaction',
+			manualTransaction: 'manualTransaction',
+			registerTransaction: 'registerTransaction',
+			test: 'test',
 		};
 
 		this.commands = {
@@ -33,6 +44,10 @@ class CommandsModule {
 			manualTransaction: async (data) => {
 				await ManualTransaction.registerManualTransaction(data);
 				return 'Manual transaction registered';
+			},
+			registerTransaction: async (images) => {
+				const texts = await Image2TextService.extractTextFromImages(images);
+				return texts;
 			},
 			test: async (data) => data,
 		};
