@@ -49,19 +49,18 @@ export async function webhookHandler(req, res) {
 
 				const imagesUrls = [];
 
-				// Split the array on the middle and get the second half
-				// The second half contains the images with the highest resolution
-				const half = Math.ceil(photos.length / 2);
-				const highestRes = photos.slice(half);
+				// Get the higher resolution photo
+				const bestPhoto = photos.sort((a, b) => b.file_size - a.file_size)[0];
 
-				for (const photo of highestRes) {
-					const filePath = await telegramBot.getFilePath(photo.file_id);
-					imagesUrls.push(`${TELEGRAM_FILE_URL}/${filePath.data.result.file_path}`);
-				}
+				const filePath = await telegramBot.getFilePath(bestPhoto.file_id);
+				const fileUrl = `${TELEGRAM_FILE_URL}/${filePath.data.result.file_path}`;
+				imagesUrls.push(fileUrl);
+
 				// Call image recognition service
-				commandResponse = await commandsModule.executeCommand(command.commandName, imagesUrls);
-				console.log(commandResponse);
-				return;
+				commandResponse = await commandsModule.executeCommand(command.commandName, {
+					images: imagesUrls,
+					telegramFileIds: [bestPhoto.file_id],
+				});
 			} else {
 				const filePath = await telegramBot.getFilePath(req.body.message.document.file_id);
 				const fileContent = await telegramBot.getFileContent(filePath.data.result.file_path);

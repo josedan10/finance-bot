@@ -23,13 +23,7 @@ class PendingTransactionAssignmentsModule {
 
 		try {
 			// Create a .txt file
-			const file = fs.createWriteStream(`pending-transaction-assignments/transaction-${transactionId}.txt`);
-
-			data.forEach((line) => {
-				file.write(`${line}\n`);
-			});
-
-			file.end();
+			fs.writeFileSync(`pending-transaction-assignments/transaction-${transactionId}.txt`, data.join('\n'));
 		} catch (error) {
 			throw new Error('Error creating file');
 		}
@@ -46,6 +40,7 @@ class PendingTransactionAssignmentsModule {
 
 			return pendingTransactionAssignment;
 		} catch (error) {
+			console.log(error);
 			throw new Error('Error creating task');
 		}
 	}

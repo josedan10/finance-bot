@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
 import prisma from '../database/database.module.js';
 import { PendingTransactionAssignments } from '../pending-transaction-assignments/pending-transaction-assignments.module.js';
+import { extractTransactionDetails } from '../../src/helpers/price.helper.js';
 
 class BaseTransactionsModule {
 	constructor() {
@@ -121,35 +122,31 @@ class BaseTransactionsModule {
 	 * If there is no category that can match using the keywords, it will create a task, and a .txt file related to the image text, so the user can manually assign the category later.
 	 *
 	 * @param {Array} data array of text from images
+	 * @param {Array} telegramFileIds array of file_ids from telegram
 	 * @returns {Object} transaction created
 	 */
-	async registerTransactionFromImages(data) {
+	async registerTransactionFromImages(data, telegramFileIds) {
 		if (!data) {
 			throw new Error('No data found');
 		}
-		let category = null;
-		let amount;
 
-		const totalLine = data.find((d) => d.toLowerCase().includes('total'));
-		// Use a regex to get the amount. The format can be Bs 100.00 or Bs 100 or 100.00 or 100 or 100,000.00 or 100,000 or 100,00
-		const amountMatch = totalLine?.match(/(?:Bs\s)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)/);
-
-		if (amountMatch && amountMatch[1]) {
-			amount = parseFloat(amountMatch[1].replace(/,/g, ''));
-		} else {
-			throw new Error(`Amount not found in text: ${data.join(' ')}`);
+		if (!telegramFileIds) {
+			throw new Error('No telegramFileIds found');
 		}
 
+		let category = null;
+		const { amount, date } = extractTransactionDetails(data);
+
 		// Transform the line array into a words array
-		const words = data.join(' ').split(' ');
+		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
 
 		for (const word of words) {
 			category = await this._db.category.findFirst({
 				where: {
-					keywords: {
+					categoryKeyword: {
 						some: {
-							name: {
-								contains: word,
+							keyword: {
+								name: word.toLowerCase(),
 							},
 						},
 					},
@@ -157,6 +154,7 @@ class BaseTransactionsModule {
 			});
 
 			if (category) {
+				console.log(`Category found: ${category.name} with keyword: ${word}`);
 				break;
 			}
 		}
@@ -166,8 +164,9 @@ class BaseTransactionsModule {
 				originalCurrencyAmount: Number(amount),
 				description: words.join(' ').slice(0, 100),
 				type: 'debit',
-				date: dayjs().toDate(),
+				date: date ? dayjs(date).toDate() : dayjs().toDate(),
 				currency: 'VES',
+				telegramFileIds: telegramFileIds.join(','),
 				...(category
 					? {
 							category: {
@@ -186,7 +185,7 @@ class BaseTransactionsModule {
 			await PendingTransactionAssignments.createPendingTransactionAssignment(data, transaction.id);
 		}
 
-		return transaction;
+		return { transaction, category };
 	}
 }
 

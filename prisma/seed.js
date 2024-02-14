@@ -33,37 +33,49 @@ async function main() {
 			},
 		});
 
-		const keyword = await prisma.keyword.upsert({
-			where: {
-				name: categoryName,
-			},
-			update: {},
-			create: {
-				name: categoryName,
-			},
-		});
+		const keywords = categories[catInd].keywords;
 
-		await prisma.categoryKeyword.upsert({
-			where: {
-				categoryId_keywordId: {
-					categoryId: category.id,
-					keywordId: keyword.id,
+		if (!keywords) continue;
+
+		try {
+			await prisma.keyword.createMany({
+				data: keywords.map((keyword) => ({
+					name: keyword,
+				})),
+			});
+		} catch (e) {
+			console.error(e);
+		}
+
+		for (const keyword of keywords) {
+			const getKeyWord = await prisma.keyword.findUnique({
+				where: {
+					name: keyword,
 				},
-			},
-			update: {},
-			create: {
-				category: {
-					connect: {
-						id: category.id,
+			});
+
+			await prisma.categoryKeyword.upsert({
+				where: {
+					categoryId_keywordId: {
+						categoryId: category.id,
+						keywordId: getKeyWord.id,
 					},
 				},
-				keyword: {
-					connect: {
-						id: keyword.id,
+				update: {},
+				create: {
+					category: {
+						connect: {
+							id: category.id,
+						},
+					},
+					keyword: {
+						connect: {
+							id: getKeyWord.id,
+						},
 					},
 				},
-			},
-		});
+			});
+		}
 	}
 
 	for (const suscription of suscriptions) {

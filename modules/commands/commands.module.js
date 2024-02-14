@@ -3,6 +3,7 @@ import { BaseTransactions } from '../base-transactions/index.js';
 import { MercantilPanama } from '../mercantil-panama/index.js';
 import { PayPal } from '../paypal/paypal.module.js';
 import { Reports } from '../reports/reports.module.js';
+import dayjs from 'dayjs';
 
 class CommandsModule {
 	constructor() {
@@ -19,7 +20,7 @@ class CommandsModule {
 			paypal: 'paypal',
 			monthlyReport: 'monthlyReport',
 			cashTransaction: 'cashTransaction',
-			BaseTransactions: 'BaseTransactions',
+			baseTransactions: 'baseTransactions',
 			registerTransaction: 'registerTransaction',
 			test: 'test',
 		};
@@ -41,13 +42,22 @@ class CommandsModule {
 				const reportData = await Reports.getMonthlyReport(monthDate);
 				return Reports.reportMessageOnMarkdown(reportData);
 			},
-			BaseTransactions: async (data) => {
-				await BaseTransactions.registerBaseTransactions(data);
+			baseTransactions: async (data) => {
+				await BaseTransactions.registerManualTransactions(data);
 				return 'Manual transaction registered';
 			},
-			registerTransaction: async (images) => {
+			registerTransaction: async ({ images, telegramFileIds }) => {
 				const texts = await Image2TextService.extractTextFromImages(images);
-				return texts;
+				const { transaction, category } = await BaseTransactions.registerTransactionFromImages(texts, telegramFileIds);
+
+				const formattedDate = dayjs(transaction.date).format('DD/MM/YYYY');
+
+				return `📝 Transaction registered: ${transaction.originalCurrencyAmount} ${transaction.currency} - ${
+					category.name
+				} - ${formattedDate}
+
+💬 ${transaction.description}
+${transaction.reviewed ? '✅ Reviewed' : '❌ Not reviewed'}`;
 			},
 			test: async (data) => data,
 		};

@@ -209,10 +209,10 @@ describe('registerTransactionFromImages', () => {
 		// Mock the database module
 		const firstArgs = {
 			where: {
-				keywords: {
+				categoryKeyword: {
 					some: {
-						name: {
-							contains: 'my',
+						keyword: {
+							name: 'my',
 						},
 					},
 				},
@@ -221,10 +221,10 @@ describe('registerTransactionFromImages', () => {
 
 		const secondArgs = {
 			where: {
-				keywords: {
+				categoryKeyword: {
 					some: {
-						name: {
-							contains: 'petshop',
+						keyword: {
+							name: 'petshop',
 						},
 					},
 				},
@@ -243,13 +243,13 @@ describe('registerTransactionFromImages', () => {
 
 		// Define the input data
 		const data = ['my petshop', 'TOTAL   Bs 538.53', 'image text 3'];
+		const telegramFileIds = ['file_id_1', 'file_id_2'];
 
 		// Call the method
-		const result = await BaseTransactions.registerTransactionFromImages(data);
-		console.log(result);
+		const result = await BaseTransactions.registerTransactionFromImages(data, telegramFileIds);
 
 		// Verify the result
-		expect(result).toEqual({ id: 1 });
+		expect(result).toEqual({ transaction: { id: 1 }, category: { id: 1 } });
 
 		// Verify that the database module was called correctly
 		Sinon.assert.calledTwice(prisma.category.findFirst);
@@ -263,6 +263,7 @@ describe('registerTransactionFromImages', () => {
 				type: 'debit',
 				date: Sinon.match.date,
 				currency: 'VES',
+				telegramFileIds: 'file_id_1,file_id_2',
 				category: {
 					connect: {
 						id: 1,
@@ -278,10 +279,11 @@ describe('registerTransactionFromImages', () => {
 	it('should not create a transaction if there is not amount found. It should throws an error', async () => {
 		// Define the input data
 		const data = ['my petshop', 'image text 3'];
+		const telegramFileIds = ['file_id_1', 'file_id_2'];
 
 		// Call the method
-		await expect(BaseTransactions.registerTransactionFromImages(data)).rejects.toThrow(
-			'Amount not found in text: my petshop image text 3'
+		await expect(BaseTransactions.registerTransactionFromImages(data, telegramFileIds)).rejects.toThrow(
+			'Amount not found'
 		);
 	});
 
@@ -289,10 +291,10 @@ describe('registerTransactionFromImages', () => {
 		// Mock the database module
 		const firstArgs = {
 			where: {
-				keywords: {
+				categoryKeyword: {
 					some: {
-						name: {
-							contains: 'my',
+						keywords: {
+							name: 'my',
 						},
 					},
 				},
@@ -301,10 +303,10 @@ describe('registerTransactionFromImages', () => {
 
 		const secondArgs = {
 			where: {
-				keywords: {
+				categoryKeyword: {
 					some: {
-						name: {
-							contains: 'petshop',
+						keywords: {
+							name: 'petshop',
 						},
 					},
 				},
@@ -323,12 +325,16 @@ describe('registerTransactionFromImages', () => {
 
 		// Define the input data
 		const data = ['my petshop', 'TOTAL   Bs 538.53', 'image text 3'];
+		const telegramFileIds = ['file_id_1', 'file_id_2'];
 
 		// Call the method
-		const result = await BaseTransactions.registerTransactionFromImages(data);
+		const result = await BaseTransactions.registerTransactionFromImages(data, telegramFileIds);
 
 		// Verify the result
-		expect(result).toEqual({ id: 1 });
+		expect(result).toEqual({
+			transaction: { id: 1 },
+			category: undefined,
+		});
 
 		// Verify that the database module was called correctly
 		expect(prisma.category.findFirst.callCount).toEqual(10);
@@ -338,6 +344,7 @@ describe('registerTransactionFromImages', () => {
 				originalCurrencyAmount: 538.53,
 				description: 'my petshop TOTAL   Bs 538.53 image text 3',
 				type: 'debit',
+				telegramFileIds: 'file_id_1,file_id_2',
 				date: Sinon.match.date,
 				currency: 'VES',
 			},
@@ -351,5 +358,10 @@ describe('registerTransactionFromImages', () => {
 	it('should throw an error if there is not data', async () => {
 		// Call the method
 		await expect(BaseTransactions.registerTransactionFromImages()).rejects.toThrow('No data found');
+	});
+
+	it('should throw an error if there is not telegramFileIds', async () => {
+		// Call the method
+		await expect(BaseTransactions.registerTransactionFromImages(['data'])).rejects.toThrow('No telegramFileIds found');
 	});
 });

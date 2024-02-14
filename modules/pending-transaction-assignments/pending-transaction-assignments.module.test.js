@@ -11,7 +11,7 @@ describe('PendingTransactionAssignmentsModule', () => {
 		prisma.taskQueue.create = Sinon.stub().resolves({ id: 1 });
 		const data = ['data1', 'data2', 'data3'];
 		// Check if the file was created
-		fs.createWriteStream = Sinon.stub().returns({ on: Sinon.stub(), write: Sinon.stub(), end: Sinon.stub() });
+		fs.writeFileSync = Sinon.stub().returns({ on: Sinon.stub(), write: Sinon.stub(), end: Sinon.stub() });
 		fs.mkdirSync = Sinon.stub();
 		fs.existsSync = Sinon.stub().returns(true);
 
@@ -29,8 +29,8 @@ describe('PendingTransactionAssignmentsModule', () => {
 			createdBy: 'system',
 		});
 		Sinon.assert.notCalled(fs.mkdirSync);
-		Sinon.assert.calledOnce(fs.createWriteStream);
-		Sinon.assert.calledWith(fs.createWriteStream, 'pending-transaction-assignments/transaction-1.txt');
+		Sinon.assert.calledOnce(fs.writeFileSync);
+		Sinon.assert.calledWith(fs.writeFileSync, 'pending-transaction-assignments/transaction-1.txt');
 	});
 
 	it('should create a pending transaction assignment with valid data and create a folder if it does not exist', async () => {
@@ -38,7 +38,7 @@ describe('PendingTransactionAssignmentsModule', () => {
 		prisma.taskQueue.create = Sinon.stub().resolves({ id: 1 });
 		const data = ['data1', 'data2', 'data3'];
 		// Check if the file was created
-		fs.createWriteStream = Sinon.stub().returns({ on: Sinon.stub(), write: Sinon.stub(), end: Sinon.stub() });
+		fs.writeFileSync = Sinon.stub().returns({ on: Sinon.stub(), write: Sinon.stub(), end: Sinon.stub() });
 		fs.mkdirSync = Sinon.stub();
 		fs.existsSync = Sinon.stub().returns(false);
 
@@ -56,8 +56,8 @@ describe('PendingTransactionAssignmentsModule', () => {
 			createdBy: 'system',
 		});
 		Sinon.assert.calledOnce(fs.mkdirSync);
-		Sinon.assert.calledOnce(fs.createWriteStream);
-		Sinon.assert.calledWith(fs.createWriteStream, 'pending-transaction-assignments/transaction-1.txt');
+		Sinon.assert.calledOnce(fs.writeFileSync);
+		Sinon.assert.calledWith(fs.writeFileSync, 'pending-transaction-assignments/transaction-1.txt');
 	});
 
 	// Can get a list of pending transaction assignments with status 'pending'
@@ -124,7 +124,7 @@ describe('PendingTransactionAssignmentsModule', () => {
 		prisma.taskQueue.create = Sinon.stub().resolves({ id: 1 });
 		const data = ['data1', 'data2', 'data3'];
 		const transactionId = 1;
-		fs.createWriteStream = Sinon.stub().throws(new Error('Error creating file'));
+		fs.writeFileSync = Sinon.stub().throws(new Error('Error creating file'));
 
 		// Act & Assert
 		await expect(PendingTransactionAssignments.createPendingTransactionAssignment(data, transactionId)).rejects.toThrow(

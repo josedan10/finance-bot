@@ -7,6 +7,7 @@ import { BaseTransactions } from '../base-transactions/index.js';
 import { MercantilPanama } from '../mercantil-panama/index.js';
 import { PayPal } from '../paypal/paypal.module.js';
 import { Reports } from '../reports/reports.module.js';
+import { Image2TextService } from '../image-2-text/image-2-text.module.js';
 
 describe('>> Commands Module: ', function () {
 	test('Commands initialized', () => {
@@ -66,13 +67,13 @@ Debits: 938.9000000000001`;
 	});
 
 	test('Execute BaseTransactions command', async () => {
-		BaseTransactions.registerBaseTransactions = Sinon.stub().resolves({});
+		BaseTransactions.registerManualTransactions = Sinon.stub().resolves({});
 
 		const response = await commandsModule.executeCommand(
-			'BaseTransactions',
+			'baseTransactions',
 			'100; My Description; Mercantil Venezuela; debit; CATEGORY_NAME'
 		);
-		Sinon.assert.calledOnce(BaseTransactions.registerBaseTransactions);
+		Sinon.assert.calledOnce(BaseTransactions.registerManualTransactions);
 		expect(response).toBe('Manual transaction registered');
 	});
 
@@ -84,8 +85,8 @@ Debits: 938.9000000000001`;
 		01/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/386352/TEST        0 021,386352,2.08,
 		02/ENE/2010,COMPRAS/${dayjs().format('YYYY-MM-DDTHH:mm:ssZ[Z]')}/391248/TEST        0 021,391248,4.63,`;
 		const data = await commandsModule.executeCommand('mercantil', exampleCSVData);
-		Sinon.assert.calledOnce(BaseTransactions.registerBaseTransactions);
 
+		Sinon.assert.calledOnce(MercantilPanama.registerMercantilTransactionsFromCSVData);
 		expect(data).toBe('Mercantil transactions registered');
 		expect(data).toBeDefined();
 	});
@@ -117,5 +118,75 @@ Debits: 938.9000000000001`;
 		Sinon.assert.calledOnce(PayPal.registerPaypalDataFromCSVData);
 		expect(data).toBeDefined();
 		expect(data).toBe('Paypal transactions registered');
+	});
+
+	test('Execute registerTransaction command', async () => {
+		const images = ['image1', 'image2', 'image3'];
+		const telegramFileIds = ['file1', 'file2', 'file3'];
+
+		const texts = ['text1', 'text2', 'text3'];
+
+		const transaction = {
+			transaction: {
+				description: 'My Description',
+				originalCurrencyAmount: 100,
+				currency: 'USD',
+				date: new Date(),
+				reviewed: false,
+			},
+			category: {
+				name: 'CATEGORY_NAME',
+			},
+		};
+
+		Image2TextService.extractTextFromImages = Sinon.stub().resolves(texts);
+		BaseTransactions.registerTransactionFromImages = Sinon.stub().resolves(transaction);
+
+		const data = await commandsModule.executeCommand('registerTransaction', { images, telegramFileIds });
+
+		Sinon.assert.calledOnce(Image2TextService.extractTextFromImages);
+		Sinon.assert.calledOnce(BaseTransactions.registerTransactionFromImages);
+		expect(data).toBeDefined();
+		expect(data).toBe(`📝 Transaction registered: 100 USD - CATEGORY_NAME - ${dayjs(
+			transaction.transaction.date
+		).format('DD/MM/YYYY')}
+
+💬 My Description
+❌ Not reviewed`);
+	});
+
+	test('Execute registerTransaction command with reviewed transaction', async () => {
+		const images = ['image1', 'image2', 'image3'];
+		const telegramFileIds = ['file1', 'file2', 'file3'];
+
+		const texts = ['text1', 'text2', 'text3'];
+
+		const transaction = {
+			transaction: {
+				description: 'My Description',
+				originalCurrencyAmount: 100,
+				currency: 'USD',
+				date: new Date(),
+				reviewed: true,
+			},
+			category: {
+				name: 'CATEGORY_NAME',
+			},
+		};
+
+		Image2TextService.extractTextFromImages = Sinon.stub().resolves(texts);
+		BaseTransactions.registerTransactionFromImages = Sinon.stub().resolves(transaction);
+
+		const data = await commandsModule.executeCommand('registerTransaction', { images, telegramFileIds });
+
+		Sinon.assert.calledOnce(Image2TextService.extractTextFromImages);
+		Sinon.assert.calledOnce(BaseTransactions.registerTransactionFromImages);
+		expect(data).toBeDefined();
+		expect(data).toBe(`📝 Transaction registered: 100 USD - CATEGORY_NAME - ${dayjs(
+			transaction.transaction.date
+		).format('DD/MM/YYYY')}
+
+💬 My Description
+✅ Reviewed`);
 	});
 });

@@ -19,7 +19,7 @@ model Category {
 
 model Keyword {
   id              Int               @id @default(autoincrement())
-  name            String            @unique @db.VarChar(20)
+  name            String            @unique @db.VarChar(100)
   description     String?           @db.VarChar(255)
   categoryKeyword CategoryKeyword[]
 }
@@ -52,12 +52,15 @@ model Transaction {
   type                   String         @db.VarChar(10)
   isMonthly              Boolean        @default(false)
   isAnnually             Boolean        @default(false)
+  telegramFileIds        String?        @db.VarChar(255)
   category               Category?      @relation(fields: [categoryId], references: [id])
   categoryId             Int?
   shopId                 Int?
   shop                   Shop?          @relation(fields: [shopId], references: [id])
   paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
   paymentMethodId        Int?
+  reviewed               Boolean        @default(false)
+  reviewedAt             DateTime?
 
   @@unique(fields: [description, referenceId, date])
 }
@@ -110,7 +113,7 @@ model DailyExchangeRate {
 model TaskQueue {
   id                Int       @id @default(autoincrement())
   body              String?   @db.Text()
-  type              String    @db.VarChar(20)
+  type              String    @db.VarChar(50)
   status            String    @default("pending") @db.VarChar(15)
   attemptsRemaining Int       @default(10) @db.Int
   createdBy         String?   @db.VarChar(20)
