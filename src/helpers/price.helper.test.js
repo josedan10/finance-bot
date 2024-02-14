@@ -1,4 +1,8 @@
-import { extractDateFromDescription, extractPriceFromInstagramDescription } from './price.helper.js';
+import {
+	extractTransactionDetails,
+	extractDateFromDescription,
+	extractPriceFromInstagramDescription,
+} from './price.helper.js';
 
 describe('extractPriceFromInstagramDescription', () => {
 	test('should extract price from text with valid format', () => {
@@ -73,5 +77,43 @@ describe('extractDateFromDescription', () => {
 	it('should return the date when the text contains multiple instances of the 🗓 emoji and valid dates', () => {
 		const text = '🗓 12/05/2022 Some text 🗓 01/01/2023';
 		expect(extractDateFromDescription(text)).toBe('12/05/2022');
+	});
+});
+
+describe('extractTransactionDetails', () => {
+	// Returns the correct amount when the total line contains a number with a dot as decimal separator
+	it('should return the correct amount when the total line contains a number with a dot as decimal separator', () => {
+		const data = ['Total: 1.23'];
+		const result = extractTransactionDetails(data);
+		expect(result.amount).toBe(1.23);
+	});
+
+	// Returns the correct amount when the total line contains a number with a comma as decimal separator
+	it('should return the correct amount when the total line contains a number with a comma as decimal separator', () => {
+		const data = ['Total: 1,23'];
+		const result = extractTransactionDetails(data);
+		expect(result.amount).toBe(1.23);
+	});
+
+	// Returns the correct amount when the total line contains a number with a comma as thousands separator
+	it('should return the correct amount when the total line contains a number with a comma as thousands separator', () => {
+		const data = ['Total: 1,000.23'];
+		const result = extractTransactionDetails(data);
+		expect(result.amount).toBe(1000.23);
+	});
+
+	// Returns the correct amount when the total line contains multiple numbers, but only one is the actual amount
+	it('should return the correct amount when the total line contains multiple numbers, but only one is the actual amount', () => {
+		const data = ['Total: 1,000.23', 'Other: 2,000.00'];
+		const result = extractTransactionDetails(data);
+		expect(result.amount).toBe(1000.23);
+	});
+
+	// Returns the correct amount when the total line contains a number with more than two decimal places
+	it('should return the correct amount when the total line contains a number with more than two decimal places', () => {
+		const data = ['Total: 1.2345\n' + 'Fecha: 02/01/2022'];
+		const { amount, date } = extractTransactionDetails(data);
+		expect(amount).toBe(1.2345);
+		expect(date).toBe('2022-01-02');
 	});
 });

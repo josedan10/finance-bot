@@ -27,6 +27,8 @@ class Image2TextModule {
 			throw new Error('Error extracting text from images');
 		}
 
+		console.log(`Texts extracted from images: ${texts}`);
+
 		return texts;
 	}
 }

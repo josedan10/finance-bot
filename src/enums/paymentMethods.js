@@ -70,7 +70,19 @@ export const CATEGORIES = {
 	HEALTH: {
 		name: 'Health',
 		emoji: '🩺',
-		keywords: ['gym', 'doctor', 'dentist', 'pharmacy', 'hospital', 'consulta médica'],
+		keywords: [
+			'gym',
+			'doctor',
+			'dentist',
+			'pharmacy',
+			'hospital',
+			'consulta médica',
+			'farmacia',
+			'medico',
+			'medica',
+			'farmatodo',
+			'farmacia saas',
+		],
 	},
 	DONATION: {
 		name: 'Donation',

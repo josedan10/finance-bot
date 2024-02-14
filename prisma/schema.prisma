@@ -8,13 +8,30 @@ generator client {
 }
 
 model Category {
-  id           Int            @id @default(autoincrement())
-  name         String         @unique @db.VarChar(20)
-  description  String?        @db.VarChar(255)
-  amountLimit  Decimal?       @db.Decimal(10, 2)
-  keywords     String?        @db.Text()
-  transaction  Transaction[]
-  ShopCategory ShopCategory[]
+  id              Int               @id @default(autoincrement())
+  name            String            @unique @db.VarChar(20)
+  description     String?           @db.VarChar(255)
+  amountLimit     Decimal?          @db.Decimal(10, 2)
+  transaction     Transaction[]
+  shopCategory    ShopCategory[]
+  categoryKeyword CategoryKeyword[]
+}
+
+model Keyword {
+  id              Int               @id @default(autoincrement())
+  name            String            @unique @db.VarChar(100)
+  description     String?           @db.VarChar(255)
+  categoryKeyword CategoryKeyword[]
+}
+
+model CategoryKeyword {
+  id         Int      @id @default(autoincrement())
+  categoryId Int
+  keywordId  Int
+  category   Category @relation(fields: [categoryId], references: [id])
+  keyword    Keyword  @relation(fields: [keywordId], references: [id])
+
+  @@unique([categoryId, keywordId])
 }
 
 model PaymentMethod {
@@ -35,12 +52,15 @@ model Transaction {
   type                   String         @db.VarChar(10)
   isMonthly              Boolean        @default(false)
   isAnnually             Boolean        @default(false)
+  telegramFileIds        String?        @db.VarChar(255)
   category               Category?      @relation(fields: [categoryId], references: [id])
   categoryId             Int?
   shopId                 Int?
   shop                   Shop?          @relation(fields: [shopId], references: [id])
   paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
   paymentMethodId        Int?
+  reviewed               Boolean        @default(false)
+  reviewedAt             DateTime?
 
   @@unique(fields: [description, referenceId, date])
 }
@@ -70,8 +90,8 @@ model Shop {
   id           Int            @id @default(autoincrement())
   name         String         @unique @db.VarChar(20)
   keyWord      String?        @db.VarChar(20)
-  ShopCategory ShopCategory[]
-  Transaction  Transaction[]
+  shopCategory ShopCategory[]
+  transaction  Transaction[]
 }
 
 model ShopCategory {
@@ -91,12 +111,12 @@ model DailyExchangeRate {
 }
 
 model TaskQueue {
-  id                Int      @id @default(autoincrement())
-  body              String?  @db.Text()
-  type              String   @db.VarChar(20)
-  status            String   @default("pending") @db.VarChar(15)
-  attemptsRemaining Int      @default(10) @db.Int
-  createdBy         String?  @db.VarChar(20)
-  createdAt         DateTime @default(now())
+  id                Int       @id @default(autoincrement())
+  body              String?   @db.Text()
+  type              String    @db.VarChar(50)
+  status            String    @default("pending") @db.VarChar(15)
+  attemptsRemaining Int       @default(10) @db.Int
+  createdBy         String?   @db.VarChar(20)
+  createdAt         DateTime  @default(now())
   completedAt       DateTime?
 }
