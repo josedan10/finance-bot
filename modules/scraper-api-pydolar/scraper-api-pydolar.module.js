@@ -6,13 +6,17 @@ class ScraperPydolar {
 	}
 
 	async getPricesData() {
-		const responseAxios = await axios.get(this.url);
-		const currency = responseAxios.data.monitors;
+		try {
+			const responseAxios = await axios.get(this.url);
+			const currency = responseAxios?.data?.monitors;
 
-		return {
-			bcv: currency.bcv,
-			monitor: currency.enparalelovzla,
-		};
+			return {
+				bcv: currency.bcv,
+				monitor: currency.enparalelovzla,
+			};
+		} catch (error) {
+			throw new Error('Error getting daily exchange rate task', error);
+		}
 	}
 }
 
