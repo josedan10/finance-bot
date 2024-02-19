@@ -20,17 +20,62 @@ async function main() {
 	const categoryLimits = [120, 200, 400, 200, 150, 200, 150, 100, 100, 200, 0, 0];
 
 	for (const catInd in categories) {
-		await prisma.category.upsert({
+		const categoryName = categories[catInd].name.toUpperCase();
+
+		const category = await prisma.category.upsert({
 			where: {
-				name: categories[catInd].name.toUpperCase(),
+				name: categoryName,
 			},
 			update: {},
 			create: {
-				name: categories[catInd].name.toUpperCase(),
-				keywords: categories[catInd].keywords?.join(','),
+				name: categoryName,
 				amountLimit: categoryLimits[catInd],
 			},
 		});
+
+		const keywords = categories[catInd].keywords;
+
+		if (!keywords) continue;
+
+		try {
+			await prisma.keyword.createMany({
+				data: keywords.map((keyword) => ({
+					name: keyword,
+				})),
+			});
+		} catch (e) {
+			console.error(e);
+		}
+
+		for (const keyword of keywords) {
+			const getKeyWord = await prisma.keyword.findUnique({
+				where: {
+					name: keyword,
+				},
+			});
+
+			await prisma.categoryKeyword.upsert({
+				where: {
+					categoryId_keywordId: {
+						categoryId: category.id,
+						keywordId: getKeyWord.id,
+					},
+				},
+				update: {},
+				create: {
+					category: {
+						connect: {
+							id: category.id,
+						},
+					},
+					keyword: {
+						connect: {
+							id: getKeyWord.id,
+						},
+					},
+				},
+			});
+		}
 	}
 
 	for (const suscription of suscriptions) {

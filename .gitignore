@@ -7,3 +7,5 @@ token.json
 /pages
 /cookies
 /sample-excels
+__pycache__/
+/pending-transaction-assignments

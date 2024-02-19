@@ -22,7 +22,11 @@ class MercantilPanamaModule {
 		const categories = await this._prisma.category.findMany({
 			select: {
 				id: true,
-				keywords: true,
+				categoryKeyword: {
+					select: {
+						keyword: true,
+					},
+				},
 			},
 		});
 
@@ -41,8 +45,8 @@ class MercantilPanamaModule {
 
 			// Check if the transaction has a category
 			const category = categories.find((category) => {
-				return category.keywords?.split(',')?.some((keyword) => {
-					return description.toLowerCase().includes(keyword.toLowerCase());
+				return category.categoryKeyword?.some((catKey) => {
+					return description.toLowerCase().includes(catKey.keyword.name.toLowerCase());
 				});
 			});
 
