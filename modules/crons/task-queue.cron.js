@@ -1,11 +1,9 @@
 import cron from 'node-cron';
-import fs from 'fs/promises';
 import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus.js';
 
 import prisma from '../database/database.module.js';
-import { ExchangeMonitorScraper } from '../scraper/scraper.module.js';
 import TelegramModule from '../telegram/telegram.module.js';
-import { getScreenshotsByTaskId } from '../scraper/scraper.helper.js';
+import { ScraperPydolarModule } from '../scraper-api-pydolar/scraper-api-pydolar.module.js';
 
 // https://medium.com/@kevinstonge/testing-scheduled-node-cron-tasks-6a808be30acd
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
@@ -15,9 +13,6 @@ import { getScreenshotsByTaskId } from '../scraper/scraper.helper.js';
 
 // once per day
 const createDailyTaskCronExpression = '0 10 * * 1-5';
-
-// once per week
-const deleteImagesOlderCronExpression = '0 09 * * 1';
 
 // TEST CRON EXPRESSIONS
 // run every 10 minutes
@@ -30,15 +25,6 @@ const dailyUpdateExchangeRateTaskCronExpression = '0 */10 * * * *';
 // const createDailyTaskCronExpression = '0 */30 * * * *';
 
 export class TaskQueueModule {
-	deleteImagesFolderOlderThan5Days = cron.schedule(
-		deleteImagesOlderCronExpression,
-		this._deleteImagesFolderOlderThan5Days.bind(this),
-		{
-			timezone: 'America/Caracas',
-			scheduled: true,
-		}
-	);
-
 	startDailyExchangeRateMonitor = cron.schedule(
 		dailyUpdateExchangeRateTaskCronExpression,
 		this._updateDailyExchangeRateFunction.bind(this),
@@ -58,13 +44,11 @@ export class TaskQueueModule {
 
 	start() {
 		this._isRunningDailyTask = false;
-		this._isRunningCookiesTask = false;
 
 		console.log('Starting task queue module...');
 
 		this.createDailyExchangeRateTask.start();
 		this.startDailyExchangeRateMonitor.start();
-		this.deleteImagesFolderOlderThan5Days.start();
 	}
 
 	async _createDailyExchangeRateTask() {
@@ -99,10 +83,8 @@ export class TaskQueueModule {
 			return;
 		}
 
-		const scraper = new ExchangeMonitorScraper(getExistingTask.id, 'https://www.exchangemonitor.net/dolar-venezuela');
-
 		try {
-			const price = await scraper.getPrice();
+			const prices = await ScraperPydolarModule.getPricesData();
 
 			await prisma.taskQueue.update({
 				where: {
@@ -115,7 +97,7 @@ export class TaskQueueModule {
 			});
 
 			await TelegramModule.sendMessage(
-				`Daily exchange rate completed. \n\nMonitor Rate: ${price.monitorPrice} \nBCV Rate: ${price.bcvPrice}`,
+				`Daily exchange rate completed. \n\nMonitor Rate: ${prices.monitor} \nBCV Rate: ${prices.bcv}`,
 				process.env.TEST_CHAT_ID
 			);
 			console.log('Cron job to get daily exchange rate completed');
@@ -123,8 +105,8 @@ export class TaskQueueModule {
 			// Save price on database
 			await prisma.dailyExchangeRate.create({
 				data: {
-					monitorPrice: Number(price.monitorPrice.replace(',', '.')),
-					bcvPrice: Number(price.bcvPrice.replace(',', '.')),
+					monitorPrice: Number(prices.monitor),
+					bcvPrice: Number(prices.bcv),
 					date: new Date(),
 				},
 			});
@@ -147,43 +129,6 @@ export class TaskQueueModule {
 				`Error checking daily exchange rate function. \n\n${error.message}`,
 				process.env.TEST_CHAT_ID
 			);
-
-			const screenshots = await getScreenshotsByTaskId(getExistingTask.id);
-
-			for (const screenshot of screenshots) {
-				await TelegramModule.sendImage(screenshot, screenshot.caption, process.env.TEST_CHAT_ID);
-			}
-		} finally {
-			await scraper.close();
-		}
-	}
-
-	async _deleteImagesFolderOlderThan5Days() {
-		try {
-			console.log('Deleting images and folders older than 5 days...');
-			const fiveDaysAgo = new Date();
-			fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-
-			// Read files and folders inside screenshots folder
-			const items = await fs.readdir('./screenshots', { withFileTypes: true });
-
-			// Filter and delete images and older folders
-			for (const item of items) {
-				const itemPath = `./screenshots/${item.name}`;
-
-				if (item.isDirectory()) {
-					// Delete older folders
-					const folderDate = new Date(item.birthtimeMs);
-					if (folderDate < fiveDaysAgo) {
-						await fs.rm(itemPath, { recursive: true });
-					}
-				} else {
-					// Delete images
-					await fs.rm(itemPath);
-				}
-			}
-		} catch (error) {
-			console.log('Error deleting images and folders older than 5 days', error);
 		}
 	}
 }
