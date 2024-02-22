@@ -30,6 +30,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           script: |
+            cd /var/www/bot.my-finance-bot.xyz
             git pull
             chmod +x deploy.sh
             ./deploy.sh production
