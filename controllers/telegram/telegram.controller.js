@@ -2,6 +2,8 @@ import commandsModule from '../../modules/commands/commands.module.js';
 import telegramBot from '../../modules/telegram/telegram.module.js';
 import { TELEGRAM_FILE_URL } from '../../src/telegram/variables.js';
 
+process.env.TELEGRAM_BOT_TOKEN = '123456:ABC';
+
 export async function setCommands(req, res) {
 	const commands = commandsModule.getCommandsArray();
 

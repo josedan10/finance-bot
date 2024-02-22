@@ -24,17 +24,13 @@ jobs:
 
     steps:
       - name: Deploy
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
-          key: ${{ secrets.SSH_KEY }}
           script: |
-            eval "$(ssh-agent -s)"
-            ssh-add - <<< "${{ secrets.SSH_KEY }}"
-            ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-            cd /var/www/bot.my-finance-app.xyz/
-            ssh -vT git@github.com
+            cd /var/www/bot.my-finance-app.xyz
             git pull
+            chmod +x deploy.sh
             ./deploy.sh production
