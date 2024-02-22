@@ -7,6 +7,7 @@ class TelegramBot {
 	constructor() {
 		this.token = process.env.TELEGRAM_BOT_TOKEN;
 		this.url = TELEGRAM_BOT_URL;
+		this.fileUrl = TELEGRAM_FILE_URL;
 	}
 
 	sendRequest(method, data = null, params = {}, headers = {}) {
@@ -60,8 +61,8 @@ class TelegramBot {
 		);
 	}
 
-	getFileContent(filePath, config = {}) {
-		return axios.get(`${TELEGRAM_FILE_URL}/${filePath}`, config);
+	getFileContent(filePath) {
+		return axios.get(`${this.fileUrl}/${filePath}`);
 	}
 
 	commandParser(command) {

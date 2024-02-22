@@ -16,7 +16,7 @@ const createDailyTaskCronExpression = '0 10 * * 1-5';
 
 // TEST CRON EXPRESSIONS
 // run every 10 minutes
-const dailyUpdateExchangeRateTaskCronExpression = '0 */3 * * * *';
+const dailyUpdateExchangeRateTaskCronExpression = '0 */10 * * * *';
 
 // run every 30 seconds
 // const dailyUpdateExchangeRateTaskCronExpression = '*/30 * * * * *';
@@ -44,7 +44,6 @@ export class TaskQueueModule {
 
 	start() {
 		this._isRunningDailyTask = false;
-		this._isRunningCookiesTask = false;
 
 		console.log('Starting task queue module...');
 
