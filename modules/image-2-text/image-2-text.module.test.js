@@ -3,6 +3,8 @@ import { Image2TextService as image2TextModule } from './image-2-text.module.js'
 import axios from 'axios';
 import Sinon from 'sinon';
 
+process.env.IMAGE_2_TEXT_SERVICE_URL = 'http://localhost:3000';
+
 describe('Image2TextModule', () => {
 	it('should extract text from one image successfully', async () => {
 		const getTextSuccess = nock(`${process.env.IMAGE_2_TEXT_SERVICE_URL}`)
