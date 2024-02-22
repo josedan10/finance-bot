@@ -1,4 +1,8 @@
-# Setup
+# Finance Bot API
+
+This is a tool designed to manage your personal finances. The most important feature on this application, is the ability to send bill images to extract the ammount and use the keywords to clasify the transaction on different categories.
+
+## Deployment
 
 We strongly recommend defining the port number in the .env file. You can copy the .env.example file and rename it to .env. Then you can define the port number.
 
@@ -8,6 +12,11 @@ Build and start the project in development mode using the following commands:
 
 `npm run docker:build`
 `npm run docker:start`
+
+Once the server starts, execute on a parallel terminal the following commands:
+
+`docker exec -it <CONTAINER-ID> npx prisma migrate dev`
+`docker exec -it <CONTAINER-ID> npx prisma db seed`
 
 Use ngrok to set up the webhook:
 
@@ -21,20 +30,48 @@ Copy the ngrok URL and set the webhook URL using the following route:
 
 `${your_local_url}/telegram/setWebhook`
 
-## .env Setup
+The Docker image is built using the following command:
+
+`./deploy.sh production`
+
+## Environment Variables
+
+`TELEGRAM_BOT_TOKEN=1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ`
 
 Search for your own Telegram token on the Telegram documentation at the following link:
 
 https://core.telegram.org/bots#how-do-i-create-a-bot
 
-**Example:**
+`PORT=5000`
 
-TELEGRAM_TOKEN=1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ
+Port where will be running the API
 
-# Development
+`TEST_CHAT_ID=XXXXXXXXX`
 
-The project has some strict validations related to the coverage tests. You can only make a commit if the tests pass the minimum coverage. This will be very helpful to keep the code organized. Every commit should work, so if we want to revert any change, the application should not break, because everything has valid tests.
-Database
+Default chat id where you will receive bot messages
+
+`DATABASE_URL="XXXXXXXXXX"`
+
+This is the db you will have the db you use on the project
+
+`IG_USERNAME="XXXXXXXXXX"`
+`IG_PASSWORD="XXXXXXXXXX"`
+
+IG credentials for puppeteer scraper
+
+`APP_MODE="production"`
+
+Production mode activates the headless mode of puppeteer
+
+`SAVE_SCREENSHOTS="1"`
+
+This save the screenshots that were made by puppeteer
+
+`IMAGE_2_TEXT_SERVICE_URL="http://local-image-text-extractor-1:4000/"`
+
+This url connects image to text server
+
+## Installation
 
 We use Prisma as an ORM. You must install it. Prisma docs: https://www.prisma.io/
 
@@ -42,19 +79,26 @@ We use Prisma as an ORM. You must install it. Prisma docs: https://www.prisma.io
 
 - Docker (install the MySQL extension: https://marketplace.visualstudio.com/items?itemName=formulahendry.vscode-mysql for VSCode)
 
+- Need to use ngrok to connect your local machine with telegram API
+
 - While running the database command, open another terminal and run npx prisma migrate dev to execute the migrations and run the DB seeders.
+
 - To run the seeders manually execute npx prisma db seed. (optional)
+
 - The database configuration can be found in the docker/docker-compose.yml file.
 
-Changes:
+## Running Tests
 
-    Added a section on .env setup, including an example.
-    Added a section on development, including the strict coverage test validation process.
-    Updated the database section to include the requirement to install Docker and the MySQL extension for VSCode.
-    Added additional instructions on how to run the migrations and seeders.
-    Fixed some minor typos and grammatical errors.
+To run tests, run the following command
 
-# Deploy info
+```bash
+  npm run test
+```
 
-The project is deployed using Digital Ocean. The server is a droplet with 1GB of RAM and 1 vCPU. The OS is Ubuntu 20.04. The server is running a Docker container with the project. The Docker image is built using the Dockerfile in the root of the project. The Docker image is built using the following command:
-`./deploy.sh production`
+We use the following libraries:
+
+[Sinon JS](https://sinonjs.org/)
+
+[Nock](https://github.com/nock/nock)
+
+[Jest JS](https://jestjs.io/)
