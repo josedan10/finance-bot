@@ -11,8 +11,12 @@ describe('ScraperPydolarModule', () => {
 			.get('/dollar/')
 			.reply(200, {
 				monitors: {
-					bcv: 3.5,
-					enparalelovzla: 4,
+					bcv: {
+						price: 3.5,
+					},
+					enparalelovzla: {
+						price: 4,
+					},
 				},
 			});
 

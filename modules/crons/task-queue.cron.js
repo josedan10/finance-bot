@@ -83,6 +83,11 @@ export class TaskQueueModule {
 			return;
 		}
 
+		if (!getExistingTask) {
+			console.log('No pending task found');
+			return;
+		}
+
 		try {
 			const prices = await ScraperPydolarModule.getPricesData();
 

@@ -11,8 +11,8 @@ class ScraperPydolar {
 			const currency = responseAxios?.data?.monitors;
 
 			return {
-				bcv: currency.bcv,
-				monitor: currency.enparalelovzla,
+				bcv: currency.bcv.price,
+				monitor: currency.enparalelovzla.price,
 			};
 		} catch (error) {
 			throw new Error('Error getting daily exchange rate task', error);
