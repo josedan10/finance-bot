@@ -4,6 +4,7 @@ import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus.js';
 import prisma from '../database/database.module.js';
 import TelegramModule from '../telegram/telegram.module.js';
 import { ScraperPydolarModule } from '../scraper-api-pydolar/scraper-api-pydolar.module.js';
+import { TransactionsUpdates } from './exchange-currency/exchange-currency.cron.js';
 
 // https://medium.com/@kevinstonge/testing-scheduled-node-cron-tasks-6a808be30acd
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
@@ -13,6 +14,7 @@ import { ScraperPydolarModule } from '../scraper-api-pydolar/scraper-api-pydolar
 
 // once per day
 const createDailyTaskCronExpression = '0 10 * * 1-5';
+const dailyUpdateTransactionsTableCronExpression = '0 9 * * 0-6';
 
 // TEST CRON EXPRESSIONS
 // run every 10 minutes
@@ -42,6 +44,15 @@ export class TaskQueueModule {
 		}
 	);
 
+	startDailyUpdateTransactionsTable = cron.schedule(
+		dailyUpdateTransactionsTableCronExpression,
+		this._updateDailyTransactionsTable.bind(this),
+		{
+			timezone: 'America/Caracas',
+			scheduled: true,
+		}
+	);
+
 	start() {
 		this._isRunningDailyTask = false;
 
@@ -49,6 +60,7 @@ export class TaskQueueModule {
 
 		this.createDailyExchangeRateTask.start();
 		this.startDailyExchangeRateMonitor.start();
+		this.startDailyUpdateTransactionsTable.start();
 	}
 
 	async _createDailyExchangeRateTask() {
@@ -134,6 +146,15 @@ export class TaskQueueModule {
 				`Error checking daily exchange rate function. \n\n${error.message}`,
 				process.env.TEST_CHAT_ID
 			);
+		}
+	}
+
+	async _updateDailyTransactionsTable() {
+		try {
+			await TransactionsUpdates.getAmountResult();
+			console.log('Your amount in dollar from transactions table is up to date!!');
+		} catch (error) {
+			console.log(error);
 		}
 	}
 }

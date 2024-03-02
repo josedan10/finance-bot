@@ -2,12 +2,37 @@ import dayjs from 'dayjs';
 import prisma from '../database/database.module.js';
 import { PendingTransactionAssignments } from '../pending-transaction-assignments/pending-transaction-assignments.module.js';
 import { extractTransactionDetails } from '../../src/helpers/price.helper.js';
+import { TransactionsUpdates } from '../crons/exchange-currency/exchange-currency.cron.js';
+import { calculateUSDAmountByRate } from '../../src/helpers/rate.helper.js';
 
 class BaseTransactionsModule {
 	constructor() {
 		this._db = prisma;
 	}
 
+	/**
+	 * We need to apply this if statement because we want to register the amount on dollars at it's corresponding date
+	 * with the exchange currency, we also want to evaluate if it is weekend because we want to use the friday exchange rate
+	 * and we also want to evaluate if the transaction date is from present because we need first to verifiy if the exchange
+	 * rate was modified with the present rate, that happens on a certain hours, and so on we leave the amount at null, that will
+	 * be updated at the next day with a cronjob that runs once per day.
+	 */
+	_VESToUSDWithExchangeRateByDate(date, amount) {
+		const currentHour = dayjs().hour();
+		const rateIsNotAvailable = currentHour < 9 || currentHour > 11;
+		const currentDay = dayjs().format('YYYY-MM-DD');
+		const currentDayIsNotEqualToTransactionDate = currentDay !== date;
+		const isWeekend = dayjs().day() === 6 || dayjs().day() === 0;
+
+		const exchangeManualRateMatch = TransactionsUpdates.getLatestExchangeCurrency(date);
+
+		if (currentDayIsNotEqualToTransactionDate || isWeekend || rateIsNotAvailable) {
+			const calculateUSDFromManualRegister = calculateUSDAmountByRate(amount, exchangeManualRateMatch);
+			return calculateUSDFromManualRegister;
+		} 
+
+		return null;
+	}
 	/**
 	 * @description
 	 * Process a manual transaction of any type of method
@@ -36,40 +61,13 @@ class BaseTransactionsModule {
 		}
 
 		if (currency && currency === 'VES') {
-			// Convert to USD usign the current exchange rate
 
-			// If today is Saturday or Sunday, get the exchange rate from Friday, any other day, get the exchange rate from the current day
-			const weekDay = dayjs().day();
-			let limitDate;
+			amountInUSD = this._VESToUSDWithExchangeRateByDate(date, amount);
 
-			if (weekDay === 6) {
-				console.log('Saturday');
-				limitDate = dayjs(date).subtract(1, 'day').toDate();
-			} else if (weekDay === 0) {
-				console.log('Sunday');
-				limitDate = dayjs(date).subtract(2, 'day').toDate();
-			} else {
-				console.log('Any other day');
-				limitDate = dayjs(date).toDate();
-			}
-
-			const exchangeRate = await this._db.dailyExchangeRate.findFirst({
-				where: {
-					date: {
-						gte: limitDate,
-					},
-				},
-			});
-
-			if (!exchangeRate) {
-				console.log('No exchange rate found. Cronjob will run to get the exchange rate');
-			} else {
-				console.log(`Exchange rate found: ${exchangeRate.monitorPrice}`);
-				amountInUSD = Number(amount) / Number(exchangeRate.monitorPrice);
-				console.log(`Amount in USD: ${amountInUSD}`);
-			}
 		} else {
-			amountInUSD = amount;
+
+			amountInUSD = Number(amount);
+
 		}
 
 		const paymentMethod = await this._db.paymentMethod.findUnique({
@@ -94,7 +92,7 @@ class BaseTransactionsModule {
 
 		const transaction = await this._db.transaction.create({
 			data: {
-				amount: Number(amountInUSD),
+				amount: amountInUSD,
 				description,
 				type,
 				date: date ? dayjs(date).toDate() : dayjs().toDate(),
@@ -136,6 +134,9 @@ class BaseTransactionsModule {
 
 		let category = null;
 		const { amount, date } = extractTransactionDetails(data);
+		// Convert to USD usign the current exchange rate
+		
+		amountInUSD = this._VESToUSDWithExchangeRateByDate(date, amount);
 
 		// Transform the line array into a words array
 		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
@@ -161,6 +162,7 @@ class BaseTransactionsModule {
 
 		const transaction = await this._db.transaction.create({
 			data: {
+				amount: amountInUSD,
 				originalCurrencyAmount: Number(amount),
 				description: words.join(' ').slice(0, 100),
 				type: 'debit',
