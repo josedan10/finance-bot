@@ -2,6 +2,7 @@ import {
 	extractTransactionDetails,
 	extractDateFromDescription,
 	extractPriceFromInstagramDescription,
+	getTotalFromDataText,
 } from './price.helper.js';
 
 describe('extractPriceFromInstagramDescription', () => {
@@ -115,5 +116,41 @@ describe('extractTransactionDetails', () => {
 		const { amount, date } = extractTransactionDetails(data);
 		expect(amount).toBe(1.2345);
 		expect(date).toBe('2022-01-02');
+	});
+});
+
+describe('getTotalFromDataText', () => {
+	// Returns the correct total value when the text is in the format "Bs. 1.000,00 Total\nBs. 500,00"
+	it('should return the correct total value when the text is in the format "Bs. 1.000,00 Total\\nBs. 500,00"', () => {
+		const data = ['Bs. 1.000,00 Total', 'Bs. 500,00'];
+		const result = getTotalFromDataText(data);
+		expect(result).toBe(1000);
+	});
+
+	// Returns the correct total value when the text is in the format "Bs. 1.000,00"
+	it('should return the correct total value when the text is in the format "Bs. 1.000,00"', () => {
+		const data = ['Bs. 1.000,00'];
+		const result = getTotalFromDataText(data);
+		expect(result).toBe(1000);
+	});
+
+	// Returns the correct total value when the text is in the format "Total:\nBs. 1.000,00"
+	it('should return the correct total value when the text is in the format "Total:\\nBs. 1.000,00"', () => {
+		const data = ['Total:', 'Bs. 1.000,00'];
+		const result = getTotalFromDataText(data);
+		expect(result).toBe(1000);
+	});
+
+	// Returns the correct total value when the text is in the format "Bs. 1.000,00 Total"
+	it('should return the correct total value when the text is in the format "Bs. 1.000,00 Total"', () => {
+		const data = ['Bs. 1.000,00 Total'];
+		const result = getTotalFromDataText(data);
+		expect(result).toBe(1000);
+	});
+
+	it('should return the correct total value when the text is in the format "Bs. 1,000.00 Total\nBs. 500.00"', () => {
+		const data = ['Bs. 1,000.00 Total', 'Bs. 500.00'];
+		const result = getTotalFromDataText(data);
+		expect(result).toBe(1000);
 	});
 });

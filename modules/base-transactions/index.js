@@ -2,10 +2,35 @@ import dayjs from 'dayjs';
 import prisma from '../database/database.module.js';
 import { PendingTransactionAssignments } from '../pending-transaction-assignments/pending-transaction-assignments.module.js';
 import { extractTransactionDetails } from '../../src/helpers/price.helper.js';
+import { ExchangeCurrencyCronModules } from '../crons/exchange-currency/exchange-currency.cron.js';
+import { calculateUSDAmountByRate } from '../../src/helpers/rate.helper.js';
 
 class BaseTransactionsModule {
 	constructor() {
 		this._db = prisma;
+	}
+
+	/**
+	 * We need to apply this if statement because we want to register the amount on dollars at it's corresponding date
+	 * with the exchange currency, we also want to evaluate if it is weekend because we want to use the friday exchange rate
+	 * and we also want to evaluate if the transaction date is from present because we need first to verifiy if the exchange
+	 * rate was modified with the present rate, that happens on a certain hours, and so on we leave the amount at null, that will
+	 * be updated at the next day with a cronjob that runs once per day.
+	 */
+	async _VESToUSDWithExchangeRateByDate(date, amount) {
+		const currentHour = dayjs().hour();
+		const rateIsNotAvailable = currentHour < 9 || currentHour >= 11;
+		const currentDay = dayjs().format('YYYY-MM-DD');
+		const currentDayIsNotEqualToTransactionDate = currentDay !== date;
+		const isWeekend = dayjs().day() === 6 || dayjs().day() === 0;
+
+		const exchangeManualRateMatch = await ExchangeCurrencyCronModules.getLatestExchangeCurrency(date);
+
+		if ((currentDayIsNotEqualToTransactionDate || isWeekend || rateIsNotAvailable) && exchangeManualRateMatch) {
+			return calculateUSDAmountByRate(amount, exchangeManualRateMatch);
+		}
+
+		return null;
 	}
 
 	/**
@@ -36,40 +61,9 @@ class BaseTransactionsModule {
 		}
 
 		if (currency && currency === 'VES') {
-			// Convert to USD usign the current exchange rate
-
-			// If today is Saturday or Sunday, get the exchange rate from Friday, any other day, get the exchange rate from the current day
-			const weekDay = dayjs().day();
-			let limitDate;
-
-			if (weekDay === 6) {
-				console.log('Saturday');
-				limitDate = dayjs(date).subtract(1, 'day').toDate();
-			} else if (weekDay === 0) {
-				console.log('Sunday');
-				limitDate = dayjs(date).subtract(2, 'day').toDate();
-			} else {
-				console.log('Any other day');
-				limitDate = dayjs(date).toDate();
-			}
-
-			const exchangeRate = await this._db.dailyExchangeRate.findFirst({
-				where: {
-					date: {
-						gte: limitDate,
-					},
-				},
-			});
-
-			if (!exchangeRate) {
-				console.log('No exchange rate found. Cronjob will run to get the exchange rate');
-			} else {
-				console.log(`Exchange rate found: ${exchangeRate.monitorPrice}`);
-				amountInUSD = Number(amount) / Number(exchangeRate.monitorPrice);
-				console.log(`Amount in USD: ${amountInUSD}`);
-			}
+			amountInUSD = await this._VESToUSDWithExchangeRateByDate(date, amount);
 		} else {
-			amountInUSD = amount;
+			amountInUSD = Number(amount);
 		}
 
 		const paymentMethod = await this._db.paymentMethod.findUnique({
@@ -94,7 +88,7 @@ class BaseTransactionsModule {
 
 		const transaction = await this._db.transaction.create({
 			data: {
-				amount: Number(amountInUSD),
+				amount: amountInUSD,
 				description,
 				type,
 				date: date ? dayjs(date).toDate() : dayjs().toDate(),
@@ -123,9 +117,10 @@ class BaseTransactionsModule {
 	 *
 	 * @param {Array} data array of text from images
 	 * @param {Array} telegramFileIds array of file_ids from telegram
+	 * @param {Array} args array of arguments from the command ex: ['amount=100', 'desc=My description']
 	 * @returns {Object} transaction created
 	 */
-	async registerTransactionFromImages(data, telegramFileIds) {
+	async registerTransactionFromImages(data, telegramFileIds, args = undefined) {
 		if (!data) {
 			throw new Error('No data found');
 		}
@@ -134,8 +129,26 @@ class BaseTransactionsModule {
 			throw new Error('No telegramFileIds found');
 		}
 
+		let amount;
 		let category = null;
-		const { amount, date } = extractTransactionDetails(data);
+		let date;
+
+		if (args && args.length > 0) {
+			amount = args?.find((arg) => arg.includes('amount'))?.split('=')?.[1];
+		}
+
+		if (!amount) {
+			const transactionDetails = extractTransactionDetails(data);
+			date = transactionDetails.date;
+			amount = transactionDetails.amount;
+		}
+		// Convert to USD using the current exchange rate
+
+		if (!amount) {
+			throw new Error('Amount not found');
+		}
+
+		const amountInUSD = await this._VESToUSDWithExchangeRateByDate(date, amount);
 
 		// Transform the line array into a words array
 		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
@@ -161,6 +174,7 @@ class BaseTransactionsModule {
 
 		const transaction = await this._db.transaction.create({
 			data: {
+				...(amountInUSD ? { amount: amountInUSD } : {}),
 				originalCurrencyAmount: Number(amount),
 				description: words.join(' ').slice(0, 100),
 				type: 'debit',
