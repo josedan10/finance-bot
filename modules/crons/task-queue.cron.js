@@ -4,7 +4,8 @@ import { TASK_STATUS, TASK_TYPE } from '../../src/enums/tasksStatus.js';
 import prisma from '../database/database.module.js';
 import TelegramModule from '../telegram/telegram.module.js';
 import { ScraperPydolarModule } from '../scraper-api-pydolar/scraper-api-pydolar.module.js';
-import { TransactionsUpdates } from './exchange-currency/exchange-currency.cron.js';
+import { ExchangeCurrencyCronModules } from './exchange-currency/exchange-currency.cron.js';
+import dayjs from 'dayjs';
 
 // https://medium.com/@kevinstonge/testing-scheduled-node-cron-tasks-6a808be30acd
 // https://stackoverflow.com/questions/61765291/testing-a-node-cron-job-function-with-jest
@@ -124,7 +125,7 @@ export class TaskQueueModule {
 				data: {
 					monitorPrice: Number(prices.monitor),
 					bcvPrice: Number(prices.bcv),
-					date: new Date(),
+					date: dayjs().startOf('day').toDate(),
 				},
 			});
 		} catch (error) {
@@ -151,7 +152,7 @@ export class TaskQueueModule {
 
 	async _updateDailyTransactionsTable() {
 		try {
-			await TransactionsUpdates.getAmountResult();
+			await ExchangeCurrencyCronModules.getAmountResult();
 			console.log('Your amount in dollar from transactions table is up to date!!');
 		} catch (error) {
 			console.log(error);

@@ -62,6 +62,7 @@ export async function webhookHandler(req, res) {
 				commandResponse = await commandsModule.executeCommand(command.commandName, {
 					images: imagesUrls,
 					telegramFileIds: [bestPhoto.file_id],
+					commandArgs: command.commandArgs,
 				});
 			} else {
 				const filePath = await telegramBot.getFilePath(req.body.message.document.file_id);

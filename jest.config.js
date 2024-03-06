@@ -24,7 +24,7 @@ const customJestConfig = {
 		'!**/modules/database/**',
 		'!**/routes/**',
 		'!**/src/enums/**',
-		'!**/modules/crons/**',
+		'!**/modules/crons/task-queue.cron.js',
 		'!**/scraper.*',
 	],
 	coverageThreshold: {

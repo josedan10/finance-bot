@@ -2,6 +2,7 @@ import { BaseTransactions } from './index.js';
 import prisma from '../database/database.module.js';
 import Sinon from 'sinon';
 import { PendingTransactionAssignments } from '../pending-transaction-assignments/pending-transaction-assignments.module.js';
+import { expect, jest } from '@jest/globals';
 
 describe('BaseTransactions', () => {
 	// Tests that registerManualTransactions successfully registers a manual transaction with valid data
@@ -14,6 +15,7 @@ describe('BaseTransactions', () => {
 		prisma.paymentMethod.findUnique = Sinon.stub().resolves(paymentMethod);
 		prisma.transaction.create = Sinon.stub().resolves(transaction);
 		prisma.category.findUnique = Sinon.stub().resolves(category);
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 
 		// Call the registerManualTransactions method
 		const data = [
@@ -39,6 +41,7 @@ describe('BaseTransactions', () => {
 
 		prisma.paymentMethod.findUnique = Sinon.stub().resolves(paymentMethod);
 		prisma.transaction.create = Sinon.stub().resolves(transaction);
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 		prisma.category.findUnique = Sinon.stub().resolves(category);
 
 		// Call the registerManualTransactions method
@@ -80,6 +83,8 @@ describe('registerManualTransactions', () => {
 		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 		prisma.paymentMethod.findUnique = Sinon.stub().resolves({ id: 1 });
 		prisma.category.findUnique = Sinon.stub().resolves({ id: 1 });
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
+
 		// Act
 		const result = await BaseTransactions.registerManualTransactions(data);
 
@@ -105,6 +110,7 @@ describe('registerManualTransactions', () => {
 		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 		prisma.paymentMethod.findUnique = Sinon.stub().resolves({ id: 1 });
 		prisma.category.findUnique = Sinon.stub().resolves({ id: 1 });
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 
 		// Act
 		const result = await BaseTransactions.registerManualTransactions(data);
@@ -132,6 +138,7 @@ describe('registerManualTransactions', () => {
 		prisma.transaction.create = Sinon.stub().resolves(transaction);
 		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(exchangeRate);
 		prisma.paymentMethod.findUnique = Sinon.stub().resolves({ id: 1 });
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 		prisma.category.findUnique = Sinon.stub().resolves({ id: 1 });
 
 		// Act
@@ -236,6 +243,7 @@ describe('registerTransactionFromImages', () => {
 		prisma.category.findFirst.withArgs(firstArgs).resolves(null);
 		prisma.category.findFirst.withArgs(secondArgs).resolves({ id: 1 });
 
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 		prisma.transaction.create = Sinon.stub().resolves({ id: 1 });
 
 		// Mock module PendingTransactionAssignments
@@ -317,6 +325,7 @@ describe('registerTransactionFromImages', () => {
 
 		prisma.category.findFirst.withArgs(firstArgs).resolves(null);
 		prisma.category.findFirst.withArgs(secondArgs).resolves(null);
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
 
 		prisma.transaction.create = Sinon.stub().resolves({ id: 1 });
 
@@ -363,5 +372,73 @@ describe('registerTransactionFromImages', () => {
 	it('should throw an error if there is not telegramFileIds', async () => {
 		// Call the method
 		await expect(BaseTransactions.registerTransactionFromImages(['data'])).rejects.toThrow('No telegramFileIds found');
+	});
+});
+
+describe('_VESToUSDWithExchangeRateByDate', () => {
+	it("should convert VES to USD using the current exchange rate where the transaction date is different to today's date", async () => {
+		// Mock the database module
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves({ bcvPrice: 100 });
+
+		// Call the method
+		const result = await BaseTransactions._VESToUSDWithExchangeRateByDate('2022-01-01', 100);
+
+		// Verify the result
+		expect(result).toEqual(1.0);
+	});
+
+	it("should convert VES to USD using the current exchange rate where the transaction date is the same as today's date", async () => {
+		// Mock the database module
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves({ bcvPrice: 100 });
+
+		jest.useFakeTimers('modern').setSystemTime(new Date('2022-01-01').getTime());
+
+		// Call the method
+		const result = await BaseTransactions._VESToUSDWithExchangeRateByDate('2022-01-01', 100);
+
+		// Verify the result
+		expect(result).toEqual(1.0);
+	});
+
+	it('should return null if the exchange rate is not found', async () => {
+		// Mock the database module
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves(null);
+
+		// Call the method
+		const result = await BaseTransactions._VESToUSDWithExchangeRateByDate('2022-01-01', 100);
+
+		// Verify the result
+		expect(result).toEqual(null);
+	});
+
+	it('should return a value if the date is weekend day', async () => {
+		// Mock the database module
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves({ bcvPrice: 100 });
+
+		jest.useFakeTimers('modern').setSystemTime(new Date('2024-03-03').getTime());
+
+		// Call the method with a weekend date
+		const result = await BaseTransactions._VESToUSDWithExchangeRateByDate('2024-03-03', 100);
+
+		// Verify the result
+		expect(result).toEqual(1.0);
+	});
+
+	it('should return a value if the execution hour is before 9:00 or after 11:00', async () => {
+		// Mock the database module
+		prisma.dailyExchangeRate.findFirst = Sinon.stub().resolves({ bcvPrice: 100 });
+
+		jest.useFakeTimers('modern').setSystemTime(new Date('2024-03-05T08:59:59').getTime());
+
+		// Call the method with a weekday date
+		const result = await BaseTransactions._VESToUSDWithExchangeRateByDate('2024-03-05', 100);
+		expect(result).toEqual(1.0);
+
+		jest.useFakeTimers('modern').setSystemTime(new Date('2024-03-05T11:00:01').getTime());
+
+		// Call the method with a weekday date
+		const result2 = await BaseTransactions._VESToUSDWithExchangeRateByDate('2024-03-05', 100);
+
+		expect(result2).toEqual(1.0);
 	});
 });

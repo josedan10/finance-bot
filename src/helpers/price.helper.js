@@ -28,39 +28,62 @@ export function extractDateFromDescription(text) {
 	return null;
 }
 
+/**
+ * @description Extracts the price and date from a string
+ * The text can be read as column or row, so we need to check both
+ * in order to garantee that we get the correct value. The text can be found as
+ * Total: Bs. 1.000,00 or
+ *
+ * Total:
+ * Bs. 1.000,00
+ *
+ * So the second case is more difficult to extract the value, but we can check the last line that contains Bs and a number.
+ *
+ * @param {String} data
+ * @returns
+ */
+export function getTotalFromDataText(data) {
+	const regex = /(\d+,\d+.\d+|\d+.\d+,\d+|\d+.\d+|\d+,\d+|\d+.\d+|\d+)/;
+	const option =
+		data?.find((d) => d.toLowerCase().includes('total') && regex.test(d)) ||
+		data?.reverse()?.find((d) => d.toLowerCase().includes('bs') && regex.test(d));
+	const totalMatch = option?.replaceAll(' ', '')?.match(regex);
+	const totalStr = totalMatch?.[0];
+
+	if (totalStr) {
+		const commaPosition = totalStr.indexOf(',');
+		const dotPosition = totalStr.indexOf('.');
+
+		if (commaPosition < dotPosition && commaPosition !== -1 && dotPosition !== -1) {
+			// comma is the decimal separator
+			return parseFloat(totalStr.replaceAll(',', ''));
+		} else if (dotPosition < commaPosition && commaPosition !== -1 && dotPosition !== -1) {
+			// dot is the decimal separator
+			const total = totalStr.replaceAll('.', '').replace(',', '.');
+			return parseFloat(total);
+		} else if (dotPosition === -1) {
+			// comma is the decimal separator
+			return parseFloat(totalStr.replaceAll(',', '.'));
+		}
+
+		return parseFloat(totalStr);
+	}
+
+	return null;
+}
+
 export function extractTransactionDetails(data) {
 	// data is an array of strings, we need to join them to get a single string
 	const dataInArray = data?.join(' ')?.split('\n');
 
-	const totalLine = dataInArray?.find((d) => d.toLowerCase().includes('total'));
-	let amount;
-	let date;
-
-	// AMOUNT
-	const cleanLine = totalLine?.replaceAll(' ', '');
-	// Regex to get numbers, commas and dots
-	const amountMatch = cleanLine?.match(/(\d+,\d+.\d+|\d+.\d+|\d+,\d+|\d+)/);
-
-	if (amountMatch && amountMatch?.[1]) {
-		// if the comma is the decimal separator, replace it with a dot
-		const reverseAmountString = amountMatch[1].split('').reverse().join('');
-
-		// If the comma is the third character, and there is only 1 comma, then the decimal separator is a comma
-		if (reverseAmountString[2] === ',' && reverseAmountString.split(',').length === 2) {
-			amount = parseFloat(amountMatch[1].replaceAll(',', '.'));
-		} else {
-			amount = parseFloat(amountMatch[1].replaceAll(',', ''));
-		}
-	} else {
-		throw new Error('Amount not found');
-	}
+	let amount = null;
+	amount = getTotalFromDataText(dataInArray);
+	let date = null;
 
 	// DATE
 	const dateLine = dataInArray?.find((d) => d.toLowerCase().includes('fecha'));
 	// Date can be in the format DD/MM/YYYY or DD-MM-YYYY
-	const dateMatch = dateLine?.match(/(\d{2}\/\d{2}\/\d{4}|\d{2}-\d{2}-\d{4})/);
-
-	console.log('dateMatch', dateMatch);
+	const dateMatch = dateLine?.replaceAll(' ', '')?.match(/(\d{2}\/\d{2}\/\d{4}|\d{2}-\d{2}-\d{4})/);
 
 	if (dateMatch && dateMatch?.[1]) {
 		// convert to YYYY-MM-DD

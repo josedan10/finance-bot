@@ -147,7 +147,7 @@ Debits: 938.9000000000001`;
 		Sinon.assert.calledOnce(Image2TextService.extractTextFromImages);
 		Sinon.assert.calledOnce(BaseTransactions.registerTransactionFromImages);
 		expect(data).toBeDefined();
-		expect(data).toBe(`📝 Transaction registered: 100 USD - CATEGORY_NAME - ${dayjs(
+		expect(data).toBe(`📝 Transaction registered: 100 USD 💵 | CATEGORY_NAME - ${dayjs(
 			transaction.transaction.date
 		).format('DD/MM/YYYY')}
 
@@ -182,7 +182,7 @@ Debits: 938.9000000000001`;
 		Sinon.assert.calledOnce(Image2TextService.extractTextFromImages);
 		Sinon.assert.calledOnce(BaseTransactions.registerTransactionFromImages);
 		expect(data).toBeDefined();
-		expect(data).toBe(`📝 Transaction registered: 100 USD - CATEGORY_NAME - ${dayjs(
+		expect(data).toBe(`📝 Transaction registered: 100 USD 💵 | CATEGORY_NAME - ${dayjs(
 			transaction.transaction.date
 		).format('DD/MM/YYYY')}
 

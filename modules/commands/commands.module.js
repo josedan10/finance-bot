@@ -46,15 +46,19 @@ class CommandsModule {
 				await BaseTransactions.registerManualTransactions(data);
 				return 'Manual transaction registered';
 			},
-			registerTransaction: async ({ images, telegramFileIds }) => {
+			registerTransaction: async ({ images, telegramFileIds, commandArgs }) => {
 				const texts = await Image2TextService.extractTextFromImages(images);
-				const { transaction, category } = await BaseTransactions.registerTransactionFromImages(texts, telegramFileIds);
+				const { transaction, category } = await BaseTransactions.registerTransactionFromImages(
+					texts,
+					telegramFileIds,
+					commandArgs
+				);
 
 				const formattedDate = dayjs(transaction.date).format('DD/MM/YYYY');
 
-				return `📝 Transaction registered: ${transaction.originalCurrencyAmount} ${transaction.currency} - ${
-					category.name
-				} - ${formattedDate}
+				return `📝 Transaction registered: ${transaction.originalCurrencyAmount} ${transaction.currency}${
+					transaction.amount ? ` ~ $${transaction.amount}` : ''
+				} 💵 | ${category.name} - ${formattedDate}
 
 💬 ${transaction.description}
 ${transaction.reviewed ? '✅ Reviewed' : '❌ Not reviewed'}`;

@@ -2,7 +2,7 @@ import dayjs from 'dayjs';
 import prisma from '../database/database.module.js';
 import { PendingTransactionAssignments } from '../pending-transaction-assignments/pending-transaction-assignments.module.js';
 import { extractTransactionDetails } from '../../src/helpers/price.helper.js';
-import { TransactionsUpdates } from '../crons/exchange-currency/exchange-currency.cron.js';
+import { ExchangeCurrencyCronModules } from '../crons/exchange-currency/exchange-currency.cron.js';
 import { calculateUSDAmountByRate } from '../../src/helpers/rate.helper.js';
 
 class BaseTransactionsModule {
@@ -17,22 +17,22 @@ class BaseTransactionsModule {
 	 * rate was modified with the present rate, that happens on a certain hours, and so on we leave the amount at null, that will
 	 * be updated at the next day with a cronjob that runs once per day.
 	 */
-	_VESToUSDWithExchangeRateByDate(date, amount) {
+	async _VESToUSDWithExchangeRateByDate(date, amount) {
 		const currentHour = dayjs().hour();
-		const rateIsNotAvailable = currentHour < 9 || currentHour > 11;
+		const rateIsNotAvailable = currentHour < 9 || currentHour >= 11;
 		const currentDay = dayjs().format('YYYY-MM-DD');
 		const currentDayIsNotEqualToTransactionDate = currentDay !== date;
 		const isWeekend = dayjs().day() === 6 || dayjs().day() === 0;
 
-		const exchangeManualRateMatch = TransactionsUpdates.getLatestExchangeCurrency(date);
+		const exchangeManualRateMatch = await ExchangeCurrencyCronModules.getLatestExchangeCurrency(date);
 
-		if (currentDayIsNotEqualToTransactionDate || isWeekend || rateIsNotAvailable) {
-			const calculateUSDFromManualRegister = calculateUSDAmountByRate(amount, exchangeManualRateMatch);
-			return calculateUSDFromManualRegister;
-		} 
+		if ((currentDayIsNotEqualToTransactionDate || isWeekend || rateIsNotAvailable) && exchangeManualRateMatch) {
+			return calculateUSDAmountByRate(amount, exchangeManualRateMatch);
+		}
 
 		return null;
 	}
+
 	/**
 	 * @description
 	 * Process a manual transaction of any type of method
@@ -61,13 +61,9 @@ class BaseTransactionsModule {
 		}
 
 		if (currency && currency === 'VES') {
-
-			amountInUSD = this._VESToUSDWithExchangeRateByDate(date, amount);
-
+			amountInUSD = await this._VESToUSDWithExchangeRateByDate(date, amount);
 		} else {
-
 			amountInUSD = Number(amount);
-
 		}
 
 		const paymentMethod = await this._db.paymentMethod.findUnique({
@@ -121,9 +117,10 @@ class BaseTransactionsModule {
 	 *
 	 * @param {Array} data array of text from images
 	 * @param {Array} telegramFileIds array of file_ids from telegram
+	 * @param {Array} args array of arguments from the command ex: ['amount=100', 'desc=My description']
 	 * @returns {Object} transaction created
 	 */
-	async registerTransactionFromImages(data, telegramFileIds) {
+	async registerTransactionFromImages(data, telegramFileIds, args = undefined) {
 		if (!data) {
 			throw new Error('No data found');
 		}
@@ -132,11 +129,26 @@ class BaseTransactionsModule {
 			throw new Error('No telegramFileIds found');
 		}
 
+		let amount;
 		let category = null;
-		const { amount, date } = extractTransactionDetails(data);
-		// Convert to USD usign the current exchange rate
-		
-		amountInUSD = this._VESToUSDWithExchangeRateByDate(date, amount);
+		let date;
+
+		if (args && args.length > 0) {
+			amount = args?.find((arg) => arg.includes('amount'))?.split('=')?.[1];
+		}
+
+		if (!amount) {
+			const transactionDetails = extractTransactionDetails(data);
+			date = transactionDetails.date;
+			amount = transactionDetails.amount;
+		}
+		// Convert to USD using the current exchange rate
+
+		if (!amount) {
+			throw new Error('Amount not found');
+		}
+
+		const amountInUSD = await this._VESToUSDWithExchangeRateByDate(date, amount);
 
 		// Transform the line array into a words array
 		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
@@ -162,7 +174,7 @@ class BaseTransactionsModule {
 
 		const transaction = await this._db.transaction.create({
 			data: {
-				amount: amountInUSD,
+				...(amountInUSD ? { amount: amountInUSD } : {}),
 				originalCurrencyAmount: Number(amount),
 				description: words.join(' ').slice(0, 100),
 				type: 'debit',
