@@ -1,7 +1,7 @@
 version: '3'
 
 networks:
-  finance-bot-network:
+  finance-bot-production-network:
     driver: bridge
 
 services:
@@ -14,4 +14,4 @@ services:
     ports:
       - '3308:3306'
     networks:
-      - finance-bot-network
+      - finance-bot-production-network
