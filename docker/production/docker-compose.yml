@@ -18,3 +18,5 @@ services:
       - '5000:5000'
     networks:
       - finance-bot-production-network
+    depends_on:
+      - mysql-finance-bot

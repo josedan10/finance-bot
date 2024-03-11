@@ -11,3 +11,5 @@ services:
       - ../../services/image_recognition_service/:/app
     networks:
       - finance-bot-production-network
+    depends_on:
+      - mysql-finance-bot
