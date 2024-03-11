@@ -1,6 +1,7 @@
 /node_modules
 /coverage
 .env
+.env.db
 client_secret.json
 token.json
 /screenshots
