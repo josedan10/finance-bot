@@ -15,8 +15,8 @@
 		"docker:image-service": "docker compose -f docker/local/docker-compose.image.yml up --build",
 		"docker:start": "docker compose -f docker/production/docker-compose.yml -f docker/production/docker-compose.db.yml -f docker/production/docker-compose.image.yml up -d",
 		"docker:build": "docker compose -f docker/production/docker-compose.yml -f docker/production/docker-compose.db.yml -f docker/production/docker-compose.image.yml build --no-cache",
-		"docker:migrations": "docker compose -f docker/production/docker-compose.yml -f docker/production/docker-compose.image.yml exec express-bot-production-api npx prisma migrate deploy",
-		"docker:migrations-dev": "docker compose -f docker/production/docker-compose.yml exec express-bot-production-api npx prisma migrate dev",
+		"docker:migrations": "docker compose -f docker/production/docker-compose.yml -f docker/production/docker-compose.db.yml -f docker/production/docker-compose.image.yml exec express-bot-production-api npx prisma migrate deploy",
+		"docker:migrations-dev": "docker compose -f docker/production/docker-compose.yml -f docker/production/docker-compose.db.yml exec express-bot-production-api npx prisma migrate dev",
 		"migrations": "npx prisma migrate deploy",
 		"seed": "npx prisma db seed",
 		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false"
