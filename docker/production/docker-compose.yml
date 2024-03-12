@@ -20,3 +20,6 @@ services:
       - finance-bot-production-network
     depends_on:
       - mysql-finance-bot-production
+    volumes:
+      - ../../:/app
+      - /app/node_modules
