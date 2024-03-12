@@ -19,4 +19,4 @@ services:
     networks:
       - finance-bot-production-network
     depends_on:
-      - mysql-finance-bot
+      - mmysql-finance-bot-production

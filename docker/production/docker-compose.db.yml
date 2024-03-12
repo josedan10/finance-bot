@@ -5,7 +5,7 @@ networks:
     driver: bridge
 
 services:
-  mysql-finance-bot:
+  mysql-finance-bot-production:
     image: mysql
     platform: linux/amd64
     env_file:
