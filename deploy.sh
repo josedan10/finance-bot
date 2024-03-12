@@ -7,7 +7,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 echo "Cleaning docker system"
-docker system prune -f
+docker system prune -af
 echo "Done!"
 
 
