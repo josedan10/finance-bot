@@ -5,12 +5,11 @@ dotenv.config({ path: './.env' });
 
 const customJestConfig = {
 	testEnvironment: 'node',
-	testTimeout: 40000,
+	testTimeout: 4000,
 	transform: {},
 	moduleDirectories: ['node_modules'],
 	verbose: true,
 	collectCoverage: true,
-	preset: 'jest-puppeteer',
 	collectCoverageFrom: [
 		'!**/node_modules/**',
 		'!**/bin/**',
