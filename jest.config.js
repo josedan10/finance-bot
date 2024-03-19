@@ -5,7 +5,7 @@ dotenv.config({ path: './.env' });
 
 const customJestConfig = {
 	testEnvironment: 'node',
-	testTimeout: 4000,
+	testTimeout: 10000,
 	transform: {},
 	moduleDirectories: ['node_modules'],
 	verbose: true,

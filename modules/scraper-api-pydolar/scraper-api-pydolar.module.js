@@ -2,7 +2,7 @@ import axios from 'axios';
 
 class ScraperPydolar {
 	constructor() {
-		this.url = 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar/';
+		this.url = 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar';
 	}
 
 	async getPricesData() {

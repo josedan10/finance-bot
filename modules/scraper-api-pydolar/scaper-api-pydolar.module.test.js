@@ -8,7 +8,7 @@ describe('ScraperPydolarModule', () => {
 
 	it('should return an object with the exchange rate', async () => {
 		nock('https://pydolarvenezuela-api.vercel.app/api/v1')
-			.get('/dollar/')
+			.get('/dollar')
 			.reply(200, {
 				monitors: {
 					bcv: {
@@ -29,7 +29,7 @@ describe('ScraperPydolarModule', () => {
 	});
 
 	it('should throw an error if the request fails', async () => {
-		nock('https://pydolarvenezuela-api.vercel.app/api/v1').get('/dollar/').reply(500);
+		nock('https://pydolarvenezuela-api.vercel.app/api/v1').get('/dollar').reply(500);
 
 		await expect(ScraperPydolarModule.getPricesData()).rejects.toThrow('Error getting daily exchange rate task');
 	});
