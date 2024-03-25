@@ -17,6 +17,7 @@ const customJestConfig = {
 		'<rootDir>/modules/crons/index.ts',
 		'<rootDir>/src/__generated__/',
 		'<rootDir>/src/config.ts',
+		'<rootDir>/routes/',
 	],
 	verbose: true,
 	collectCoverage: true,
