@@ -9,4 +9,5 @@ token.json
 /cookies
 /sample-excels
 __pycache__/
+/dist
 /pending-transaction-assignments

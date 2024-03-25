@@ -8,3 +8,5 @@ prisma/schema.prisma
 *.png
 docker/
 /services/image-reconigtion-service/
+/dist/
+```
