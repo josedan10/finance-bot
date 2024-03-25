@@ -6,6 +6,7 @@ import mockResponse from '../../mocks/telegram/getMe.json';
 
 const app: Express = express();
 app.use('/telegram', router);
+process.env.PORT = '5000';
 
 describe('>> Telegram Routes: ', function () {
 	beforeAll(() => {
