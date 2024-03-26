@@ -2,7 +2,9 @@
 	"name": "finance-bot",
 	"version": "0.0.0",
 	"scripts": {
-		"start": "ts-node ./bin/www.ts",
+		"start:dev": "ts-node ./bin/www.ts",
+		"start": "node ./dist/bin/www.js",
+		"build": "tsc",
 		"dev": "nodemon",
 		"prepare": "husky install",
 		"lint": "npx lint-staged",

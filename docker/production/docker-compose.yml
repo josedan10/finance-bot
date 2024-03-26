@@ -19,5 +19,5 @@ services:
     networks:
       - finance-bot-production-network
     volumes:
-      - ../../:/app
+      - ../../dist:/app/dist
       - /app/node_modules
