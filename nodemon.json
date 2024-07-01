@@ -1,5 +1,5 @@
 {
 	"ignore": ["**/*.test.ts", "**/*.spec.ts", "node_modules"],
-	"exec": "npm start",
+	"exec": "npm run start:dev",
 	"ext": "ts"
 }

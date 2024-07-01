@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   express-bot-api:
     image: express-api-bot
@@ -11,7 +9,7 @@ services:
     environment:
       - DATABASE_URL=mysql://root:d!YG19j06eXp@local-mysql-finance-bot-1:3306/finance-bot
     ports:
-      - '5000:5000'
+      - '4001:4001'
     networks:
       - finance-bot-network
     depends_on:

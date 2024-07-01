@@ -1,5 +1,3 @@
-version: '3'
-
 networks:
   finance-bot-network:
     driver: bridge
