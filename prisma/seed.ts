@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { CATEGORIES, PAYMENT_METHODS_ARRAY, suscriptions } from '../src/enums/paymentMethods';
+import { CATEGORIES, PAYMENT_METHODS_ARRAY, suscriptions } from '../src/enums';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 
 async function main() {
