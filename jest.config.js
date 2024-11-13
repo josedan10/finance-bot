@@ -18,6 +18,8 @@ const customJestConfig = {
 		'<rootDir>/src/__generated__/',
 		'<rootDir>/src/config.ts',
 		'<rootDir>/routes/',
+		'<rootDir>/.babelrc.js',
+		'<rootDir>/jest.config.js',
 	],
 	verbose: true,
 	collectCoverage: true,

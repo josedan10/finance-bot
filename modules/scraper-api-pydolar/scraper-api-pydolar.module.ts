@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 class ScraperPydolar {
-	private url: string = 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar';
+	private url: string = 'https://pydolarve.org/api/v1/dollar';
 
 	async getPricesData() {
 		try {
