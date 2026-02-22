@@ -10,6 +10,7 @@
 		"lint": "npx lint-staged",
 		"pm2:prod": "pm2 start \"npm start\" --name finance-bot-prod",
 		"pm2:dev": "pm2 start \"npm run dev\" --name finance-bot-dev",
+		"pm2:image-service": "pm2 start \"npm run docker:image-service\" --name finance-bot-image-service",
 		"docker:start-db": "docker compose -f docker/local/docker-compose.db.yml up --build",
 		"docker:dev": "docker compose -f docker/local/docker-compose.yml -f docker/local/docker-compose.db.yml -f docker/local/docker-compose.image.yml up --build",
 		"docker:start-dev": "docker compose -f docker/local/docker-compose.yml -f docker/local/docker-compose.db.yml -f docker/local/docker-compose.image.yml up",
