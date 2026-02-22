@@ -52,8 +52,8 @@ export const CATEGORIES = {
 			'mercado',
 		],
 	},
-	ENTERTAIMENT: {
-		name: 'Entertaiment',
+	ENTERTAINMENT: {
+		name: 'Entertainment',
 		emoji: '🎬',
 		keywords: [
 			'netflix',

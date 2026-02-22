@@ -5,6 +5,8 @@ import { ExchangeCurrencyCronServices } from '../crons/exchange-currency/exchang
 import { calculateUSDAmountByRate } from '../../src/helpers/rate.helper';
 import { Category, PrismaClient, Transaction } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { config } from '../../src/config';
+import logger from '../../src/lib/logger';
 
 class BaseTransactionsModule {
 	private _db: PrismaClient;
@@ -21,7 +23,8 @@ class BaseTransactionsModule {
 	 */
 	async _VESToUSDWithExchangeRateByDate(date: string, amount: number | Decimal) {
 		const currentHour = dayjs().hour();
-		const rateIsNotAvailable = currentHour < 9 || currentHour >= 11;
+		const rateIsNotAvailable =
+			currentHour < config.RATE_AVAILABLE_START_HOUR || currentHour >= config.RATE_AVAILABLE_END_HOUR;
 		const currentDay = dayjs().format('YYYY-MM-DD');
 		const currentDayIsNotEqualToTransactionDate = currentDay !== date;
 		const isWeekend = dayjs().day() === 6 || dayjs().day() === 0;
@@ -35,13 +38,6 @@ class BaseTransactionsModule {
 		return null;
 	}
 
-	/**
-	 * @description
-	 * Process a manual transaction of any type of method
-	 *
-	 * @param {array} data splitted data from the command by spaces
-	 * @returns {object} transaction created
-	 */
 	async registerManualTransactions(data: string[]) {
 		const joinedData = data.join(' ');
 		const splittedData = joinedData.split(';');
@@ -112,16 +108,36 @@ class BaseTransactionsModule {
 		return transaction;
 	}
 
-	/**
-	 * @description
-	 * Receives an array of text from images, search for a category and payment method and create a transaction.
-	 * If there is no category that can match using the keywords, it will create a task, and a .txt file related to the image text, so the user can manually assign the category later.
-	 *
-	 * @param {Array} data array of text from images
-	 * @param {Array} telegramFileIds array of file_ids from telegram
-	 * @param {Array} args array of arguments from the command ex: ['amount=100', 'desc=My description']
-	 * @returns {Object} transaction created
-	 */
+	private async findCategoryByWords(words: string[]): Promise<Category | null> {
+		const lowerWords = words.map((w) => w.toLowerCase()).filter((w) => w.length > 0);
+		if (lowerWords.length === 0) return null;
+
+		const keywords = await this._db.keyword.findMany({
+			where: {
+				name: { in: lowerWords },
+			},
+			select: {
+				name: true,
+				categoryKeyword: {
+					select: {
+						category: true,
+					},
+					take: 1,
+				},
+			},
+		});
+
+		for (const keyword of keywords) {
+			if (keyword.categoryKeyword.length > 0) {
+				const category = keyword.categoryKeyword[0].category;
+				logger.info(`Category found: ${category.name} with keyword: ${keyword.name}`);
+				return category;
+			}
+		}
+
+		return null;
+	}
+
 	async registerTransactionFromImages(
 		data: string[],
 		telegramFileIds: string[],
@@ -143,7 +159,6 @@ class BaseTransactionsModule {
 			date = transactionDetails?.date || date;
 			amount = transactionDetails?.amount;
 		}
-		// Convert to USD using the current exchange rate
 
 		if (!amount) {
 			throw new Error('Amount not found');
@@ -151,33 +166,15 @@ class BaseTransactionsModule {
 
 		const amountInUSD = amount && date ? await this._VESToUSDWithExchangeRateByDate(date, Number(amount)) : null;
 
-		// Transform the line array into a words array
 		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
 
-		for (const word of words) {
-			category = await this._db.category.findFirst({
-				where: {
-					categoryKeyword: {
-						some: {
-							keyword: {
-								name: word.toLowerCase(),
-							},
-						},
-					},
-				},
-			});
-
-			if (category) {
-				console.log(`Category found: ${category.name} with keyword: ${word}`);
-				break;
-			}
-		}
+		category = await this.findCategoryByWords(words);
 
 		const transaction = await this._db.transaction.create({
 			data: {
 				...(amountInUSD ? { amount: amountInUSD } : {}),
 				originalCurrencyAmount: Number(amount),
-				description: words.join(' ').slice(0, 100),
+				description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
 				type: 'debit',
 				date: date ? dayjs(date).toDate() : dayjs().toDate(),
 				currency: 'VES',
@@ -193,8 +190,6 @@ class BaseTransactionsModule {
 					: {}),
 			},
 		});
-
-		console.log('category', category);
 
 		return { transaction, category };
 	}

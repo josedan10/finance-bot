@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 import { PAYMENT_METHODS } from '../../src/enums/paymentMethods';
 import excelModule from '../excel/excel.module';
 import { PrismaModule as prisma } from '../database/database.module';
+import logger from '../../src/lib/logger';
 
 class PaypalModule {
 	name: string;
@@ -18,12 +19,11 @@ class PaypalModule {
 		this._prisma = prisma;
 	}
 
-	// Function to calculate the index of an Excel column based on its name
 	getColumnIndex(columnName: string): number {
 		let index = 0;
 		for (let i = 0; i < columnName.length; i++) {
-			const charCode = columnName.charCodeAt(i) - 65; // Get the numerical value of the letter - 1
-			index += charCode + 26 * i; // Add the numerical value of the letter multiplied by 26 raised to the position of the letter in the column name
+			const charCode = columnName.charCodeAt(i) - 65;
+			index += charCode + 26 * i;
 		}
 		return index;
 	}
@@ -31,9 +31,7 @@ class PaypalModule {
 	getDataFromCSVData(csvData: string[][]): string[][] {
 		const withoutEmptyRows = csvData?.filter((row) => row?.[0]?.length > 0);
 		if (!withoutEmptyRows?.length || withoutEmptyRows.some((row) => row.length < this.numberOfColumns)) return [];
-		// Create a matrix to store the extracted values
 		const extractedValues: string[][] = [];
-		// Iterate over the rows and extract the values from the columns corresponding to the specified indexes
 		withoutEmptyRows.forEach((row) => {
 			const extractedRow: string[] = [];
 			this.columnIndexes.forEach((index) => {
@@ -44,9 +42,7 @@ class PaypalModule {
 		return extractedValues;
 	}
 
-	// TODO: Refactor this function
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	async registerPaypalDataFromCSVData(csvData: string): Promise<any[]> {
+	async registerPaypalDataFromCSVData(csvData: string): Promise<unknown[]> {
 		const parsedData = excelModule.parseCSVDataToJs(csvData, 1);
 		const paypalData = this.getDataFromCSVData(parsedData);
 
@@ -59,6 +55,10 @@ class PaypalModule {
 			},
 		});
 
+		if (!paymentMethod) {
+			throw new Error(`Payment method "${PAYMENT_METHODS.PAYPAL}" not found`);
+		}
+
 		const categories = await this._prisma.category.findMany({
 			select: {
 				id: true,
@@ -70,19 +70,16 @@ class PaypalModule {
 			},
 		});
 
-		console.log(`Registering ${paypalData.length} transactions`);
+		logger.info(`Registering ${paypalData.length} PayPal transactions`);
 
 		const paypalTransactions = paypalData.map((transaction) => {
-			// Date	Time	Timezone	Name	Type	Status	Currency	Net	Id transaction	Item name	Subject	Note	Balance consequences
 			const [
 				ppDate,
 				time,
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
-				timezone,
+				_timezone,
 				name,
 				transactionPaypalType,
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
-				status,
+				_status,
 				currency,
 				amount,
 				referenceId,
@@ -93,8 +90,7 @@ class PaypalModule {
 			] = transaction;
 
 			const description = `${articleName} - ${subject} - ${note} / ${transactionPaypalType} (${name})`;
-			console.log(categories);
-			const category = categories.find((cat) => {
+			const category = categories.find((cat: { id: number; categoryKeyword: { keyword: { name: string } }[] }) => {
 				return cat.categoryKeyword?.some((catKey: { keyword: { name: string } }) => {
 					return description.toLowerCase().includes(catKey.keyword.name.toLowerCase());
 				});
@@ -122,7 +118,7 @@ class PaypalModule {
 				date,
 				paymentMethod: {
 					connect: {
-						id: paymentMethod?.id ?? 0,
+						id: paymentMethod.id,
 					},
 				},
 				...(category && {

@@ -1,22 +1,22 @@
-import createError from 'http-errors';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import cookieParser from 'cookie-parser';
-import logger from 'morgan';
+import morgan from 'morgan';
 import * as dotenv from 'dotenv';
 import { RouterApp as indexRouter } from './routes';
 import { TaskQueueModuleService } from './modules/crons/task-queue.cron';
+import logger from './src/lib/logger';
 
 dotenv.config();
 
 const app = express();
 
-app.use(logger('dev'));
+const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
+app.use(morgan(morganFormat));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(logger('combined'));
 
 app.use('/', indexRouter);
 
@@ -24,25 +24,19 @@ app.use('*', (req: Request, res: Response) => {
 	res.status(404).send("Sorry, can't find that!");
 });
 
-// catch 404 and forward to error handler
-app.use((req: Request, res: Response, next: NextFunction) => {
-	next(createError(404));
-});
-
-// error handler
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-app.use((err: any, req: Request, res: Response) => {
-	// set locals, only providing error in development
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: Error & { status?: number }, req: Request, res: Response, _next: NextFunction) => {
 	res.locals.message = err.message;
 	res.locals.error = req.app.get('env') === 'development' ? err : {};
 
-	// render the error page
 	res.status(err.status || 500);
 	res.send('An error occurred!');
 
-	console.error(err);
+	logger.error('Unhandled error', { error: err.message, stack: err.stack });
 });
 
-TaskQueueModuleService.start();
+if (process.env.NODE_ENV !== 'test') {
+	TaskQueueModuleService.start();
+}
 
 export default app;

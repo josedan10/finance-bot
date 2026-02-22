@@ -106,8 +106,10 @@ model DailyExchangeRate {
   id           Int      @id @default(autoincrement())
   monitorPrice Decimal? @db.Decimal(10, 2)
   bcvPrice     Decimal? @db.Decimal(10, 2)
-  date         DateTime
+  date         DateTime @unique
   createdAt    DateTime @default(now())
+
+  @@index([date])
 }
 
 model TaskQueue {
@@ -119,4 +121,6 @@ model TaskQueue {
   createdBy         String?   @db.VarChar(20)
   createdAt         DateTime  @default(now())
   completedAt       DateTime?
+
+  @@index([type, status])
 }

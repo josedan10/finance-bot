@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { CATEGORIES, PAYMENT_METHODS_ARRAY, suscriptions } from '../src/enums';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 
@@ -17,12 +16,29 @@ async function main() {
 		});
 	}
 
-	const categories = Object.values(CATEGORIES).map((cat: any) => cat);
+	const categories = Object.values(CATEGORIES);
 
-	const categoryLimits = [120, 200, 400, 200, 150, 200, 150, 100, 100, 200, 0, 0];
+	const categoryLimits: Record<string, number> = {
+		Pet: 120,
+		Purchase: 200,
+		'Food/Home': 400,
+		Entertainment: 200,
+		Other: 150,
+		Health: 200,
+		Donation: 150,
+		Transport: 100,
+		Vehicle: 100,
+		Loans: 200,
+		Exchange: 0,
+		Work: 0,
+		Travel: 0,
+		Beauty: 0,
+		Education: 0,
+	};
 
-	for (const catInd in categories) {
-		const categoryName = categories[catInd].name.toUpperCase();
+	for (const cat of categories) {
+		const categoryName = cat.name.toUpperCase();
+		const limit = categoryLimits[cat.name] ?? 0;
 
 		const category = await prisma.category.upsert({
 			where: {
@@ -31,11 +47,11 @@ async function main() {
 			update: {},
 			create: {
 				name: categoryName,
-				amountLimit: categoryLimits[catInd],
+				amountLimit: limit,
 			},
 		});
 
-		const keywords = categories[catInd].keywords;
+		const keywords = 'keywords' in cat ? (cat.keywords as string[]) : undefined;
 
 		if (!keywords) continue;
 
@@ -44,6 +60,7 @@ async function main() {
 				data: keywords.map((keyword: string) => ({
 					name: keyword,
 				})),
+				skipDuplicates: true,
 			});
 		} catch (e) {
 			console.error(e);
@@ -56,11 +73,16 @@ async function main() {
 				},
 			});
 
+			if (!getKeyWord) {
+				console.error(`Keyword "${keyword}" not found, skipping category-keyword link`);
+				continue;
+			}
+
 			await prisma.categoryKeyword.upsert({
 				where: {
 					categoryId_keywordId: {
 						categoryId: category.id,
-						keywordId: getKeyWord?.id || 0,
+						keywordId: getKeyWord.id,
 					},
 				},
 				update: {},
@@ -72,7 +94,7 @@ async function main() {
 					},
 					keyword: {
 						connect: {
-							id: getKeyWord?.id || 0,
+							id: getKeyWord.id,
 						},
 					},
 				},

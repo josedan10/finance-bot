@@ -1,4 +1,6 @@
 import axios, { AxiosError } from 'axios';
+import { config } from '../../src/config';
+import logger from '../../src/lib/logger';
 
 class Image2TextModule {
 	async extractTextFromImages(imagesUrls: string[] = []): Promise<string[]> {
@@ -9,26 +11,20 @@ class Image2TextModule {
 		try {
 			for (const image of imagesUrls) {
 				const response = await axios.post(
-					`${process.env.IMAGE_2_TEXT_SERVICE_URL}/extract-text`,
-					{
-						image,
-					},
-					{
-						headers: {
-							'Content-Type': 'application/json',
-						},
-					}
+					`${config.IMAGE_2_TEXT_SERVICE_URL}/extract-text`,
+					{ image },
+					{ headers: { 'Content-Type': 'application/json' } }
 				);
 
 				texts.push(response.data.text);
 			}
 		} catch (error: unknown) {
 			const errorResponse = error as AxiosError;
-			console.log(errorResponse?.response?.data);
-			throw new Error('Error extracting text from images');
+			logger.error('Error extracting text from images', { responseData: errorResponse?.response?.data });
+			throw new Error('Error extracting text from images', { cause: error });
 		}
 
-		console.log(`Texts extracted from images: ${texts}`);
+		logger.info(`Texts extracted from ${texts.length} images`);
 
 		return texts;
 	}

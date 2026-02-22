@@ -1,11 +1,14 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { TelegramRouter as telegramRouter } from './telegram';
 
 const router = express.Router();
 
-/* GET home page. */
-router.get('/', function (req, res) {
+router.get('/', (req: Request, res: Response) => {
 	res.send('Server is Working with live reload!');
+});
+
+router.get('/health', (req: Request, res: Response) => {
+	res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 router.use('/telegram', telegramRouter);
