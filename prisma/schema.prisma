@@ -112,6 +112,15 @@ model DailyExchangeRate {
   @@index([date])
 }
 
+model ProcessedEmail {
+  id        Int      @id @default(autoincrement())
+  messageId String   @unique @db.VarChar(255)
+  from      String   @db.VarChar(255)
+  subject   String   @db.VarChar(500)
+  result    String?  @db.Text
+  createdAt DateTime @default(now())
+}
+
 model TaskQueue {
   id                Int       @id @default(autoincrement())
   body              String?   @db.Text()

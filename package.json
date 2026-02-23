@@ -22,7 +22,8 @@
 		"docker:migrations-dev": "docker compose -f docker/production/docker-compose.yml exec express-bot-production-api npx prisma migrate dev",
 		"migrations": "npx prisma migrate deploy",
 		"seed": "npx prisma db seed",
-		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false"
+		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false",
+		"gmail:auth": "ts-node scripts/gmail-auth.ts"
 	},
 	"dependencies": {
 		"@babel/core": "^7.24.3",
