@@ -34,16 +34,13 @@ class ExchangeCurrencyCronService {
 						: 0,
 				}));
 
-				for (const transactionToBeUpdated of transactionsWithAmount) {
-					await prisma.transaction.update({
-						where: {
-							id: transactionToBeUpdated.id,
-						},
-						data: {
-							amount: transactionToBeUpdated.amount,
-						},
-					});
-				}
+				const updatePromises = transactionsWithAmount.map(({ id, amount }) =>
+					prisma.transaction.update({
+						where: { id },
+						data: { amount },
+					})
+				);
+				await prisma.$transaction(updatePromises);
 			} else {
 				logger.warn('Could not fetch the latest exchange rate.');
 			}

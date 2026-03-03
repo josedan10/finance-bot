@@ -307,15 +307,14 @@ describe('PaypalModule', () => {
 				createCategory({
 					id: 1,
 					name: 'category',
-					amountLimit: null,
-					description: '',
-					categoryKeyword: [
-						{
-							keyword: keyWord,
-						},
-					],
-				}),
+				})
 			]);
+
+			Object.assign(categories[0], {
+				categoryKeyword: [
+					{ keyword: keyWord }
+				]
+			});
 
 			console.log(categories);
 			const transaction = [1, 2, 3, 4].map((id) => ({

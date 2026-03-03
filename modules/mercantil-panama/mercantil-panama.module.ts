@@ -35,7 +35,10 @@ class MercantilPanamaModule {
 
 		const paymentMethod = await this._prisma.paymentMethod.findUnique({
 			where: {
-				name: PAYMENT_METHODS.MERCANTIL_PANAMA,
+				name_userId: {
+					name: PAYMENT_METHODS.MERCANTIL_PANAMA,
+					userId: 1
+				},
 			},
 			select: {
 				id: true,
@@ -96,6 +99,7 @@ class MercantilPanamaModule {
 							id: transaction.paymentMethodId,
 						},
 					},
+					user: { connect: { id: 1 } },
 					...(transaction.categoryId && {
 						category: {
 							connect: {

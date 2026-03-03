@@ -202,7 +202,7 @@ export class TaskQueueModule {
 					let category = null;
 					if (parsed.category) {
 						category = await prisma.category.findUnique({
-							where: { name: parsed.category },
+							where: { name_userId: { name: parsed.category, userId: 1 } },
 						});
 					}
 
@@ -214,6 +214,7 @@ export class TaskQueueModule {
 							currency: parsed.currency,
 							type: parsed.type,
 							referenceId: parsed.referenceId || null,
+							user: { connect: { id: 1 } },
 							...(paymentMethod && {
 								paymentMethod: { connect: { id: paymentMethod.id } },
 							}),

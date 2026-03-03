@@ -13,3 +13,11 @@ services:
       - '3308:3306'
     networks:
       - finance-bot-network
+
+  redis-finance-bot:
+    image: redis:alpine
+    platform: linux/amd64
+    ports:
+      - '6379:6379'
+    networks:
+      - finance-bot-network

@@ -13,3 +13,17 @@ services:
       - '3308:3306'
     networks:
       - finance-bot-production-network
+
+  redis-finance-bot-production:
+    image: redis:alpine
+    platform: linux/amd64
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    networks:
+      - finance-bot-production-network
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:

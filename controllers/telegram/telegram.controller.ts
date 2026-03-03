@@ -50,73 +50,23 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
 			return;
 		}
 
-		let commandResponse;
-		let command;
+		// Acknowledge telegram immediately
+		res.status(200).send('ok');
 
-		if (req.body.message.text?.[0] === '/') {
-			command = telegramBot.commandParser(req.body.message.text);
-			commandResponse = await commandsModule.executeCommand(command.commandName, command.commandArgs);
-			await telegramBot.sendMessage(commandResponse, chatId);
-			res.send('ok');
-			return;
-		}
-
-		if (req.body.message.caption?.[0] === '/') {
-			command = telegramBot.commandParser(req.body.message.caption);
-
-			if (command.commandName === commandsModule.commandsList.registerTransaction) {
-				logger.info('Transaction receipt received');
-				const photos = req.body.message.photo;
-
-				if (!photos?.length) {
-					await telegramBot.sendMessage('No photos found in message', chatId);
-					res.send('ok');
-					return;
-				}
-
-				const bestPhoto = photos.sort(
-					(a: { file_size: number }, b: { file_size: number }) => b.file_size - a.file_size
-				)[0];
-
-				const filePath = await telegramBot.getFilePath(bestPhoto.file_id);
-				const filePathResult = (filePath as { result?: { file_path?: string } })?.result?.file_path;
-				const fileUrl = `${TELEGRAM_FILE_URL}/${filePathResult}`;
-
-				commandResponse = await commandsModule.executeCommand(command.commandName, {
-					images: [fileUrl],
-					telegramFileIds: [bestPhoto.file_id],
-					commandArgs: command.commandArgs,
-				});
-			} else {
-				const document = req.body.message.document;
-				if (!document?.file_id) {
-					await telegramBot.sendMessage('No document found in message', chatId);
-					res.send('ok');
-					return;
-				}
-				const filePath = await telegramBot.getFilePath(document.file_id);
-				const filePathResult = (filePath as { result?: { file_path?: string } })?.result?.file_path;
-				const fileContent = await telegramBot.getFileContent(filePathResult || '');
-				commandResponse = await commandsModule.executeCommand(command.commandName, fileContent);
-			}
-
-			await telegramBot.sendMessage(commandResponse, chatId);
-			res.send('ok');
-			return;
-		}
-
-		await telegramBot.sendMessage("I don't understand you", chatId);
-		res.send("I don't understand you");
-	} catch (error: unknown) {
-		const errorResponse = error as Error;
-		logger.error('Webhook handler error', { error: errorResponse.message, stack: errorResponse.stack });
-		const chatId = req.body?.message?.chat?.id;
-		if (chatId) {
+		// Handle asynchronous execution in the service layer
+		const { telegramService } = await import('../../src/services/telegram.service');
+		telegramService.handleWebhookMessage(chatId, req.body.message).catch(async (error: unknown) => {
+			const errorResponse = error as Error;
+			logger.error('Webhook service error', { error: errorResponse.message, stack: errorResponse.stack });
 			await telegramBot.sendMessage(
 				`An error occurred: ${errorResponse.message?.slice(0, config.MAX_ERROR_MESSAGE_LENGTH)}`,
 				chatId
-			);
-		}
+			).catch(() => { });
+		});
+
+	} catch (error: unknown) {
+		const errorResponse = error as Error;
+		logger.error('Webhook handler error', { error: errorResponse.message, stack: errorResponse.stack });
 		res.status(200).send(errorResponse.message);
 	}
 }

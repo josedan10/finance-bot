@@ -1,0 +1,17 @@
+services:
+  finance-bot-ui:
+    image: finance-bot-ui
+    build:
+      context: ../../../finance-bot-ui
+      dockerfile: Dockerfile
+    ports:
+      - '8080:8080'
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+    networks:
+      - finance-bot-production-network
+    depends_on:
+      - express-bot-production-api
+    restart: unless-stopped

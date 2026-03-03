@@ -12,7 +12,7 @@ interface RegisterTransactionInput {
 	commandArgs: string[];
 }
 
-type CommandFunction = (data: string | string[] | RegisterTransactionInput) => Promise<string>;
+type CommandFunction = (data: any, userId: number) => Promise<string>;
 
 interface Commands {
 	[key: string]: CommandFunction;
@@ -47,40 +47,41 @@ class CommandsModule {
 		};
 
 		this.commands = {
-			cashTransaction: async (data: unknown) => {
+			cashTransaction: async (data: unknown, userId: number) => {
 				logger.info('Cash transaction command received', { data });
 				return 'Cash transaction';
 			},
-			mercantil: async (data: unknown) => {
+			mercantil: async (data: unknown, userId: number) => {
 				await MercantilPanama.registerMercantilTransactionsFromCSVData(data as string);
 				return 'Mercantil transactions registered';
 			},
-			paypal: async (data: unknown) => {
+			paypal: async (data: unknown, userId: number) => {
 				await PayPal.registerPaypalDataFromCSVData(data as string);
 				return 'Paypal transactions registered';
 			},
-			monthlyReport: async (monthDate: unknown) => {
+			monthlyReport: async (monthDate: unknown, userId: number) => {
 				const reportData = await Reports.getMonthlyReport(monthDate as string);
 				return Reports.reportMessageOnMarkdown(reportData);
 			},
-			baseTransactions: async (data: unknown) => {
-				await BaseTransactions.registerManualTransactions(data as string[]);
+			baseTransactions: async (data: unknown, userId: number) => {
+				await BaseTransactions.registerManualTransactions(data as string[], userId);
 				return 'Manual transaction registered';
 			},
-			registerTransaction: async (input: unknown) => {
+			registerTransaction: async (input: unknown, userId: number) => {
 				const { images, telegramFileIds, commandArgs } = input as RegisterTransactionInput;
 				const texts = await Image2TextService.extractTextFromImages(images);
 				const { transaction, category } = await BaseTransactions.registerTransactionFromImages(
 					texts,
 					telegramFileIds,
-					commandArgs
+					commandArgs,
+					userId
 				);
 
 				const formattedDate = dayjs(transaction.date).format('DD/MM/YYYY');
+				const isForeignCurrency = transaction.currency !== 'USD';
 
-				return `📝 Transaction registered: ${transaction.originalCurrencyAmount} ${transaction.currency}${
-					transaction.amount ? ` ~ $${transaction.amount}` : ''
-				} 💵 | ${category?.name} - ${formattedDate}
+				return `📝 Transaction registered: ${transaction.originalCurrencyAmount} ${transaction.currency}${isForeignCurrency && transaction.amount ? ` ~ $${transaction.amount}` : ''
+					} 💵 | ${category?.name} - ${formattedDate}
 
 💬 ${transaction.description}
 ${transaction.reviewed ? '✅ Reviewed' : '❌ Not reviewed'}`;
@@ -89,9 +90,9 @@ ${transaction.reviewed ? '✅ Reviewed' : '❌ Not reviewed'}`;
 		} as unknown as Commands;
 	}
 
-	async executeCommand(command: string, data: unknown): Promise<string> {
+	async executeCommand(command: string, data: unknown, userId: number = 1): Promise<string> {
 		if (this.commands[command]) {
-			return this.commands[command](data as string);
+			return this.commands[command](data as string, userId);
 		}
 
 		throw new Error(`Command ${command} not found`);

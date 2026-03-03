@@ -7,21 +7,53 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum Role {
+  admin
+  user
+  operator
+  dev
+  support
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  firebaseId String   @unique @db.VarChar(128)
+  email      String   @unique @db.VarChar(255)
+  createdAt  DateTime @default(now())
+
+  // Relationships to tenant-scoped entities
+  categories              Category[]
+  keywords                Keyword[]
+  paymentMethods          PaymentMethod[]
+  transactions            Transaction[]
+  suscriptions            Suscription[]
+  shops                   Shop[]
+  platformMonthlyRegister PlatformMonthlyRegister[]
+}
+
 model Category {
   id              Int               @id @default(autoincrement())
-  name            String            @unique @db.VarChar(20)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
+  name            String            @db.VarChar(20)
   description     String?           @db.VarChar(255)
   amountLimit     Decimal?          @db.Decimal(10, 2)
   transaction     Transaction[]
   shopCategory    ShopCategory[]
   categoryKeyword CategoryKeyword[]
+
+  @@unique([name, userId])
 }
 
 model Keyword {
   id              Int               @id @default(autoincrement())
-  name            String            @unique @db.VarChar(100)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
+  name            String            @db.VarChar(100)
   description     String?           @db.VarChar(255)
   categoryKeyword CategoryKeyword[]
+
+  @@unique([name, userId])
 }
 
 model CategoryKeyword {
@@ -36,13 +68,19 @@ model CategoryKeyword {
 
 model PaymentMethod {
   id                      Int                       @id @default(autoincrement())
-  name                    String                    @unique @db.VarChar(20)
+  user                    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                  Int
+  name                    String                    @db.VarChar(20)
   transaction             Transaction[]
   platformMonthlyRegister PlatformMonthlyRegister[]
+
+  @@unique([name, userId])
 }
 
 model Transaction {
   id                     Int            @id @default(autoincrement())
+  user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                 Int
   date                   DateTime
   description            String?        @db.VarChar(255)
   amount                 Decimal?       @db.Decimal(10, 2)
@@ -62,11 +100,13 @@ model Transaction {
   reviewed               Boolean        @default(false)
   reviewedAt             DateTime?
 
-  @@unique(fields: [description, referenceId, date])
+  @@unique(fields: [description, referenceId, date, userId])
 }
 
 model PlatformMonthlyRegister {
   id              Int           @id @default(autoincrement())
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
   startAmount     Decimal       @db.Decimal(10, 2)
   endAmount       Decimal       @db.Decimal(10, 2)
   year            Int           @db.Int
@@ -74,24 +114,32 @@ model PlatformMonthlyRegister {
   paymentMethodId Int
   paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
-  @@unique([paymentMethodId, year, month])
+  @@unique([paymentMethodId, year, month, userId])
   @@index([paymentMethodId, year, month])
 }
 
 model Suscription {
   id          Int     @id @default(autoincrement())
-  name        String  @unique @db.VarChar(20)
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  name        String  @db.VarChar(20)
   keyWord     String? @db.VarChar(20)
   paymentDate String? @db.VarChar(10)
   type        String  @db.VarChar(20)
+
+  @@unique([name, userId])
 }
 
 model Shop {
   id           Int            @id @default(autoincrement())
-  name         String         @unique @db.VarChar(20)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int
+  name         String         @db.VarChar(20)
   keyWord      String?        @db.VarChar(20)
   shopCategory ShopCategory[]
   transaction  Transaction[]
+
+  @@unique([name, userId])
 }
 
 model ShopCategory {

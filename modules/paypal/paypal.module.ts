@@ -48,7 +48,10 @@ class PaypalModule {
 
 		const paymentMethod = await this._prisma.paymentMethod.findUnique({
 			where: {
-				name: PAYMENT_METHODS.PAYPAL,
+				name_userId: {
+					name: PAYMENT_METHODS.PAYPAL,
+					userId: 1
+				},
 			},
 			select: {
 				id: true,
@@ -121,6 +124,7 @@ class PaypalModule {
 						id: paymentMethod.id,
 					},
 				},
+				user: { connect: { id: 1 } },
 				...(category && {
 					category: {
 						connect: {

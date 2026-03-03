@@ -7,11 +7,15 @@ async function main() {
 	for (const paymentMethod of paymentMethods) {
 		await prisma.paymentMethod.upsert({
 			where: {
-				name: paymentMethod.toUpperCase(),
+				name_userId: {
+					name: paymentMethod.toUpperCase(),
+					userId: 1
+				}
 			},
 			update: {},
 			create: {
 				name: paymentMethod.toUpperCase(),
+				userId: 1
 			},
 		});
 	}
@@ -42,12 +46,16 @@ async function main() {
 
 		const category = await prisma.category.upsert({
 			where: {
-				name: categoryName,
+				name_userId: {
+					name: categoryName,
+					userId: 1
+				}
 			},
 			update: {},
 			create: {
 				name: categoryName,
 				amountLimit: limit,
+				userId: 1
 			},
 		});
 
@@ -59,6 +67,7 @@ async function main() {
 			await prisma.keyword.createMany({
 				data: keywords.map((keyword: string) => ({
 					name: keyword,
+					userId: 1
 				})),
 				skipDuplicates: true,
 			});
@@ -69,7 +78,10 @@ async function main() {
 		for (const keyword of keywords) {
 			const getKeyWord = await prisma.keyword.findUnique({
 				where: {
-					name: keyword,
+					name_userId: {
+						name: keyword,
+						userId: 1
+					}
 				},
 			});
 
@@ -105,13 +117,17 @@ async function main() {
 	for (const suscription of suscriptions) {
 		await prisma.suscription.upsert({
 			where: {
-				name: suscription.name,
+				name_userId: {
+					name: suscription.name,
+					userId: 1
+				}
 			},
 			update: {},
 			create: {
 				name: suscription.name,
 				type: suscription.type,
 				paymentDate: suscription?.paymentDate || null,
+				userId: 1
 			},
 		});
 	}

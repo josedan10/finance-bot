@@ -26,8 +26,8 @@ describe('BaseTransactions', () => {
 		const category = await createCategory({ id: 1 });
 		const transaction = await createTransaction({ id: 1 });
 
-		const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
-		const spyCategoryFindUnique = prismaMock.category.findUnique.mockResolvedValue(category);
+		const spyPaymentMethodFindFirst = prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		const spyCategoryFindFirst = prismaMock.category.findFirst.mockResolvedValue(category);
 		const spyTransactionCreate = prismaMock.transaction.create.mockResolvedValue(transaction);
 		prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(null);
 
@@ -39,11 +39,11 @@ describe('BaseTransactions', () => {
 			'type=debit;',
 			'cat=Entertaiment',
 		];
-		await BaseTransactions.registerManualTransactions(data);
+		await BaseTransactions.registerManualTransactions(data, 1);
 
-		expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
+		expect(spyPaymentMethodFindFirst).toHaveBeenCalledTimes(1);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
-		expect(spyCategoryFindUnique).toHaveBeenCalledTimes(1);
+		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(1);
 	});
 
 	// Tests that registerManualTransactions successfully registers a manual transaction with minimum data (amount, payment method, type, category)
@@ -53,8 +53,8 @@ describe('BaseTransactions', () => {
 		const category = await createCategory({ id: 1 });
 		const transaction = await createTransaction({ id: 1 });
 
-		const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
-		const spyCategoryFindUnique = prismaMock.category.findUnique.mockResolvedValue(category);
+		const spyPaymentMethodFindFirst = prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		const spyCategoryFindFirst = prismaMock.category.findFirst.mockResolvedValue(category);
 		const spyTransactionCreate = prismaMock.transaction.create.mockResolvedValue(transaction);
 		prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(null);
 
@@ -66,14 +66,14 @@ describe('BaseTransactions', () => {
 			'type=debit;',
 			'cat=Entertaiment',
 		];
-		const result = await BaseTransactions.registerManualTransactions(data);
+		const result = await BaseTransactions.registerManualTransactions(data, 1);
 
 		// Check the result
 		expect(result).toEqual(transaction);
 
-		expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
+		expect(spyPaymentMethodFindFirst).toHaveBeenCalledTimes(1);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
-		expect(spyCategoryFindUnique).toHaveBeenCalledTimes(1);
+		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -92,22 +92,22 @@ describe('registerManualTransactions', () => {
 		];
 		const paymentMethod = await createPaymentMethod({ id: 1 });
 		const category = await createCategory({ id: 1 });
-		const transaction = await createTransaction({ id: 1, amount: 100, description: 'My description', type: 'debit' });
+		const transaction = await createTransaction({ id: 1, amount: new Decimal(100), description: 'My description', type: 'debit' });
 
 		// uses sinon to mock the database methods
-		const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
-		const spyCategoryFindUnique = prismaMock.category.findUnique.mockResolvedValue(category);
+		const spyPaymentMethodFindFirst = prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		const spyCategoryFindFirst = prismaMock.category.findFirst.mockResolvedValue(category);
 		const spyTransactionCreate = prismaMock.transaction.create.mockResolvedValue(transaction);
 		prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(null);
 
 		// Act
-		const result = await BaseTransactions.registerManualTransactions(data);
+		const result = await BaseTransactions.registerManualTransactions(data, 1);
 
 		// Assert
 		expect(result).toEqual(transaction);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
-		expect(spyCategoryFindUnique).toHaveBeenCalledTimes(1);
-		expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
+		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(1);
+		expect(spyPaymentMethodFindFirst).toHaveBeenCalledTimes(1);
 	});
 
 	// Tests that the method creates a transaction with optional fields (currency, date)
@@ -124,21 +124,21 @@ describe('registerManualTransactions', () => {
 		];
 		const paymentMethod = await createPaymentMethod({ id: 1 });
 		const category = await createCategory({ id: 1 });
-		const transaction = await createTransaction({ id: 1, amount: 100, description: 'My description', type: 'debit' });
+		const transaction = await createTransaction({ id: 1, amount: new Decimal(100), description: 'My description', type: 'debit' });
 
-		const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
-		const spyCategoryFindUnique = prismaMock.category.findUnique.mockResolvedValue(category);
+		const spyPaymentMethodFindFirst = prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		const spyCategoryFindFirst = prismaMock.category.findFirst.mockResolvedValue(category);
 		const spyTransactionCreate = prismaMock.transaction.create.mockResolvedValue(transaction);
 		prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(null);
 
 		// Act
-		const result = await BaseTransactions.registerManualTransactions(data);
+		const result = await BaseTransactions.registerManualTransactions(data, 1);
 
 		// Assert
 		expect(result).toEqual(transaction);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
-		expect(spyCategoryFindUnique).toHaveBeenCalledTimes(1);
-		expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
+		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(1);
+		expect(spyPaymentMethodFindFirst).toHaveBeenCalledTimes(1);
 	});
 
 	// Tests that the method converts VES to USD and creates a transaction
@@ -155,23 +155,23 @@ describe('registerManualTransactions', () => {
 
 		const paymentMethod = await createPaymentMethod({ id: 1 });
 		const category = await createCategory({ id: 1 });
-		const transaction = await createTransaction({ id: 1, amount: 1, description: 'My description', type: 'debit' });
-		const exchangeRate = await createDailyExchangeRate({ monitorPrice: 100 });
+		const transaction = await createTransaction({ id: 1, amount: new Decimal(1), description: 'My description', type: 'debit' });
+		const exchangeRate = await createDailyExchangeRate({ monitorPrice: new Decimal(100) });
 
 		// Mock the database methods
-		const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
-		const spyCategoryFindUnique = prismaMock.category.findUnique.mockResolvedValue(category);
+		const spyPaymentMethodFindFirst = prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		const spyCategoryFindFirst = prismaMock.category.findFirst.mockResolvedValue(category);
 		const spyTransactionCreate = prismaMock.transaction.create.mockResolvedValue(transaction);
 		prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(exchangeRate);
 
 		// Act
-		const result = await BaseTransactions.registerManualTransactions(data);
+		const result = await BaseTransactions.registerManualTransactions(data, 1);
 
 		// Assert
 		expect(result).toEqual(transaction);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
-		expect(spyCategoryFindUnique).toHaveBeenCalledTimes(1);
-		expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
+		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(1);
+		expect(spyPaymentMethodFindFirst).toHaveBeenCalledTimes(1);
 	});
 
 	// Tests that the method throws an error if any required field is missing
@@ -182,13 +182,13 @@ describe('registerManualTransactions', () => {
 			'amount=100; desc=My description; method=Mercantil Venezuela; type=debit; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
 
 		// Act & Assert
-		await expect(BaseTransactions.registerManualTransactions(data)).rejects.toThrow(
+		await expect(BaseTransactions.registerManualTransactions(data, 1)).rejects.toThrow(
 			`Invalid data: ${data}... Try with ${sampleData}`
 		);
 
 		const data1 = ['100;', 'My description;', 'Mercantil Venezuela;', 'debit;', 'FOOD/HOME'];
 
-		await expect(BaseTransactions.registerManualTransactions(data1)).rejects.toThrow(
+		await expect(BaseTransactions.registerManualTransactions(data1, 1)).rejects.toThrow(
 			`Invalid data: ${data1}... Try with ${sampleData}`
 		);
 	});
@@ -204,10 +204,10 @@ describe('registerManualTransactions', () => {
 			'cat=ENTERTAIMENT;',
 		];
 
-		prismaMock.paymentMethod.findUnique.mockResolvedValue(null);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(null);
 
 		// Act & Assert
-		await expect(BaseTransactions.registerManualTransactions(data)).rejects.toThrow(
+		await expect(BaseTransactions.registerManualTransactions(data, 1)).rejects.toThrow(
 			'Payment method Mercantil Venezuela not found'
 		);
 	});
@@ -225,11 +225,11 @@ describe('registerManualTransactions', () => {
 
 		const paymentMethod = await createPaymentMethod({ id: 1 });
 
-		prismaMock.category.findUnique.mockResolvedValue(null);
-		prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
+		prismaMock.category.findFirst.mockResolvedValue(null);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
 
 		// Act & Assert
-		await expect(BaseTransactions.registerManualTransactions(data)).rejects.toThrow(
+		await expect(BaseTransactions.registerManualTransactions(data, 1)).rejects.toThrow(
 			'Category RANDOM_CATEGORY not found'
 		);
 	});
@@ -241,36 +241,16 @@ describe('registerTransactionFromImages', () => {
 	// Given a valid array of text from images, the method should search for a category that matches the keywords in each line and create a transaction with the found category.
 	it('should create a transaction with the found category when given a valid array of text from images', async () => {
 		// Mock the database module
-		const firstArgs = {
-			where: {
-				categoryKeyword: {
-					some: {
-						keyword: {
-							name: 'my',
-						},
-					},
-				},
-			},
-		};
-
-		const secondArgs = {
-			where: {
-				categoryKeyword: {
-					some: {
-						keyword: {
-							name: 'petshop',
-						},
-					},
-				},
-			},
-		};
-
 		const transaction = await createTransaction({ id: 1 });
 		const category = await createCategory({ id: 1 });
 
-		const spyCategoryFindFirst = prismaMock.category.findFirst
-			.mockResolvedValueOnce(null)
-			.mockResolvedValueOnce(category);
+		const keywordsResult = [
+			{
+				name: 'petshop',
+				categoryKeyword: [{ category }]
+			}
+		];
+		const spyKeywordFindMany = prismaMock.keyword.findMany.mockResolvedValue(keywordsResult as any);
 
 		prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(null);
 		const spyTransactionCreate = prismaMock.transaction.create.mockResolvedValue(transaction);
@@ -280,19 +260,28 @@ describe('registerTransactionFromImages', () => {
 		const telegramFileIds = ['file_id_1', 'file_id_2'];
 
 		// Call the method
-		const result = await BaseTransactions.registerTransactionFromImages(data, telegramFileIds);
+		const result = await BaseTransactions.registerTransactionFromImages(data, telegramFileIds, undefined, 1);
 
 		// Verify the result
 		expect(result.transaction.id).toEqual(1);
 		expect(result.category?.id).toEqual(1);
 
 		// Verify that the database module was called correctly
-		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(2);
+		expect(spyKeywordFindMany).toHaveBeenCalledTimes(1);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
-		expect(spyCategoryFindFirst).toBeCalledWith(firstArgs);
-		expect(spyCategoryFindFirst).toBeCalledWith(secondArgs);
-		expect(spyTransactionCreate).toHaveBeenCalledWith({
+		expect(spyKeywordFindMany).toBeCalledWith({
+			where: {
+				name: { in: ['my', 'petshop', 'total', 'bs', '538.53', 'image', 'text', '3'] },
+				userId: 1,
+			},
+			select: {
+				name: true,
+				categoryKeyword: { select: { category: true }, take: 1 },
+			}
+		});
+		expect(spyTransactionCreate).toBeCalledWith({
 			data: {
+				user: { connect: { id: 1 } },
 				originalCurrencyAmount: 538.53,
 				description: 'my petshop TOTAL   Bs 538.53 image text 3',
 				type: 'debit',
@@ -314,13 +303,13 @@ describe('registerTransactionFromImages', () => {
 		const telegramFileIds = ['file_id_1', 'file_id_2'];
 
 		// Call the method
-		await expect(BaseTransactions.registerTransactionFromImages(data, telegramFileIds)).rejects.toThrow(
+		await expect(BaseTransactions.registerTransactionFromImages(data, telegramFileIds, undefined, 1)).rejects.toThrow(
 			'Amount not found'
 		);
 	});
 
 	it('should create the transaction without category and create a task', async () => {
-		const spyCategoryFindFirst = prismaMock.category.findFirst.mockResolvedValue(null);
+		const spyKeywordFindMany = prismaMock.keyword.findMany.mockResolvedValue([]);
 
 		prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(null);
 
@@ -333,17 +322,18 @@ describe('registerTransactionFromImages', () => {
 		const telegramFileIds = ['file_id_1', 'file_id_2'];
 
 		// Call the method
-		const result = await BaseTransactions.registerTransactionFromImages(data, telegramFileIds);
+		const result = await BaseTransactions.registerTransactionFromImages(data, telegramFileIds, undefined, 1);
 
 		// Verify the result
 		expect(result.transaction.id).toEqual(1);
 		expect(result.category).toEqual(null);
 
 		// Verify that the database module was called correctly
-		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(10);
+		expect(spyKeywordFindMany).toHaveBeenCalledTimes(1);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
 		expect(spyTransactionCreate).toHaveBeenCalledWith({
 			data: {
+				user: { connect: { id: 1 } },
 				originalCurrencyAmount: 538.53,
 				description: 'my petshop TOTAL   Bs 538.53 image text 3',
 				type: 'debit',

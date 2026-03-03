@@ -6,6 +6,7 @@ import * as dotenv from 'dotenv';
 import { RouterApp as indexRouter } from './routes';
 import { TaskQueueModuleService } from './modules/crons/task-queue.cron';
 import logger from './src/lib/logger';
+import { AppError } from './src/lib/appError';
 
 dotenv.config();
 
@@ -20,19 +21,21 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', indexRouter);
 
-app.use('*', (req: Request, res: Response) => {
-	res.status(404).send("Sorry, can't find that!");
+app.use('*', (req: Request, res: Response, next: NextFunction) => {
+	next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-app.use((err: Error & { status?: number }, req: Request, res: Response, _next: NextFunction) => {
-	res.locals.message = err.message;
-	res.locals.error = req.app.get('env') === 'development' ? err : {};
-
-	res.status(err.status || 500);
-	res.send('An error occurred!');
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+	err.statusCode = err.statusCode || 500;
+	err.status = err.status || 'error';
 
 	logger.error('Unhandled error', { error: err.message, stack: err.stack });
+
+	res.status(err.statusCode).json({
+		status: err.status,
+		message: err.message,
+		...(req.app.get('env') === 'development' && { stack: err.stack }),
+	});
 });
 
 if (process.env.NODE_ENV !== 'test') {

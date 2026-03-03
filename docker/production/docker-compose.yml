@@ -12,10 +12,15 @@ services:
 
     env_file:
       - ../../.env
+    environment:
+      - REDIS_URL=redis://redis-finance-bot-production:6379
     ports:
       - '5000:5000'
     networks:
       - finance-bot-production-network
+    depends_on:
+      - mysql-finance-bot-production
+      - redis-finance-bot-production
     volumes:
       - ../../dist:/app/dist
       - /app/node_modules

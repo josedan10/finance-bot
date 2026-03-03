@@ -7,6 +7,7 @@ import { Category, PrismaClient, Transaction } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
+import { redisClient } from '../../src/lib/redis';
 
 class BaseTransactionsModule {
 	private _db: PrismaClient;
@@ -38,7 +39,7 @@ class BaseTransactionsModule {
 		return null;
 	}
 
-	async registerManualTransactions(data: string[]) {
+	async registerManualTransactions(data: string[], userId: number) {
 		const joinedData = data.join(' ');
 		const splittedData = joinedData.split(';');
 
@@ -64,21 +65,47 @@ class BaseTransactionsModule {
 			amountInUSD = Number(amount);
 		}
 
-		const paymentMethod = await this._db.paymentMethod.findUnique({
-			where: {
-				name: paymentMethodName,
-			},
-		});
+		const pmCacheKey = `payment_method:${userId}:${paymentMethodName}`;
+		let paymentMethod;
+		const cachedPm = await redisClient.get(pmCacheKey);
+
+		if (cachedPm) {
+			paymentMethod = JSON.parse(cachedPm);
+		} else {
+			paymentMethod = await this._db.paymentMethod.findFirst({
+				where: {
+					name: paymentMethodName,
+					userId,
+				},
+			});
+
+			if (paymentMethod) {
+				await redisClient.set(pmCacheKey, JSON.stringify(paymentMethod), 3600); // 1 hour
+			}
+		}
 
 		if (!paymentMethod) {
 			throw new Error(`Payment method ${paymentMethodName} not found`);
 		}
 
-		const category = await this._db.category.findUnique({
-			where: {
-				name: categoryName,
-			},
-		});
+		const catCacheKey = `category:${userId}:${categoryName}`;
+		let category;
+		const cachedCat = await redisClient.get(catCacheKey);
+
+		if (cachedCat) {
+			category = JSON.parse(cachedCat);
+		} else {
+			category = await this._db.category.findFirst({
+				where: {
+					name: categoryName,
+					userId,
+				},
+			});
+
+			if (category) {
+				await redisClient.set(catCacheKey, JSON.stringify(category), 3600); // 1 hour
+			}
+		}
 
 		if (!category) {
 			throw new Error(`Category ${categoryName} not found`);
@@ -86,6 +113,7 @@ class BaseTransactionsModule {
 
 		const transaction = await this._db.transaction.create({
 			data: {
+				user: { connect: { id: userId } },
 				amount: amountInUSD,
 				description,
 				type,
@@ -108,13 +136,24 @@ class BaseTransactionsModule {
 		return transaction;
 	}
 
-	private async findCategoryByWords(words: string[]): Promise<Category | null> {
+	private async findCategoryByWords(words: string[], userId: number): Promise<Category | null> {
 		const lowerWords = words.map((w) => w.toLowerCase()).filter((w) => w.length > 0);
 		if (lowerWords.length === 0) return null;
+
+		const keywordHash = Buffer.from(lowerWords.join('_')).toString('base64');
+		const keywordCacheKey = `category_keywords:${userId}:${keywordHash}`;
+
+		const cachedCategoryStr = await redisClient.get(keywordCacheKey);
+		if (cachedCategoryStr) {
+			const cachedCategory = JSON.parse(cachedCategoryStr);
+			logger.info(`Category found from cache: ${cachedCategory.name}`);
+			return cachedCategory;
+		}
 
 		const keywords = await this._db.keyword.findMany({
 			where: {
 				name: { in: lowerWords },
+				userId,
 			},
 			select: {
 				name: true,
@@ -131,6 +170,7 @@ class BaseTransactionsModule {
 			if (keyword.categoryKeyword.length > 0) {
 				const category = keyword.categoryKeyword[0].category;
 				logger.info(`Category found: ${category.name} with keyword: ${keyword.name}`);
+				await redisClient.set(keywordCacheKey, JSON.stringify(category), 3600 * 24); // 24 hours
 				return category;
 			}
 		}
@@ -141,7 +181,8 @@ class BaseTransactionsModule {
 	async registerTransactionFromImages(
 		data: string[],
 		telegramFileIds: string[],
-		args?: string[]
+		args: string[] | undefined,
+		userId: number
 	): Promise<{
 		transaction: Transaction;
 		category: Category | null;
@@ -168,10 +209,11 @@ class BaseTransactionsModule {
 
 		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
 
-		category = await this.findCategoryByWords(words);
+		category = await this.findCategoryByWords(words, userId);
 
 		const transaction = await this._db.transaction.create({
 			data: {
+				user: { connect: { id: userId } },
 				...(amountInUSD ? { amount: amountInUSD } : {}),
 				originalCurrencyAmount: Number(amount),
 				description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
@@ -181,12 +223,12 @@ class BaseTransactionsModule {
 				telegramFileIds: telegramFileIds.join(','),
 				...(category
 					? {
-							category: {
-								connect: {
-									id: category.id,
-								},
+						category: {
+							connect: {
+								id: category.id,
 							},
-					  }
+						},
+					}
 					: {}),
 			},
 		});

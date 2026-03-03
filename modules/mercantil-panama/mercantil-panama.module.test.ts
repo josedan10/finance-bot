@@ -41,8 +41,8 @@ describe('Mercantil Panamá Module: ', () => {
 		expect(spy$Transaction).toHaveBeenCalledTimes(1);
 
 		expect(data).toHaveLength(3);
-		expect(data[0].type).toBe('credit');
-		expect(data[1].type).toBe('debit');
+		expect((data[0] as { type: string }).type).toBe('credit');
+		expect((data[1] as { type: string }).type).toBe('debit');
 	});
 	test('Register 0 transactions', async () => {
 		prisma.transaction.create = sandbox.stub().resolves({ id: 1 });

@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import commandsModule from './commands.module';
 import Sinon from 'sinon';
 import { expect } from '@jest/globals';
+import { Decimal } from '@prisma/client/runtime/library';
 import { BaseTransactions } from '../base-transactions/base-transactions.module';
 import { MercantilPanama } from '../mercantil-panama/mercantil-panama.module';
 import { PayPal } from '../paypal/paypal.module';
@@ -115,8 +116,8 @@ Debits: 938.9000000000001`;
 
 		const csvData = `Fecha,Hora,Zona horaria,Nombre,Tipo,Estado,Divisa,Bruto,Comisión,Neto,Correo electrónico del remitente,Correo electrónico del destinatario,Id. de transacción,Dirección de envío,Estado de la dirección,Nombre del artículo,Id. del artículo,Importe de envío y manipulación,Importe del seguro,Impuesto sobre ventas,Nombre de la opción 1,Valor de la opción 1,Nombre de la opción 2,Valor de la opción 2,Id. de referencia de la transacción,N.° de formato de pago,Número personalizado,Cantidad,Id.del formato de pago,Saldo,Dirección,Dirección (continuación)/Distrito/Barrio,Población o Ciudad,Estado/Provincia/Región/Condado/Territorio/Prefectura/República,Código postal,País,Número de teléfono de contacto,Asunto,Nota,Código de país,Repercusiones en el saldo
 		${dateTime1.date},${dateTime1.time},PDT,"Disney DTC LATAM, Inc.",TEST,Completado,USD,"-5,99","0,00","-5,99",josedanq100@gmail.com,CORP.DL-DSSVE@disney.com,88945731C0646752T,,No confirmada,| Disney Plus Monthly - VE - Web,0,"0,00",,"0,00",,,,,B-0Y0262488W109263R,1.00106E+12,,1,,"16,90",,,,,,,,| Disney Plus Monthly - VE - Web,,,Cargo
-		${dateTime2.date},${dateTime2.time},PDT,Productora Audiovisual,TEST,Completado,USD,"698,00","-37,99","660,01",blacksheepproductions.adm@gmail.com,josedanq100@gmail.com,5JB6428572966460A,"Nedith Meynel, Borges Canario, Calle Guaicaipuro Casa 108-A, Los Teques, Los Teques, ESTADO MIRANDA, 1201, Venezuela",No confirmada,,,,,,,,,,,,,,,"676,91",Calle Guaicaipuro Casa 108-A,Los Teques,Los Teques,ESTADO MIRANDA,1201,Venezuela,4241238118,,Varios�,VE,Crédito
-		${dateTime3.date},${dateTime3.time},PDT,Productora Audiovisual,TEST,Completado,USD,"698,00","-37,99","660,01",blacksheepproductions.adm@gmail.com,josedanq100@gmail.com,4L054218UK407305W,,No confirmada,,,,,,,,,,,,,,,"1.336,92",,,,,,,4241238118,,Varios �,,Crédito
+		${dateTime2.date},${dateTime2.time},PDT,Productora Audiovisual,TEST,Completado,USD,"698,00","-37,99","660,01",blacksheepproductions.adm@gmail.com,josedanq100@gmail.com,5JB6428572966460A,"Nedith Meynel, Borges Canario, Calle Guaicaipuro Casa 108-A, Los Teques, Los Teques, ESTADO MIRANDA, 1201, Venezuela",No confirmada,,,,,,,,,,,,,,,"676,91",Calle Guaicaipuro Casa 108-A,Los Teques,Los Teques,ESTADO MIRANDA,1201,Venezuela,4241238118,,Varios,VE,Crédito
+		${dateTime3.date},${dateTime3.time},PDT,Productora Audiovisual,TEST,Completado,USD,"698,00","-37,99","660,01",blacksheepproductions.adm@gmail.com,josedanq100@gmail.com,4L054218UK407305W,,No confirmada,,,,,,,,,,,,,,,"1.336,92",,,,,,,4241238118,,Varios ,,Crédito
 		${dateTime4.date},${dateTime4.time},PDT,,TEST ,Completado,USD,"-1.320,00","0,00","-1.320,00",josedanq100@gmail.com,,54E08306FN9278418,,,,,,,,,,,,,,,,,"16,92",,,,,,,,,,,Cargo`;
 
 		const spyRegisterFromCSV = sandbox.stub(PayPal, 'registerPaypalDataFromCSVData').resolves([]);
@@ -136,7 +137,7 @@ Debits: 938.9000000000001`;
 		const transactionAndCategory = {
 			transaction: createTransaction({
 				description: 'My Description',
-				originalCurrencyAmount: 100.0,
+				originalCurrencyAmount: new Decimal(100.0),
 				currency: 'USD',
 				date: new Date(),
 				reviewed: false,
@@ -173,7 +174,7 @@ Debits: 938.9000000000001`;
 		const transactionAndCategory = {
 			transaction: createTransaction({
 				description: 'My Description',
-				originalCurrencyAmount: 100.0,
+				originalCurrencyAmount: new Decimal(100.0),
 				currency: 'USD',
 				date: new Date(),
 				reviewed: true,

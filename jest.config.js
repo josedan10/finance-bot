@@ -4,7 +4,10 @@ const customJestConfig = {
 	testTimeout: 10000,
 	moduleDirectories: ['node_modules'],
 	preset: 'ts-jest',
-	setupFilesAfterEnv: ['<rootDir>/modules/database/database.module.mock.ts'],
+	setupFilesAfterEnv: [
+		'<rootDir>/modules/database/database.module.mock.ts', 
+		'<rootDir>/modules/database/redis.module.mock.ts'
+	],
 	transform: {
 		'node_modules/variables/.+\\.(j|t)sx?$': 'ts-jest',
 	},
@@ -38,7 +41,10 @@ const customJestConfig = {
 		'!**/modules/database/**',
 		'!**/routes/**',
 		'!**/src/enums/**',
+		'!**/src/lib/**',
+		'!**/src/telegram/variables.ts',
 		'!**/modules/crons/task-queue.cron.ts',
+		'!**/modules/gmail/**',
 		'!**/scraper.*',
 		'!**/src/config.ts',
 	],
