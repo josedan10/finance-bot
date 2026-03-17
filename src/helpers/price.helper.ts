@@ -29,30 +29,47 @@ export function extractDateFromDescription(text: string): string | null {
 }
 
 export function getTotalFromDataText(data: string[]): number | null {
-	const regex = /(\d+,\d+.\d+|\d+.\d+,\d+|\d+.\d+|\d+,\d+|\d+.\d+|\d+)/;
-	const option =
-		data?.find((d) => d.toLowerCase().includes('total') && regex.test(d)) ||
-		data?.reverse()?.find((d) => d.toLowerCase().includes('bs') && regex.test(d));
-	const totalMatch = option?.replaceAll(' ', '')?.match(regex);
-	const totalStr = totalMatch?.[0];
+	const amountRegex = /(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+[.,]\d+|\d+)/;
+	const lineWithTotal = data?.find((d) => d.toLowerCase().includes('total') && amountRegex.test(d));
+	const lineWithBs = !lineWithTotal ? [...(data || [])].reverse().find((d) => d.toLowerCase().includes('bs') && amountRegex.test(d)) : null;
+	
+	const option = lineWithTotal || lineWithBs;
+	
+	if (option) {
+		// Clean the string to keep only relevant parts for amount extraction
+		// We remove everything before 'total' or 'bs' to avoid capturing dates
+		const lowerOption = option.toLowerCase();
+		const startIndex = Math.max(lowerOption.indexOf('total'), lowerOption.indexOf('bs'));
+		const relevantPart = option.substring(startIndex).replaceAll(' ', '');
+		
+		const totalMatch = relevantPart.match(amountRegex);
+		const totalStr = totalMatch?.[0];
 
-	if (totalStr) {
-		const commaPosition = totalStr.indexOf(',');
-		const dotPosition = totalStr.indexOf('.');
-
-		if (commaPosition < dotPosition && commaPosition !== -1 && dotPosition !== -1) {
-			// comma is the decimal separator
-			return parseFloat(totalStr.replaceAll(',', ''));
-		} else if (dotPosition < commaPosition && commaPosition !== -1 && dotPosition !== -1) {
-			// dot is the decimal separator
-			const total = totalStr.replaceAll('.', '').replace(',', '.');
-			return parseFloat(total);
-		} else if (dotPosition === -1) {
-			// comma is the decimal separator
-			return parseFloat(totalStr.replaceAll(',', '.'));
+		if (totalStr) {
+			// If there's both a comma and a dot
+			if (totalStr.includes(',') && totalStr.includes('.')) {
+				const commaPos = totalStr.indexOf(',');
+				const dotPos = totalStr.indexOf('.');
+				
+				if (commaPos < dotPos) {
+					// 1,500.50 -> comma is thousands, dot is decimal
+					return parseFloat(totalStr.replaceAll(',', ''));
+				} else {
+					// 1.500,50 -> dot is thousands, comma is decimal
+					return parseFloat(totalStr.replaceAll('.', '').replace(',', '.'));
+				}
+			}
+			
+			// If there's only a comma
+			if (totalStr.includes(',') && !totalStr.includes('.')) {
+				// We assume it's decimal if it looks like one (e.g. 10,50) 
+				// or if it's the only separator
+				return parseFloat(totalStr.replace(',', '.'));
+			}
+			
+			// If there's only a dot or no separator
+			return parseFloat(totalStr);
 		}
-
-		return parseFloat(totalStr);
 	}
 
 	return null;

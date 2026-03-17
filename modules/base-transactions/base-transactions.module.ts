@@ -8,6 +8,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 import { redisClient } from '../../src/lib/redis';
+import { NotificationFactory } from '../notifications/notification.module';
 
 class BaseTransactionsModule {
 	private _db: PrismaClient;
@@ -133,6 +134,17 @@ class BaseTransactionsModule {
 			},
 		});
 
+		// Check budget thresholds and send notifications (async, non-blocking)
+		if (type === 'expense' || type === 'debit') {
+			NotificationFactory.notifyBudgetThreshold(userId, category.id, Number(amountInUSD)).catch((error) => {
+				logger.error('Failed to check budget notifications', {
+					error: error instanceof Error ? error.message : 'Unknown error',
+					userId,
+					categoryId: category.id,
+				});
+			});
+		}
+
 		return transaction;
 	}
 
@@ -223,15 +235,26 @@ class BaseTransactionsModule {
 				telegramFileIds: telegramFileIds.join(','),
 				...(category
 					? {
-						category: {
-							connect: {
-								id: category.id,
+							category: {
+								connect: {
+									id: category.id,
+								},
 							},
-						},
-					}
+						}
 					: {}),
 			},
 		});
+
+		// Check budget thresholds and send notifications (async, non-blocking)
+		if (category) {
+			NotificationFactory.notifyBudgetThreshold(userId, category.id, Number(amountInUSD || amount)).catch((error) => {
+				logger.error('Failed to check budget notifications', {
+					error: error instanceof Error ? error.message : 'Unknown error',
+					userId,
+					categoryId: category.id,
+				});
+			});
+		}
 
 		return { transaction, category };
 	}

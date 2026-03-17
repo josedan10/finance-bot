@@ -15,6 +15,11 @@ enum Role {
   support
 }
 
+enum AIProvider {
+  GEMINI
+  CHATGPT
+}
+
 model User {
   id         Int      @id @default(autoincrement())
   firebaseId String   @unique @db.VarChar(128)
@@ -29,6 +34,14 @@ model User {
   suscriptions            Suscription[]
   shops                   Shop[]
   platformMonthlyRegister PlatformMonthlyRegister[]
+  
+  // Notification relationships
+  notificationPreferences NotificationPreference[]
+  notificationLogs        NotificationLog[]
+  pushSubscriptions      PushSubscription[]
+  
+  // AI relationships
+  aiSettings              AISettings?
 }
 
 model Category {
@@ -41,6 +54,7 @@ model Category {
   transaction     Transaction[]
   shopCategory    ShopCategory[]
   categoryKeyword CategoryKeyword[]
+  notificationLogs NotificationLog[]
 
   @@unique([name, userId])
 }
@@ -180,4 +194,68 @@ model TaskQueue {
   completedAt       DateTime?
 
   @@index([type, status])
+}
+
+// ============================================
+// Notification Models
+// ============================================
+
+model NotificationPreference {
+  id                  Int       @id @default(autoincrement())
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId              Int       @unique
+  emailEnabled        Boolean   @default(true)
+  webPushEnabled      Boolean   @default(true)
+  thresholds          String    @default("[50, 70, 90]") @db.VarChar(50)  // JSON array as string: "[50,70,90]"
+  disabledCategories  String?   @db.VarChar(255)  // JSON array of category IDs to skip
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model NotificationLog {
+  id            Int       @id @default(autoincrement())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        Int
+  category      Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId    Int
+  channel       String    @db.VarChar(20)  // "email" | "webpush"
+  threshold     Int       // 50 | 70 | 90
+  percentage    Decimal   @db.Decimal(5, 2)  // Actual percentage when triggered
+  status        String    @default("sent") @db.VarChar(10)  // "sent" | "failed"
+  errorMessage  String?   @db.Text()
+  createdAt     DateTime  @default(now())
+
+  @@index([userId, categoryId, createdAt])
+  @@index([userId, channel, createdAt])
+}
+
+// Web Push Subscriptions for browser notifications
+model PushSubscription {
+  id          Int       @id @default(autoincrement())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  endpoint    String    @db.Text  // Push subscription endpoint URL
+  p256dh      String    @db.VarChar(100)  // ECDH public key
+  auth        String    @db.VarChar(50)   // Auth secret
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  expiresAt   DateTime? // Subscription expiration (if any)
+
+  @@index([userId])
+}
+
+// ============================================
+// AI Assistant Models
+// ============================================
+
+model AISettings {
+  id         Int        @id @default(autoincrement())
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     Int        @unique
+  aiEnabled  Boolean    @default(false)
+  aiProvider AIProvider @default(GEMINI)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([userId])
 }

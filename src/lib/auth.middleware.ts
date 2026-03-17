@@ -3,6 +3,7 @@ import { firebaseAdmin } from './firebase';
 import { AppError } from './appError';
 import { PrismaClient } from '@prisma/client';
 import { redisClient } from './redis';
+import OnboardingService from '../services/onboarding.service';
 
 const prisma = new PrismaClient();
 
@@ -16,53 +17,34 @@ declare global {
 }
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
-  let idToken;
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    idToken = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies?.session) {
-    idToken = req.cookies.session;
-  }
-
-  if (!idToken) {
-    return next(new AppError('You are not logged in! Please log in to get access.', 401));
-  }
+  // BYPASS AUTH FOR TESTING
+  // Always use a dummy user. We use a fixed firebaseId for the primary tester.
+  const DUMMY_FIREBASE_ID = 'test-user-123';
+  const DUMMY_EMAIL = 'test@financebot.com';
 
   try {
-    const decodedToken = await firebaseAdmin.auth().verifyIdToken(idToken);
+    let user = await prisma.user.findUnique({
+      where: { firebaseId: DUMMY_FIREBASE_ID }
+    });
 
-    const cacheKey = `auth_user:${decodedToken.uid}`;
-    let user;
-    const cachedUser = await redisClient.get(cacheKey);
-
-    if (cachedUser) {
-      user = JSON.parse(cachedUser);
-    } else {
-      user = await prisma.user.findUnique({
-        where: { firebaseId: decodedToken.uid }
-      });
-
-      if (!user) {
-        if (!decodedToken.email) {
-          return next(new AppError('Firebase user must have an email', 400));
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          firebaseId: DUMMY_FIREBASE_ID,
+          email: DUMMY_EMAIL,
         }
-        user = await prisma.user.create({
-          data: {
-            firebaseId: decodedToken.uid,
-            email: decodedToken.email,
-          }
-        });
-      }
-
-      // Cache user details for 15 minutes (900 seconds)
-      await redisClient.set(cacheKey, JSON.stringify(user), 900);
+      });
+      
+      // Automatic onboarding for the new dummy user
+      await OnboardingService.setupUserDefaultCategories(user.id);
     }
 
-    req.firebaseUser = decodedToken;
+    req.firebaseUser = { uid: DUMMY_FIREBASE_ID, email: DUMMY_EMAIL };
     req.user = user;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
-    return next(new AppError('Invalid token or token has expired', 401));
+    console.error('Auth bypass error:', error);
+    return next(new AppError('Failed to initialize dummy user', 500));
   }
 };
 

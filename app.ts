@@ -2,13 +2,10 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
-import * as dotenv from 'dotenv';
 import { RouterApp as indexRouter } from './routes';
 import { TaskQueueModuleService } from './modules/crons/task-queue.cron';
 import logger from './src/lib/logger';
 import { AppError } from './src/lib/appError';
-
-dotenv.config();
 
 const app = express();
 

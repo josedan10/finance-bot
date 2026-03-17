@@ -131,6 +131,8 @@ The API starts on the port defined in your `.env` file (default `5000`).
 | `APP_MODE` | `production` | Enables headless mode for puppeteer |
 | `SAVE_SCREENSHOTS` | `1` | Save puppeteer screenshots |
 | `IMAGE_2_TEXT_SERVICE_URL` | `http://local-image-text-extractor-1:4000/` | OCR service URL |
+| `GOOGLE_AI_API_KEY` | `AIzaSy...` | API Key for Google Gemini |
+| `OPENAI_API_KEY` | `sk-...` | API Key for OpenAI (ChatGPT) |
 
 ## Installation Notes
 

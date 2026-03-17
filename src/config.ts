@@ -1,7 +1,11 @@
 import path from 'path';
+import * as dotenv from 'dotenv';
+
+// Load environment variables immediately
+dotenv.config();
 
 export const config = {
-	TEST_CHAT_ID: Number(process.env.TEST_CHAT_ID) || (() => { throw new Error('TEST_CHAT_ID environment variable is required'); })(),
+	TEST_CHAT_ID: Number(process.env.TEST_CHAT_ID) || 0,
 	CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'America/Caracas',
 	PYDOLAR_API_URL: process.env.PYDOLAR_API_URL || 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar',
 	IMAGE_2_TEXT_SERVICE_URL: process.env.IMAGE_2_TEXT_SERVICE_URL || 'http://localhost:4000',
@@ -14,4 +18,13 @@ export const config = {
 	GMAIL_TOKEN_PATH: process.env.GMAIL_TOKEN_PATH || path.resolve('./token.json'),
 	GMAIL_POLL_QUERY: process.env.GMAIL_POLL_QUERY || 'is:unread category:updates',
 	GMAIL_SCOPES: ['https://www.googleapis.com/auth/gmail.modify'],
+
+	// Web Push Notifications (VAPID)
+	VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || '',
+	VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || '',
+	VAPID_SUBJECT: process.env.VAPID_SUBJECT || 'mailto:admin@financebot.com',
+
+	// AI Assistant
+	GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY || '',
+	OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
 };

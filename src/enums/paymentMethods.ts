@@ -32,13 +32,13 @@ export const CATEGORIES = {
 			'Cooper',
 		],
 	},
-	PURCHASE: {
-		name: 'Purchase',
+	SHOPPING: {
+		name: 'Shopping',
 		emoji: '🛍️',
-		keywords: ['amazon'],
+		keywords: ['amazon', 'fravega', 'mercadolibre', 'shopping', 'purchase'],
 	},
-	FOOD_HOME: {
-		name: 'Food/Home',
+	FOOD_DINING: {
+		name: 'Food & Dining',
 		emoji: '🍽️',
 		keywords: [
 			'forum',
@@ -50,6 +50,13 @@ export const CATEGORIES = {
 			'supermarket',
 			'market',
 			'mercado',
+			'rappi',
+			'quecachapa',
+			'mc donalds',
+			'burgiopizza',
+			'havanna',
+			'starbucks',
+			'restaurant',
 		],
 	},
 	ENTERTAINMENT: {
@@ -69,15 +76,18 @@ export const CATEGORIES = {
 			'itunes',
 			'appstore',
 			'google',
+			'patreon',
+			'showcase',
+			'cinema',
 		],
 	},
 	OTHER: {
 		name: 'Other',
 		emoji: '💼',
-		// keywords: [],
+		keywords: ['belo'],
 	},
-	HEALTH: {
-		name: 'Health',
+	HEALTH_FITNESS: {
+		name: 'Health & Fitness',
 		emoji: '🩺',
 		keywords: [
 			'gym',
@@ -91,6 +101,8 @@ export const CATEGORIES = {
 			'medica',
 			'farmatodo',
 			'farmacia saas',
+			'medical',
+			'swiss medical',
 		],
 	},
 	DONATION: {
@@ -98,10 +110,25 @@ export const CATEGORIES = {
 		emoji: '💰',
 		keywords: ['donation', 'donaciones'],
 	},
-	TRANSPORT: {
-		name: 'Transport',
+	TRANSPORTATION: {
+		name: 'Transportation',
 		emoji: '🚕',
-		keywords: ['uber', 'cabify', 'taxi', 'gas', 'gasolina', 'gasoline', 'transporte', 'transport', 'ridery'],
+		keywords: [
+			'uber',
+			'cabify',
+			'taxi',
+			'gas',
+			'gasolina',
+			'gasoline',
+			'transporte',
+			'transport',
+			'ridery',
+			'didi',
+			'tembici',
+			'sube',
+			'emova',
+			'subte',
+		],
 	},
 	VEHICLE: {
 		name: 'Vehicle',
@@ -118,10 +145,10 @@ export const CATEGORIES = {
 		emoji: '💱',
 		keywords: ['exchange', 'cambio', 'cambios', 'pp', 'maffi', 'productora audiovisual'],
 	},
-	WORK: {
-		name: 'Work',
-		emoji: '👔',
-		// keywords: []
+	FREELANCE: {
+		name: 'Freelance',
+		emoji: '👨‍💻',
+		keywords: ['freelance', 'vettx', 'relay', 'jose quintero', 'pago de servicios'],
 	},
 	TRAVEL: {
 		name: 'Travel',
@@ -146,6 +173,16 @@ export const CATEGORIES = {
 			'codigo facilito',
 			'codigofacilito',
 		],
+	},
+	SALARY: {
+		name: 'Salary',
+		emoji: '💵',
+		keywords: ['salary', 'payroll', 'nomina', 'sueldo', 'pago'],
+	},
+	INVESTMENT: {
+		name: 'Investment',
+		emoji: '📈',
+		keywords: ['investment', 'dividends', 'stocks', 'crypto', 'binance'],
 	},
 };
 
