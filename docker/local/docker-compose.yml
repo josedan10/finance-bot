@@ -3,13 +3,13 @@ services:
     image: zentra-api
     container_name: local-zentra-api-1
     build:
-      context: ../../
-      dockerfile: docker/local/Dockerfile
+      context: ../../../
+      dockerfile: finance-bot/docker/local/Dockerfile
     ports:
       - "5001:5001"
     volumes:
-      - ../../:/app
-      - /app/node_modules
+      - ../../../finance-bot:/app/finance-bot
+      - /app/finance-bot/node_modules
     environment:
       - DATABASE_URL=mysql://root:d!YG19j06eXp@local-mysql-zentra-1:3306/zentra
       - REDIS_URL=redis://redis-zentra:6379
