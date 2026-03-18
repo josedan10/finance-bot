@@ -4,6 +4,7 @@ import excelModule from '../excel/excel.module';
 import { PrismaModule as prisma } from '../database/database.module';
 import { PrismaClient } from '@prisma/client';
 import logger from '../../src/lib/logger';
+import { BaseTransactions } from '../base-transactions/base-transactions.module';
 
 interface TransactionData {
 	date: Date;
@@ -28,7 +29,7 @@ class MercantilPanamaModule {
 		this._prisma = prisma;
 	}
 
-	async registerMercantilTransactionsFromCSVData(data: string): Promise<unknown[]> {
+	async registerMercantilTransactionsFromCSVData(data: string, userId: number = 1): Promise<unknown[]> {
 		const arrayData: string[][] = excelModule
 			.parseCSVDataToJs(data, 2)
 			.filter((transaction: string[]) => transaction[0] !== '');
@@ -37,7 +38,7 @@ class MercantilPanamaModule {
 			where: {
 				name_userId: {
 					name: PAYMENT_METHODS.MERCANTIL_PANAMA,
-					userId: 1
+					userId,
 				},
 			},
 			select: {
@@ -50,6 +51,7 @@ class MercantilPanamaModule {
 		}
 
 		const categories = await this._prisma.category.findMany({
+			where: { userId },
 			select: {
 				id: true,
 				categoryKeyword: {
@@ -60,7 +62,7 @@ class MercantilPanamaModule {
 			},
 		});
 
-		logger.info(`Registering ${arrayData.length} Mercantil transactions`);
+		logger.info(`Registering ${arrayData.length} Mercantil transactions for user ${userId}`);
 
 		const transactions: TransactionData[] = [];
 
@@ -90,33 +92,23 @@ class MercantilPanamaModule {
 			});
 		});
 
-		const createTransactionsPromises = transactions.map((transaction) =>
-			this._prisma.transaction.create({
-				data: {
-					date: transaction.date,
-					paymentMethod: {
-						connect: {
-							id: transaction.paymentMethodId,
-						},
-					},
-					user: { connect: { id: 1 } },
-					...(transaction.categoryId && {
-						category: {
-							connect: {
-								id: transaction.categoryId,
-							},
-						},
-					}),
-					currency: transaction.currency,
-					referenceId: transaction.referenceId,
-					description: transaction.description,
-					amount: transaction.amount,
-					type: transaction.type,
-				},
-			})
-		);
+		const results = [];
+		for (const transaction of transactions) {
+			const res = await BaseTransactions.safeCreateTransaction({
+				userId,
+				date: transaction.date,
+				paymentMethodId: transaction.paymentMethodId,
+				categoryId: transaction.categoryId,
+				currency: transaction.currency,
+				referenceId: transaction.referenceId,
+				description: transaction.description,
+				amount: transaction.amount,
+				type: transaction.type,
+			});
+			results.push(res.transaction);
+		}
 
-		return this._prisma.$transaction(createTransactionsPromises);
+		return results;
 	}
 }
 

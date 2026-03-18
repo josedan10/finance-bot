@@ -52,11 +52,11 @@ class CommandsModule {
 				return 'Cash transaction';
 			},
 			mercantil: async (data: unknown, userId: number) => {
-				await MercantilPanama.registerMercantilTransactionsFromCSVData(data as string);
+				await MercantilPanama.registerMercantilTransactionsFromCSVData(data as string, userId);
 				return 'Mercantil transactions registered';
 			},
 			paypal: async (data: unknown, userId: number) => {
-				await PayPal.registerPaypalDataFromCSVData(data as string);
+				await PayPal.registerPaypalDataFromCSVData(data as string, userId);
 				return 'Paypal transactions registered';
 			},
 			monthlyReport: async (monthDate: unknown, userId: number) => {

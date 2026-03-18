@@ -3,6 +3,7 @@ import { PAYMENT_METHODS } from '../../src/enums/paymentMethods';
 import excelModule from '../excel/excel.module';
 import { PrismaModule as prisma } from '../database/database.module';
 import logger from '../../src/lib/logger';
+import { BaseTransactions } from '../base-transactions/base-transactions.module';
 
 class PaypalModule {
 	name: string;
@@ -42,7 +43,7 @@ class PaypalModule {
 		return extractedValues;
 	}
 
-	async registerPaypalDataFromCSVData(csvData: string): Promise<unknown[]> {
+	async registerPaypalDataFromCSVData(csvData: string, userId: number = 1): Promise<unknown[]> {
 		const parsedData = excelModule.parseCSVDataToJs(csvData, 1);
 		const paypalData = this.getDataFromCSVData(parsedData);
 
@@ -50,7 +51,7 @@ class PaypalModule {
 			where: {
 				name_userId: {
 					name: PAYMENT_METHODS.PAYPAL,
-					userId: 1
+					userId,
 				},
 			},
 			select: {
@@ -63,6 +64,7 @@ class PaypalModule {
 		}
 
 		const categories = await this._prisma.category.findMany({
+			where: { userId },
 			select: {
 				id: true,
 				categoryKeyword: {
@@ -73,9 +75,10 @@ class PaypalModule {
 			},
 		});
 
-		logger.info(`Registering ${paypalData.length} PayPal transactions`);
+		logger.info(`Registering ${paypalData.length} PayPal transactions for user ${userId}`);
 
-		const paypalTransactions = paypalData.map((transaction) => {
+		const results = [];
+		for (const transaction of paypalData) {
 			const [
 				ppDate,
 				time,
@@ -117,34 +120,21 @@ class PaypalModule {
 				removeSign.replace('.', '').replace('"', '').replace('"', '').replace('&comma;', '.')
 			);
 
-			const data = {
+			const res = await BaseTransactions.safeCreateTransaction({
+				userId,
 				date,
-				paymentMethod: {
-					connect: {
-						id: paymentMethod.id,
-					},
-				},
-				user: { connect: { id: 1 } },
-				...(category && {
-					category: {
-						connect: {
-							id: category?.id,
-						},
-					},
-				}),
+				paymentMethodId: paymentMethod.id,
+				categoryId: category?.id,
 				currency,
 				referenceId,
 				description,
 				amount: cleanAmount,
 				type,
-			};
-
-			return this._prisma.transaction.create({
-				data,
 			});
-		});
+			results.push(res.transaction);
+		}
 
-		return this._prisma.$transaction(paypalTransactions);
+		return results;
 	}
 }
 

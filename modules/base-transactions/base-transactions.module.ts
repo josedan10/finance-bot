@@ -112,26 +112,16 @@ class BaseTransactionsModule {
 			throw new Error(`Category ${categoryName} not found`);
 		}
 
-		const transaction = await this._db.transaction.create({
-			data: {
-				user: { connect: { id: userId } },
-				amount: amountInUSD,
-				description,
-				type,
-				date: date ? dayjs(date).toDate() : dayjs().toDate(),
-				currency: currency || 'USD',
-				originalCurrencyAmount: currency !== 'USD' ? Number(amount) : null,
-				paymentMethod: {
-					connect: {
-						id: paymentMethod.id,
-					},
-				},
-				category: {
-					connect: {
-						id: category.id,
-					},
-				},
-			},
+		const { transaction }: any = await this.safeCreateTransaction({
+			userId,
+			amount: amountInUSD,
+			description,
+			type,
+			date: date ? dayjs(date).toDate() : dayjs().toDate(),
+			currency: currency || 'USD',
+			originalCurrencyAmount: currency !== 'USD' ? Number(amount) : null,
+			paymentMethodId: paymentMethod.id,
+			categoryId: category.id,
 		});
 
 		// Check budget thresholds and send notifications (async, non-blocking)
@@ -190,6 +180,74 @@ class BaseTransactionsModule {
 		return null;
 	}
 
+	/**
+	 * Looks for a potential duplicate transaction.
+	 * A transaction is considered a duplicate if it has:
+	 * 1. Same userId
+	 * 2. Similar amount (exact match)
+	 * 3. Date within a 48-hour window (+/- 1 day)
+	 */
+	async findDuplicate(data: {
+		userId: number;
+		amount: number | Decimal;
+		date: Date;
+		type: string;
+	}): Promise<any> {
+		const { userId, amount, date, type } = data;
+
+		// 24 hour window before and after
+		const startDate = dayjs(date).subtract(1, 'day').toDate();
+		const endDate = dayjs(date).add(1, 'day').toDate();
+
+		return this._db.transaction.findFirst({
+			where: {
+				userId,
+				amount: amount as any,
+				type,
+				date: {
+					gte: startDate,
+					lte: endDate,
+				},
+			},
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+	}
+
+	/**
+	 * Creates a transaction only if it's not a duplicate.
+	 */
+	async safeCreateTransaction(data: any) {
+		const duplicate = await this.findDuplicate({
+			userId: data.userId,
+			amount: data.amount,
+			date: data.date,
+			type: data.type,
+		});
+
+		if (duplicate) {
+			logger.info('Duplicate transaction detected, skipping creation', {
+				originalId: duplicate.id,
+				userId: data.userId,
+				amount: data.amount,
+				date: data.date,
+			});
+			return { transaction: duplicate, isDuplicate: true };
+		}
+
+		const transaction = await this._db.transaction.create({
+			data,
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+
+		return { transaction, isDuplicate: false };
+	}
+
 	async registerTransactionFromImages(
 		data: string[],
 		telegramFileIds: string[],
@@ -223,26 +281,16 @@ class BaseTransactionsModule {
 
 		category = await this.findCategoryByWords(words, userId);
 
-		const transaction = await this._db.transaction.create({
-			data: {
-				user: { connect: { id: userId } },
-				...(amountInUSD ? { amount: amountInUSD } : {}),
-				originalCurrencyAmount: Number(amount),
-				description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
-				type: 'debit',
-				date: date ? dayjs(date).toDate() : dayjs().toDate(),
-				currency: 'VES',
-				telegramFileIds: telegramFileIds.join(','),
-				...(category
-					? {
-							category: {
-								connect: {
-									id: category.id,
-								},
-							},
-						}
-					: {}),
-			},
+		const { transaction }: any = await this.safeCreateTransaction({
+			userId,
+			...(amountInUSD ? { amount: amountInUSD } : {}),
+			originalCurrencyAmount: Number(amount),
+			description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
+			type: 'debit',
+			date: date ? dayjs(date).toDate() : dayjs().toDate(),
+			currency: 'VES',
+			telegramFileIds: telegramFileIds.join(','),
+			categoryId: category?.id,
 		});
 
 		// Check budget thresholds and send notifications (async, non-blocking)

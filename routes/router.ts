@@ -3,11 +3,14 @@ import { TelegramRouter as telegramRouter } from './telegram';
 import { AIAssistantRouter as aiAssistantRouter } from './ai-assistant';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import { requireAuth, requireRole } from '../src/lib/auth.middleware';
+import { firebaseAdmin } from '../src/lib/firebase';
 import * as CategoryController from '../controllers/categories.controller';
+import * as PaymentMethodController from '../controllers/paymentMethods.controller';
 import { NotificationFactory } from '../modules/notifications/notification.module';
 import { NotificationPreferenceInput } from '../src/enums/notifications';
 import { config } from '../src/config';
 import logger from '../src/lib/logger';
+import { BaseTransactions } from '../modules/base-transactions/base-transactions.module';
 
 const router = express.Router();
 
@@ -31,12 +34,88 @@ router.get('/health', (req: Request, res: Response) => {
 	res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ============================================
+// Authentication & Sync API
+// ============================================
+
+/**
+ * Endpoint to sync a Firebase user with the local Prisma database.
+ * This should be called by the frontend immediately after a successful Firebase signup.
+ * It's protected by requireAuth, so it verifies the token first.
+ */
+router.post('/api/auth/signup', requireAuth, async (req: Request, res: Response) => {
+	try {
+		// The user is already in req.user because of requireAuth's auto-signup logic,
+		// but we call it explicitly here to ensure the frontend gets a proper response
+		// and the OnboardingService is triggered if it wasn't already.
+		
+		const user = req.user;
+		const firebaseUser = req.firebaseUser;
+
+		res.status(200).json({
+			message: 'User synchronized successfully',
+			user: {
+				id: user.id,
+				email: user.email,
+				role: user.role,
+				firebaseId: user.firebaseId,
+			}
+		});
+	} catch (error) {
+		logger.error('Signup sync error:', error);
+		res.status(500).json({ message: 'Failed to synchronize user' });
+	}
+});
+
+/**
+ * Returns the current authenticated user profile from the database.
+ */
+router.get('/api/auth/me', requireAuth, async (req: Request, res: Response) => {
+	res.status(200).json({
+		user: {
+			id: req.user.id,
+			email: req.user.email,
+			role: req.user.role,
+			firebaseId: req.user.firebaseId,
+		}
+	});
+});
+
+/**
+ * CLEANUP ENDPOINT FOR E2E TESTS
+ * Deletes the authenticated user and ALL associated data from both Firebase and Prisma.
+ */
+router.delete('/api/auth/cleanup-test-user', requireAuth, async (req: Request, res: Response) => {
+	const userId = req.user.id;
+	const firebaseId = req.user.firebaseId;
+
+	try {
+		logger.info('Starting full cleanup for test user', { userId, firebaseId });
+
+		// 1. Delete from Firebase
+		await firebaseAdmin.auth().deleteUser(firebaseId);
+
+		// 2. Delete from Prisma (Cascade delete will handle most relationships)
+		await prisma.user.delete({
+			where: { id: userId }
+		});
+
+		res.status(200).json({ message: 'User and all data cleaned up successfully' });
+	} catch (error) {
+		logger.error('Failed to cleanup test user', { userId, error });
+		res.status(500).json({ message: 'Cleanup failed' });
+	}
+});
+
 router.get('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const transactions = await prisma.transaction.findMany({
 			where: { userId: req.user.id },
 			orderBy: { date: 'desc' },
-			include: { category: true },
+			include: { 
+				category: true,
+				paymentMethod: true,
+			},
 		});
 
 		const mapped = transactions.map((tx) => ({
@@ -45,6 +124,8 @@ router.get('/api/transactions', requireAuth, async (req: Request, res: Response)
 			description: tx.description ?? 'No description',
 			amount: Number(tx.amount ?? 0),
 			category: tx.category?.name ?? 'Other',
+			paymentMethod: tx.paymentMethod?.name ?? 'Other',
+			paymentMethodId: tx.paymentMethodId,
 			type: tx.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
 		}));
@@ -55,47 +136,127 @@ router.get('/api/transactions', requireAuth, async (req: Request, res: Response)
 	}
 });
 
+// ============================================
+// Exchange Rates API
+// ============================================
+
+/**
+ * Returns the latest exchange rates (BCV and Monitor).
+ */
+router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const latestRate = await prisma.dailyExchangeRate.findFirst({
+			orderBy: { date: 'desc' },
+		});
+
+		if (!latestRate) {
+			return res.status(404).json({ message: 'No exchange rates found' });
+		}
+
+		res.status(200).json({
+			bcv: Number(latestRate.bcvPrice || 0),
+			monitor: Number(latestRate.monitorPrice || 0),
+			date: latestRate.date.toISOString().split('T')[0],
+		});
+	} catch (error) {
+		logger.error('Failed to fetch latest exchange rates', { error });
+		res.status(500).json({ message: 'Failed to fetch exchange rates' });
+	}
+});
+
 router.post('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
-		const { date, description, amount, category, type } = req.body as {
+		const { date, description, amount, category, type, paymentMethodId, currency } = req.body as {
 			date?: string;
 			description?: string;
 			amount?: number;
 			category?: string;
 			type?: 'income' | 'expense';
+			paymentMethodId?: number;
+			currency?: string;
 		};
 
 		if (!date || !description || amount === undefined || !category || !type) {
 			return res.status(400).json({ message: 'Missing required fields' });
 		}
 
+		// 1. Match Category
 		const matchedCategory = await prisma.category.findFirst({
 			where: { name: category, userId: req.user.id },
 		});
 
-		const created = await prisma.transaction.create({
-			data: {
-				userId: req.user.id,
-				date: new Date(date),
-				description,
-				amount: amount,
-				currency: 'USD',
-				type: type === 'income' ? 'credit' : 'debit',
-				categoryId: matchedCategory?.id,
-			},
-			include: { category: true },
+		// 2. Match or Default Payment Method
+		let finalPaymentMethodId = paymentMethodId;
+		
+		if (finalPaymentMethodId) {
+			// Validate ownership
+			const pm = await prisma.paymentMethod.findFirst({
+				where: { id: finalPaymentMethodId, userId: req.user.id }
+			});
+			if (!pm) {
+				return res.status(400).json({ message: 'Invalid payment method' });
+			}
+		} else {
+			// Fallback to "Cash"
+			let cashMethod = await prisma.paymentMethod.findFirst({
+				where: { name: 'Cash', userId: req.user.id }
+			});
+			if (!cashMethod) {
+				cashMethod = await prisma.paymentMethod.create({
+					data: { name: 'Cash', userId: req.user.id }
+				});
+			}
+			finalPaymentMethodId = cashMethod.id;
+		}
+
+		// 3. Handle Currency Conversion
+		const txCurrency = currency || 'USD';
+		let finalAmountInUSD = amount;
+		let originalCurrencyAmount = null;
+
+		if (txCurrency === 'VES') {
+			originalCurrencyAmount = amount;
+			// Find latest BCV rate
+			const latestRate = await prisma.dailyExchangeRate.findFirst({
+				orderBy: { date: 'desc' },
+			});
+
+			if (latestRate && latestRate.bcvPrice) {
+				finalAmountInUSD = Number((amount / Number(latestRate.bcvPrice)).toFixed(2));
+			} else {
+				// If no rate found, we keep USD amount as null or handle it later via cron
+				// For now we'll set it to 0 and let the cron update it
+				finalAmountInUSD = 0;
+			}
+		}
+
+		const { transaction }: any = await BaseTransactions.safeCreateTransaction({
+			userId: req.user.id,
+			date: new Date(date),
+			description,
+			amount: finalAmountInUSD,
+			originalCurrencyAmount: originalCurrencyAmount,
+			currency: txCurrency,
+			type: type === 'income' ? 'credit' : 'debit',
+			categoryId: matchedCategory?.id,
+			paymentMethodId: finalPaymentMethodId,
 		});
 
 		res.status(201).json({
-			id: String(created.id),
-			date: created.date.toISOString().split('T')[0],
-			description: created.description ?? 'No description',
-			amount: Number(created.amount ?? 0),
-			category: created.category?.name ?? category,
+			id: String(transaction.id),
+			date: transaction.date.toISOString().split('T')[0],
+			description: transaction.description ?? 'No description',
+			amount: Number(transaction.amount ?? 0),
+			originalCurrencyAmount: Number(transaction.originalCurrencyAmount ?? 0),
+			currency: transaction.currency,
+			category: transaction.category?.name ?? category,
+			paymentMethod: transaction.paymentMethod?.name ?? 'Other',
+			paymentMethodId: transaction.paymentMethodId,
 			type,
 			source: 'manual',
 		});
 	} catch (error) {
+		logger.error('Failed to create transaction', { error, userId: req.user.id });
 		res.status(500).json({ message: 'Failed to create transaction' });
 	}
 });
@@ -109,6 +270,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 				amount: number;
 				category: string;
 				type: 'income' | 'expense';
+				paymentMethod?: string;
 			}>;
 		};
 
@@ -116,16 +278,13 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			return res.status(400).json({ message: 'Invalid transactions data' });
 		}
 
-		// Get all unique category names to pre-fetch or create
+		// 1. Prepare Categories
 		const categoryNames = [...new Set(transactions.map(t => t.category))];
-		
 		const existingCategories = await prisma.category.findMany({
 			where: { name: { in: categoryNames }, userId: req.user.id }
 		});
-
 		const categoryMap = new Map(existingCategories.map(c => [c.name, c.id]));
 
-		// Create missing categories
 		for (const name of categoryNames) {
 			if (!categoryMap.has(name)) {
 				const newCat = await prisma.category.create({
@@ -135,7 +294,27 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			}
 		}
 
-		// Prepare data for createMany
+		// 2. Prepare Payment Methods
+		const pmNames = [...new Set(transactions.filter(t => t.paymentMethod).map(t => t.paymentMethod!))];
+		if (!pmNames.includes('Cash')) pmNames.push('Cash'); // Ensure default exists
+
+		const existingPMs = await prisma.paymentMethod.findMany({
+			where: { name: { in: pmNames }, userId: req.user.id }
+		});
+		const pmMap = new Map(existingPMs.map(pm => [pm.name, pm.id]));
+
+		for (const name of pmNames) {
+			if (!pmMap.has(name)) {
+				const newPm = await prisma.paymentMethod.create({
+					data: { name, userId: req.user.id }
+				});
+				pmMap.set(name, newPm.id);
+			}
+		}
+
+		const defaultPmId = pmMap.get('Cash') || (pmMap.size > 0 ? pmMap.values().next().value : null);
+
+		// 3. Create Transactions
 		const createdTransactions = await prisma.$transaction(
 			transactions.map(t => prisma.transaction.create({
 				data: {
@@ -146,8 +325,12 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 					currency: 'USD',
 					type: t.type === 'income' ? 'credit' : 'debit',
 					categoryId: categoryMap.get(t.category),
+					paymentMethodId: t.paymentMethod ? pmMap.get(t.paymentMethod) : defaultPmId,
 				},
-				include: { category: true }
+				include: { 
+					category: true,
+					paymentMethod: true,
+				}
 			}))
 		);
 
@@ -157,6 +340,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			description: t.description,
 			amount: Number(t.amount),
 			category: t.category?.name,
+			paymentMethod: t.paymentMethod?.name ?? 'Other',
 			type: t.type === 'credit' ? 'income' : 'expense',
 			source: 'upload',
 		}));
@@ -209,7 +393,10 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 		const updated = await prisma.transaction.update({
 			where: { id, userId: req.user.id },
 			data: { categoryId: matchedCategory.id },
-			include: { category: true },
+			include: { 
+				category: true,
+				paymentMethod: true,
+			},
 		});
 
 		// Add the keyword
@@ -232,6 +419,7 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			description: updated.description,
 			amount: Number(updated.amount),
 			category: updated.category?.name,
+			paymentMethod: updated.paymentMethod?.name ?? 'Other',
 			type: updated.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
 		});
@@ -464,7 +652,26 @@ router.get('/api/notifications/push/vapidPublicKey', async (req: Request, res: R
 	});
 });
 
+// ============================================
+// Categories API
+// ============================================
+
+router.get('/api/categories', requireAuth, CategoryController.getCategories);
+router.post('/api/categories', requireAuth, CategoryController.createCategory);
+router.put('/api/categories/:id', requireAuth, CategoryController.updateCategory);
+router.delete('/api/categories/:id', requireAuth, CategoryController.deleteCategory);
+
+// Backward compatibility
 router.get('/api/categories/keywords', requireAuth, CategoryController.getCategoriesWithKeywords);
+
+// ============================================
+// Payment Methods API
+// ============================================
+
+router.get('/api/payment-methods', requireAuth, PaymentMethodController.getPaymentMethods);
+router.post('/api/payment-methods', requireAuth, PaymentMethodController.createPaymentMethod);
+router.put('/api/payment-methods/:id', requireAuth, PaymentMethodController.updatePaymentMethod);
+router.delete('/api/payment-methods/:id', requireAuth, PaymentMethodController.deletePaymentMethod);
 
 router.use('/api/ai', aiAssistantRouter);
 router.use('/telegram', telegramRouter);
