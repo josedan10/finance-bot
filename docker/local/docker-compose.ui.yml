@@ -1,17 +1,26 @@
 services:
-  finance-bot-ui:
-    image: finance-bot-ui
+  zentra-ui:
+    image: zentra-ui
+    container_name: local-zentra-ui-1
     build:
-      context: ../../../finance-bot-ui
-      dockerfile: Dockerfile
+      context: ../../../
+      dockerfile: finance-bot-ui/Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5001}
+        - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}
+        - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+        - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+        - NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+        - NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
+        - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
     ports:
-      - '8080:8080'
-    environment:
-      - NODE_ENV=production
-      - PORT=8080
-      - NEXT_PUBLIC_API_URL=http://localhost:4001
+      - "8080:8080"
+    env_file:
+      - ../../../finance-bot-ui/.env.local
     networks:
-      - finance-bot-network
-    depends_on:
-      - express-bot-api
-    restart: unless-stopped
+      - zentra-network
+
+networks:
+  zentra-network:
+    name: zentra-network
+    external: true
