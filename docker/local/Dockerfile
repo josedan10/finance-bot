@@ -12,6 +12,6 @@ RUN npx prisma generate
 
 # RUN npx prisma migrate dev
 
-EXPOSE 5000
+EXPOSE 5001
 
 CMD [ "npm", "run", "dev"]
