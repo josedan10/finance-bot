@@ -183,23 +183,39 @@ class BaseTransactionsModule {
 	/**
 	 * Looks for a potential duplicate transaction.
 	 * A transaction is considered a duplicate if it has:
-	 * 1. Same userId
-	 * 2. Similar amount (exact match)
-	 * 3. Date within a 48-hour window (+/- 1 day)
+	 * 1. Matching referenceId (High confidence)
+	 * 2. Same userId + similar amount + date within a 48-hour window (+/- 1 day) + matching description keywords (Fuzzy)
 	 */
 	async findDuplicate(data: {
 		userId: number;
 		amount: number | Decimal;
 		date: Date;
 		type: string;
+		description?: string;
+		referenceId?: string;
 	}): Promise<any> {
-		const { userId, amount, date, type } = data;
+		const { userId, amount, date, type, description, referenceId } = data;
 
-		// 24 hour window before and after
-		const startDate = dayjs(date).subtract(1, 'day').toDate();
-		const endDate = dayjs(date).add(1, 'day').toDate();
+		// 1. Priority: Exact referenceId match
+		if (referenceId) {
+			const refMatch = await this._db.transaction.findFirst({
+				where: {
+					userId,
+					referenceId,
+				},
+				include: {
+					category: true,
+					paymentMethod: true,
+				},
+			});
+			if (refMatch) return refMatch;
+		}
 
-		return this._db.transaction.findFirst({
+		// 2. Fuzzy: Amount + Date Window + Description Similarity
+		const startDate = dayjs(date).subtract(2, 'days').toDate();
+		const endDate = dayjs(date).add(2, 'days').toDate();
+
+		const potentialDuplicates = await this._db.transaction.findMany({
 			where: {
 				userId,
 				amount: amount as any,
@@ -214,6 +230,35 @@ class BaseTransactionsModule {
 				paymentMethod: true,
 			},
 		});
+
+		if (potentialDuplicates.length === 0) return null;
+
+		// If no description provided for comparison, return the first date/amount match
+		if (!description) return potentialDuplicates[0];
+
+		// Refine with description similarity (keyword overlap)
+		const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(' ').filter(w => w.length >= 2);
+		const newKeywords = normalize(description);
+
+		for (const candidate of potentialDuplicates) {
+			if (!candidate.description) continue;
+			
+			// Exact amount check (converting Decimal/whatever to Number for safety)
+			if (Number(candidate.amount) !== Number(amount)) continue;
+
+			const candidateKeywords = normalize(candidate.description);
+			const overlap = newKeywords.filter(w => candidateKeywords.includes(w));
+			
+			// If at least 2 significant words overlap, or 1 word overlaps and both descriptions are short, or one description contains the other
+			if (overlap.length >= 2 || 
+				(overlap.length >= 1 && (newKeywords.length <= 2 || candidateKeywords.length <= 2)) ||
+				description.toLowerCase().includes(candidate.description.toLowerCase()) || 
+				candidate.description.toLowerCase().includes(description.toLowerCase())) {
+				return candidate;
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -225,6 +270,8 @@ class BaseTransactionsModule {
 			amount: data.amount,
 			date: data.date,
 			type: data.type,
+			description: data.description,
+			referenceId: data.referenceId,
 		});
 
 		if (duplicate) {
@@ -248,6 +295,37 @@ class BaseTransactionsModule {
 		return { transaction, isDuplicate: false };
 	}
 
+	/**
+	 * Parses extracted text into structured transaction data without persisting it.
+	 */
+	async parseTransactionFromText(textLines: string[], userId: number) {
+		let date = dayjs().format('YYYY-MM-DD');
+		let amount;
+
+		const transactionDetails = extractTransactionDetails(textLines);
+		date = transactionDetails?.date || date;
+		amount = transactionDetails?.amount;
+
+		if (!amount) {
+			throw new Error('Amount not found');
+		}
+
+		const amountInUSD = amount && date ? await this._VESToUSDWithExchangeRateByDate(date, Number(amount)) : null;
+		const words = textLines.join(' ').replaceAll('\n', ' ').split(' ');
+		const category = await this.findCategoryByWords(words, userId);
+
+		return {
+			date,
+			amount: amountInUSD || Number(amount),
+			originalAmount: Number(amount),
+			currency: amountInUSD ? 'USD' : 'VES',
+			description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
+			category: category?.name || 'Other',
+			categoryId: category?.id,
+			type: 'debit' as const,
+		};
+	}
+
 	async registerTransactionFromImages(
 		data: string[],
 		telegramFileIds: string[],
@@ -265,46 +343,36 @@ class BaseTransactionsModule {
 			amount = args?.find((arg) => arg.includes('amount'))?.split('=')?.[1];
 		}
 
-		if (!amount) {
-			const transactionDetails = extractTransactionDetails(data);
-			date = transactionDetails?.date || date;
-			amount = transactionDetails?.amount;
-		}
-
-		if (!amount) {
-			throw new Error('Amount not found');
-		}
-
-		const amountInUSD = amount && date ? await this._VESToUSDWithExchangeRateByDate(date, Number(amount)) : null;
-
-		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
-
-		category = await this.findCategoryByWords(words, userId);
+		const parsed = await this.parseTransactionFromText(data, userId);
+		
+		// If amount was forced by args, override
+		const finalAmount = amount ? Number(amount) : parsed.amount;
+		const finalDate = parsed.date;
 
 		const { transaction }: any = await this.safeCreateTransaction({
 			userId,
-			...(amountInUSD ? { amount: amountInUSD } : {}),
-			originalCurrencyAmount: Number(amount),
-			description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
+			amount: finalAmount,
+			originalCurrencyAmount: parsed.originalAmount,
+			description: parsed.description,
 			type: 'debit',
-			date: date ? dayjs(date).toDate() : dayjs().toDate(),
-			currency: 'VES',
+			date: dayjs(finalDate).toDate(),
+			currency: parsed.currency,
 			telegramFileIds: telegramFileIds.join(','),
-			categoryId: category?.id,
+			categoryId: parsed.categoryId,
 		});
 
 		// Check budget thresholds and send notifications (async, non-blocking)
-		if (category) {
-			NotificationFactory.notifyBudgetThreshold(userId, category.id, Number(amountInUSD || amount)).catch((error) => {
+		if (transaction.categoryId) {
+			NotificationFactory.notifyBudgetThreshold(userId, transaction.categoryId, Number(finalAmount)).catch((error) => {
 				logger.error('Failed to check budget notifications', {
 					error: error instanceof Error ? error.message : 'Unknown error',
 					userId,
-					categoryId: category.id,
+					categoryId: transaction.categoryId,
 				});
 			});
 		}
 
-		return { transaction, category };
+		return { transaction, category: (transaction as any).category };
 	}
 }
 

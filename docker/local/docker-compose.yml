@@ -3,10 +3,10 @@ services:
     image: zentra-api
     container_name: local-zentra-api-1
     build:
-      context: ../../../
+      context: ../../..
       dockerfile: finance-bot/docker/local/Dockerfile
     ports:
-      - "5001:5001"
+      - "${PORT:-5001}:5001"
     volumes:
       - ../../../finance-bot:/app/finance-bot
       - /app/finance-bot/node_modules

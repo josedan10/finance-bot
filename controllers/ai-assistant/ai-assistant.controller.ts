@@ -2,6 +2,59 @@ import { Request, Response } from 'express';
 import { AISettingsService, AIAssistantFactory } from '../../modules/ai-assistant/ai-assistant.module';
 import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from '../../src/lib/logger';
+import { Image2TextService } from '../../modules/image-2-text/image-2-text.module';
+import { BaseTransactions } from '../../modules/base-transactions/base-transactions.module';
+
+export async function scanReceipt(req: Request, res: Response): Promise<void> {
+  try {
+    const { image } = req.body;
+
+    if (!image) {
+      res.status(400).json({ message: 'No image provided' });
+      return;
+    }
+
+    // 1. Extract text using the OCR Service
+    logger.info('Starting OCR extraction for receipt', { userId: req.user.id });
+    const extractedTexts = await Image2TextService.extractTextFromImages([image]);
+    
+    if (!extractedTexts || extractedTexts.length === 0) {
+      res.status(422).json({ message: 'Could not extract text from image' });
+      return;
+    }
+
+    // 2. Parse text into structured transaction data
+    const textLines = extractedTexts[0].split('\n');
+    const parsed = await BaseTransactions.parseTransactionFromText(textLines, req.user.id);
+
+    // 3. Check for duplicates
+    const duplicate = await BaseTransactions.findDuplicate({
+      userId: req.user.id,
+      amount: parsed.amount,
+      date: new Date(parsed.date),
+      type: parsed.type,
+      description: parsed.description
+    });
+
+    res.status(200).json({
+      ...parsed,
+      isDuplicate: !!duplicate,
+      duplicateId: duplicate?.id
+    });
+  } catch (error) {
+    logger.error('Receipt scanning failed', { 
+      userId: req.user.id, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    });
+    
+    if (error instanceof Error && error.message === 'Amount not found') {
+      res.status(422).json({ message: 'Could not find a valid amount in the receipt' });
+      return;
+    }
+
+    res.status(500).json({ message: 'Failed to process receipt' });
+  }
+}
 
 export async function getAISettings(req: Request, res: Response): Promise<void> {
   try {
