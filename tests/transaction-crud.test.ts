@@ -3,8 +3,9 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Request, Response, NextFunction } from 'express';
 import app from '../app';
 import { prismaMock } from '../modules/database/database.module.mock';
-import { createTransaction, createUser } from '../prisma/factories';
+import { createCategory, createKeyword, createPaymentMethod, createTransaction, createUser } from '../prisma/factories';
 import { Decimal } from '@prisma/client/runtime/library';
+import { requireAuth } from '../src/lib/auth.middleware';
 
 // Mock the auth middleware
 jest.mock('../src/lib/auth.middleware', () => {
@@ -20,7 +21,6 @@ jest.mock('../src/lib/auth.middleware', () => {
 		requireRole: mockRequireRole,
 	};
 });
-import { requireAuth } from '../src/lib/auth.middleware';
 
 describe('Transaction API (CRUD)', () => {
 	beforeEach(() => {
@@ -29,7 +29,7 @@ describe('Transaction API (CRUD)', () => {
 
 	// TDD Scenario 1: Unauthorized POST /api/transactions
 	it('should return 401 if no JWT is provided', async () => {
-		(requireAuth as any).mockImplementationOnce((req: Request, res: Response, next: NextFunction) => {
+		(requireAuth as any).mockImplementationOnce((req: Request, res: Response, _next: NextFunction) => {
 			// Un-authenticate for this specific test
 			req.user = null as any; 
 			res.sendStatus(401);
@@ -42,7 +42,7 @@ describe('Transaction API (CRUD)', () => {
 	// TDD Scenario 2: User can only see their own transactions
 	it('should return only transactions belonging to the authenticated user', async () => {
 		const user1 = await createUser({ id: 1 });
-		const user2 = await createUser({ id: 2, email: 'other@user.com' });
+		const _user2 = await createUser({ id: 2, email: 'other@user.com' });
 
 		const tx1 = await createTransaction({ id: 1, userId: user1.id, description: 'My Transaction' });
 
@@ -64,4 +64,75 @@ describe('Transaction API (CRUD)', () => {
 			})
 		);
 	});
-});
+
+	it('should categorize a transaction by updating it instead of deleting it', async () => {
+		const category = createCategory({ id: 2, userId: 1, name: 'Food' } as never);
+		const paymentMethod = createPaymentMethod({ id: 4, userId: 1, name: 'Cash' } as never);
+		const transaction = createTransaction({
+			id: 22,
+			userId: 1,
+			description: 'Lunch',
+			amount: new Decimal(14),
+			currency: 'USD',
+			type: 'debit',
+			categoryId: null,
+			paymentMethodId: paymentMethod.id,
+			referenceId: 'abc-123',
+		} as never);
+		const updatedTransaction = {
+			...transaction,
+			categoryId: category.id,
+			category,
+			paymentMethod,
+		};
+		const keyword = createKeyword({ id: 7, userId: 1, name: 'lunch' } as never);
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.transaction.findFirst.mockResolvedValue({
+			...transaction,
+			category: null,
+			paymentMethod,
+		} as never);
+		prismaMock.transaction.update.mockResolvedValue(updatedTransaction as never);
+		prismaMock.keyword.upsert.mockResolvedValue(keyword);
+		prismaMock.categoryKeyword.upsert.mockResolvedValue({
+			id: 1,
+			categoryId: category.id,
+			keywordId: keyword.id,
+		} as never);
+
+		const response = await request(app)
+			.patch('/api/transactions/22/categorize')
+			.send({ category: 'Food', keyword: 'lunch' });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			id: '22',
+			description: 'Lunch',
+			amount: 14,
+			currency: 'USD',
+			category: 'Food',
+			paymentMethod: 'Cash',
+			paymentMethodId: 4,
+			type: 'expense',
+			referenceId: 'abc-123',
+		});
+		expect(prismaMock.transaction.findFirst).toHaveBeenCalledWith({
+			where: { id: 22, userId: 1 },
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+		expect(prismaMock.transaction.update).toHaveBeenCalledWith({
+			where: { id: 22 },
+			data: { categoryId: 2 },
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+		expect(prismaMock.transaction.delete).not.toHaveBeenCalled();
+		expect(prismaMock.transaction.deleteMany).not.toHaveBeenCalled();
+		});
+	});

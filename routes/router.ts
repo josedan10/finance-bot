@@ -443,9 +443,21 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			});
 		}
 
+		const existingTransaction = await prisma.transaction.findFirst({
+			where: { id, userId: req.user.id },
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+
+		if (!existingTransaction) {
+			return res.status(404).json({ message: 'Transaction not found' });
+		}
+
 		// Update the transaction
 		const updated = await prisma.transaction.update({
-			where: { id, userId: req.user.id },
+			where: { id: existingTransaction.id },
 			data: { categoryId: matchedCategory.id },
 			include: { 
 				category: true,
@@ -470,12 +482,15 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 		res.status(200).json({
 			id: String(updated.id),
 			date: updated.date.toISOString().split('T')[0],
-			description: updated.description,
-			amount: Number(updated.amount),
-			category: updated.category?.name,
+			description: updated.description ?? 'No description',
+			amount: Number(updated.amount ?? 0),
+			currency: updated.currency,
+			category: updated.category?.name ?? category,
 			paymentMethod: updated.paymentMethod?.name ?? 'Other',
+			paymentMethodId: updated.paymentMethodId,
 			type: updated.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
+			referenceId: updated.referenceId ?? undefined,
 		});
 	} catch (error) {
 		logger.error('Failed to categorize transaction', { error, userId: req.user.id });
