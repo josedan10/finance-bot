@@ -1,10 +1,21 @@
 
+import fs from 'fs';
+import path from 'path';
 import * as admin from 'firebase-admin';
-import serviceAccount from '../firebase-service-account.json';
+
+function loadServiceAccount(): admin.ServiceAccount {
+	const serviceAccountPath = path.resolve(__dirname, '../firebase-service-account.json');
+
+	if (!fs.existsSync(serviceAccountPath)) {
+		throw new Error(`firebase-service-account.json not found at ${serviceAccountPath}`);
+	}
+
+	return JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8')) as admin.ServiceAccount;
+}
 
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount)
+    credential: admin.credential.cert(loadServiceAccount())
   });
 }
 
