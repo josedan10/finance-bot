@@ -1,7 +1,5 @@
 import express, { Request, Response } from 'express';
 import { PrismaModule as prisma } from '../modules/database/database.module';
-import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
-import dayjs from 'dayjs';
 import { TelegramRouter as telegramRouter } from './telegram';
 import { AIAssistantRouter as aiAssistantRouter } from './ai-assistant';
 import { requireAuth, requireRole } from '../src/lib/auth.middleware';
@@ -52,7 +50,6 @@ router.post('/api/auth/signup', requireAuth, async (req: Request, res: Response)
 		// and the OnboardingService is triggered if it wasn't already.
 		
 		const user = req.user;
-		const firebaseUser = req.firebaseUser;
 
 		res.status(200).json({
 			message: 'User synchronized successfully',
@@ -212,11 +209,11 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 		}
 
 		// 3. Handle Creation via Gatekeeper (Deduplication & Normalization)
-		const { transaction }: any = await BaseTransactions.safeCreateTransaction({
+		const { transaction } = await BaseTransactions.safeCreateTransaction({
 			userId: req.user.id,
 			date: new Date(date),
 			description,
-			amount: amount,
+			amount,
 			currency: currency || 'USD',
 			type: type === 'income' ? 'credit' : 'debit',
 			categoryId: matchedCategory?.id,
@@ -301,7 +298,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 		const createdTransactions = [];
 		for (const t of transactions) {
 			try {
-				const { transaction, isDuplicate }: any = await BaseTransactions.safeCreateTransaction({
+				const { transaction, isDuplicate } = await BaseTransactions.safeCreateTransaction({
 					userId: req.user.id,
 					date: new Date(t.date),
 					description: t.description,
@@ -646,26 +643,7 @@ router.get('/api/notifications/push/vapidPublicKey', async (req: Request, res: R
 // Categories API
 // ============================================
 
-router.get('/api/categories', requireAuth, async (req: Request, res: Response) => {
-	try {
-		const categories = await prisma.category.findMany({
-			where: { userId: (req as any).user.id },
-		});
-
-		// Enrich with JIT rollover info
-		const enrichedCategories = await Promise.all(categories.map(async (cat) => {
-			const period = await BudgetRollover.getOrCreateCurrentPeriod(cat.id);
-			return {
-				...cat,
-				currentCarryOver: Number(period?.carryOver || 0),
-			};
-		}));
-
-		res.json(enrichedCategories);
-	} catch (error) {
-		res.status(500).json({ message: 'Error fetching categories' });
-	}
-});
+router.get('/api/categories', requireAuth, CategoryController.getCategories);
 router.post('/api/categories', requireAuth, CategoryController.createCategory);
 router.put('/api/categories/:id', requireAuth, CategoryController.updateCategory);
 router.delete('/api/categories/:id', requireAuth, CategoryController.deleteCategory);
