@@ -33,6 +33,7 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       amount: parsed.amount,
       date: new Date(parsed.date),
       type: parsed.type,
+      currency: parsed.currency,
       description: parsed.description
     });
 
