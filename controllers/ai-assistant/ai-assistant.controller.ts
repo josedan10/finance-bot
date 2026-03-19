@@ -4,6 +4,68 @@ import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from '../../src/lib/logger';
 import { Image2TextService } from '../../modules/image-2-text/image-2-text.module';
 import { BaseTransactions } from '../../modules/base-transactions/base-transactions.module';
+import {
+  getBeloWithdrawCommissionFromGross,
+  getBeloWithdrawGrossFromReceiptAmount,
+  isBeloWithdrawDescription,
+} from '../../src/helpers/belo-withdraw.helper';
+
+async function findMatchingBeloWithdraw(userId: number, parsed: {
+  amount: number;
+  date: string;
+  currency: string;
+}) {
+  const receiptDate = new Date(parsed.date);
+  const dayStart = new Date(receiptDate);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(receiptDate);
+  dayEnd.setHours(23, 59, 59, 999);
+  const expectedGrossAmount = getBeloWithdrawGrossFromReceiptAmount(parsed.amount);
+
+  const candidates = await prisma.transaction.findMany({
+    where: {
+      userId,
+      type: 'debit',
+      currency: parsed.currency,
+      date: {
+        gte: dayStart,
+        lte: dayEnd,
+      },
+    },
+    orderBy: { date: 'desc' },
+  });
+
+  const withdrawCandidates = candidates.filter((transaction) => isBeloWithdrawDescription(transaction.description));
+
+  if (withdrawCandidates.length === 0) {
+    return null;
+  }
+
+  const bestMatch = withdrawCandidates
+    .map((transaction) => {
+      const grossAmount = Number(transaction.amount || 0);
+      return {
+        transaction,
+        amountDifference: Math.abs(grossAmount - expectedGrossAmount),
+      };
+    })
+    .sort((left, right) => left.amountDifference - right.amountDifference)[0];
+
+  if (!bestMatch || bestMatch.amountDifference > 5) {
+    return null;
+  }
+
+  const grossAmount = Number(bestMatch.transaction.amount || 0);
+
+  return {
+    id: bestMatch.transaction.id,
+    date: bestMatch.transaction.date.toISOString(),
+    description: bestMatch.transaction.description,
+    grossAmount,
+    expectedNetAmount: parsed.amount,
+    commissionAmount: getBeloWithdrawCommissionFromGross(grossAmount),
+  };
+}
 
 export async function scanReceipt(req: Request, res: Response): Promise<void> {
   try {
@@ -36,11 +98,17 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       currency: parsed.currency,
       description: parsed.description
     });
+    const beloWithdrawMatch = await findMatchingBeloWithdraw(req.user.id, {
+      amount: parsed.amount,
+      date: parsed.date,
+      currency: parsed.currency,
+    });
 
     res.status(200).json({
       ...parsed,
       isDuplicate: !!duplicate,
-      duplicateId: duplicate?.id
+      duplicateId: duplicate?.id,
+      beloWithdrawMatch,
     });
   } catch (error) {
     logger.error('Receipt scanning failed', { 
