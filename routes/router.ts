@@ -1,8 +1,9 @@
 import express, { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import { TelegramRouter as telegramRouter } from './telegram';
 import { AIAssistantRouter as aiAssistantRouter } from './ai-assistant';
-import { requireAuth, requireRole } from '../src/lib/auth.middleware';
+import { requireAuth } from '../src/lib/auth.middleware';
 import { firebaseAdmin } from '../src/lib/firebase';
 import * as CategoryController from '../controllers/categories.controller';
 import * as PaymentMethodController from '../controllers/paymentMethods.controller';
@@ -503,7 +504,7 @@ router.get('/api/budgets', requireAuth, async (req: Request, res: Response) => {
 	}
 });
 
-router.put('/api/budgets/:id', requireAuth, requireRole(['admin', 'operator']), async (req: Request, res: Response) => {
+router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		const { limit } = req.body as { limit?: number };
@@ -532,6 +533,127 @@ router.put('/api/budgets/:id', requireAuth, requireRole(['admin', 'operator']), 
 		});
 	} catch (error) {
 		res.status(500).json({ message: 'Failed to update budget' });
+	}
+});
+
+router.get('/api/budgets/fallback-rules', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const rules = await prisma.$queryRaw<
+			Array<{
+				id: number;
+				sourceCategoryId: number;
+				sourceCategoryName: string;
+				targetCategoryId: number;
+				targetCategoryName: string;
+				enabled: boolean;
+			}>
+		>(Prisma.sql`
+			SELECT
+				r.id,
+				r.sourceCategoryId,
+				source.name AS sourceCategoryName,
+				r.targetCategoryId,
+				target.name AS targetCategoryName,
+				r.enabled
+			FROM BudgetFallbackRule r
+			INNER JOIN Category source ON source.id = r.sourceCategoryId
+			INNER JOIN Category target ON target.id = r.targetCategoryId
+			WHERE r.userId = ${req.user.id}
+			ORDER BY source.name ASC
+		`);
+
+		res.status(200).json(rules);
+	} catch (error) {
+		logger.error('Failed to fetch budget fallback rules', { error, userId: req.user.id });
+		res.status(500).json({ message: 'Failed to fetch budget fallback rules' });
+	}
+});
+
+router.post('/api/budgets/fallback-rules', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const { sourceCategoryId, targetCategoryId, enabled = true } = req.body as {
+			sourceCategoryId?: number;
+			targetCategoryId?: number;
+			enabled?: boolean;
+		};
+
+		if (!sourceCategoryId || !targetCategoryId || sourceCategoryId === targetCategoryId) {
+			return res.status(400).json({ message: 'Invalid fallback rule request' });
+		}
+
+		const categories = await prisma.category.findMany({
+			where: {
+				id: { in: [sourceCategoryId, targetCategoryId] },
+				userId: req.user.id,
+			},
+		});
+
+		if (categories.length !== 2) {
+			return res.status(404).json({ message: 'Category not found' });
+		}
+
+		await prisma.$executeRaw(
+			Prisma.sql`
+				INSERT INTO BudgetFallbackRule (userId, sourceCategoryId, targetCategoryId, enabled, createdAt, updatedAt)
+				VALUES (${req.user.id}, ${sourceCategoryId}, ${targetCategoryId}, ${enabled}, NOW(), NOW())
+				ON DUPLICATE KEY UPDATE
+					targetCategoryId = VALUES(targetCategoryId),
+					enabled = VALUES(enabled),
+					updatedAt = NOW()
+			`
+		);
+
+		const rule = await prisma.$queryRaw<
+			Array<{
+				id: number;
+				sourceCategoryId: number;
+				sourceCategoryName: string;
+				targetCategoryId: number;
+				targetCategoryName: string;
+				enabled: boolean;
+			}>
+		>(Prisma.sql`
+			SELECT
+				r.id,
+				r.sourceCategoryId,
+				source.name AS sourceCategoryName,
+				r.targetCategoryId,
+				target.name AS targetCategoryName,
+				r.enabled
+			FROM BudgetFallbackRule r
+			INNER JOIN Category source ON source.id = r.sourceCategoryId
+			INNER JOIN Category target ON target.id = r.targetCategoryId
+			WHERE r.userId = ${req.user.id}
+			  AND r.sourceCategoryId = ${sourceCategoryId}
+			LIMIT 1
+		`);
+
+		res.status(200).json(rule[0]);
+	} catch (error) {
+		logger.error('Failed to upsert budget fallback rule', { error, userId: req.user.id });
+		res.status(500).json({ message: 'Failed to save budget fallback rule' });
+	}
+});
+
+router.delete('/api/budgets/fallback-rules/:sourceCategoryId', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const sourceCategoryId = Number(req.params.sourceCategoryId);
+		if (Number.isNaN(sourceCategoryId)) {
+			return res.status(400).json({ message: 'Invalid source category id' });
+		}
+
+		await prisma.$executeRaw(
+			Prisma.sql`
+				DELETE FROM BudgetFallbackRule
+				WHERE userId = ${req.user.id}
+				  AND sourceCategoryId = ${sourceCategoryId}
+			`
+		);
+
+		res.status(204).send();
+	} catch (error) {
+		logger.error('Failed to delete budget fallback rule', { error, userId: req.user.id });
+		res.status(500).json({ message: 'Failed to delete budget fallback rule' });
 	}
 });
 

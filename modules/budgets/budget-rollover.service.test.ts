@@ -1,8 +1,13 @@
 import { BudgetRollover } from './budget-rollover.service';
 import { prismaMock } from '../database/database.module.mock';
 import { Decimal } from '@prisma/client/runtime/library';
+import { beforeEach } from '@jest/globals';
 
 describe('BudgetRolloverService', () => {
+	beforeEach(() => {
+		prismaMock.$queryRaw.mockResolvedValue([] as any);
+	});
+
 	describe('calculateRollover', () => {
 		const categoryId = 1;
 		const targetMonth = 4; // April
@@ -36,6 +41,7 @@ describe('BudgetRolloverService', () => {
 			prismaMock.category.findUnique.mockResolvedValue({
 				id: categoryId,
 				amountLimit: new Decimal(100),
+				isCumulative: true,
 			} as any);
 
 			// March had $50 carry-over from February
@@ -72,6 +78,49 @@ describe('BudgetRolloverService', () => {
 			const carryOver = await BudgetRollover.calculateRollover(categoryId, targetMonth, targetYear);
 
 			expect(carryOver).toBe(0);
+		});
+
+		it('should reassign leftover surplus to the target category when a fallback rule exists', async () => {
+			const sourceCategoryId = 2;
+			const targetCategoryId = 3;
+
+			prismaMock.category.findUnique
+				.mockResolvedValueOnce({
+					id: targetCategoryId,
+					userId: 1,
+					amountLimit: new Decimal(100),
+					isCumulative: false,
+				} as any)
+				.mockResolvedValueOnce({
+					id: sourceCategoryId,
+					userId: 1,
+					amountLimit: new Decimal(90),
+					isCumulative: false,
+				} as any);
+
+			prismaMock.$queryRaw
+				.mockResolvedValueOnce([] as any)
+				.mockResolvedValueOnce([
+					{
+						id: 1,
+						userId: 1,
+						sourceCategoryId,
+						targetCategoryId,
+						enabled: true,
+					},
+				] as any);
+
+			prismaMock.budgetPeriod.findUnique
+				.mockResolvedValueOnce({ carryOver: new Decimal(0) } as any)
+				.mockResolvedValueOnce({ carryOver: new Decimal(0) } as any);
+
+			prismaMock.transaction.aggregate
+				.mockResolvedValueOnce({ _sum: { amount: new Decimal(70) } } as any)
+				.mockResolvedValueOnce({ _sum: { amount: new Decimal(25) } } as any);
+
+			const carryOver = await BudgetRollover.calculateRollover(targetCategoryId, targetMonth, targetYear);
+
+			expect(carryOver).toBe(65);
 		});
 	});
 

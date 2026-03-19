@@ -7,6 +7,10 @@ import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
 const normalizeKeywords = (keywords: string[]): string[] =>
 	[...new Set(keywords.map((keyword) => keyword.trim().toLowerCase()).filter(Boolean))];
 
+type CategoryWithOptionalIcon = {
+	icon?: string | null;
+};
+
 /**
  * Returns all categories for the authenticated user, 
  * including their keywords and transaction counts.
@@ -35,6 +39,7 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
 				id: cat.id,
 				name: cat.name,
 				description: cat.description,
+				icon: (cat as unknown as CategoryWithOptionalIcon).icon ?? null,
 				amountLimit: Number(cat.amountLimit ?? 0),
 				isCumulative: cat.isCumulative,
 				currentCarryOver: Number(period?.carryOver || 0),
@@ -54,9 +59,10 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
  * Creates a new category and associates keywords.
  */
 export async function createCategory(req: Request, res: Response): Promise<void> {
-	const { name, description, amountLimit, keywords, isCumulative } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative } = req.body as {
 		name: string;
 		description?: string;
+		icon?: string;
 		amountLimit?: number;
 		keywords?: string[];
 		isCumulative?: boolean;
@@ -71,14 +77,16 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 		logger.info('API: Creating category', { userId: req.user.id, name });
 		const result = await prisma.$transaction(async (tx) => {
 			// 1. Create the category
-			const category = await tx.category.create({
-				data: {
+			const categoryCreateData = {
 					name,
 					description,
+					icon: icon ?? null,
 					amountLimit,
 					isCumulative: !!isCumulative,
 					userId: req.user.id,
-				}
+				};
+			const category = await tx.category.create({
+				data: categoryCreateData as never
 			});
 
 			// 2. Handle keywords if provided
@@ -131,9 +139,10 @@ export async function createCategory(req: Request, res: Response): Promise<void>
  */
 export async function updateCategory(req: Request, res: Response): Promise<void> {
 	const id = Number(req.params.id);
-	const { name, description, amountLimit, keywords, isCumulative } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative } = req.body as {
 		name?: string;
 		description?: string;
+		icon?: string;
 		amountLimit?: number;
 		keywords?: string[];
 		isCumulative?: boolean;
@@ -157,14 +166,16 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 			}
 
 			// 1. Update category fields
+			const categoryUpdateData = {
+						name: name ?? existing.name,
+						description: description !== undefined ? description : existing.description,
+						icon: icon !== undefined ? icon : (existing as unknown as CategoryWithOptionalIcon).icon,
+						amountLimit: amountLimit !== undefined ? amountLimit : existing.amountLimit,
+						isCumulative: isCumulative !== undefined ? isCumulative : existing.isCumulative,
+					};
 			const updatedCategory = await tx.category.update({
 				where: { id },
-				data: {
-					name: name ?? existing.name,
-					description: description !== undefined ? description : existing.description,
-					amountLimit: amountLimit !== undefined ? amountLimit : existing.amountLimit,
-					isCumulative: isCumulative !== undefined ? isCumulative : existing.isCumulative,
-				}
+				data: categoryUpdateData as never
 			});
 
 			// 2. Update keywords if provided
