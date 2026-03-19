@@ -1,8 +1,7 @@
-import { TelegramService, telegramService } from '../../src/services/telegram.service';
+import { telegramService } from '../../src/services/telegram.service';
 import commandsModule from '../../modules/commands/commands.module';
 import telegramBot from '../../modules/telegram/telegram.module';
 import Sinon from 'sinon';
-import { TELEGRAM_FILE_URL } from '../../src/telegram/variables';
 
 describe('TelegramService', () => {
   let sandbox: Sinon.SinonSandbox;

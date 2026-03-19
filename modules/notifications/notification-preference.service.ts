@@ -25,7 +25,9 @@ export class NotificationPreferenceService implements INotificationPreferenceSer
     userId: number,
     preferences: NotificationPreferenceInput
   ): Promise<NotificationPreference> {
-    const data: any = {};
+    const data: Partial<
+      Pick<NotificationPreference, 'emailEnabled' | 'webPushEnabled' | 'thresholds' | 'disabledCategories'>
+    > = {};
 
     if (preferences.emailEnabled !== undefined) {
       data.emailEnabled = preferences.emailEnabled;
@@ -54,13 +56,15 @@ export class NotificationPreferenceService implements INotificationPreferenceSer
   }
 
   async createDefault(userId: number): Promise<NotificationPreference> {
-    return this.prisma.notificationPreference.create({
-      data: {
+    return this.prisma.notificationPreference.upsert({
+      where: { userId },
+      create: {
         userId,
         emailEnabled: true,
         webPushEnabled: false,
         thresholds: JSON.stringify(DEFAULT_THRESHOLDS.map(t => t.percentage)),
       },
+      update: {},
     });
   }
 

@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import logger from '../src/lib/logger';
 import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
+
+const normalizeKeywords = (keywords: string[]): string[] =>
+	[...new Set(keywords.map((keyword) => keyword.trim().toLowerCase()).filter(Boolean))];
 
 /**
  * Returns all categories for the authenticated user, 
@@ -25,7 +29,7 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
 			orderBy: { name: 'asc' }
 		});
 
-		const mapped = await Promise.all(categories.map(async (cat: any) => {
+		const mapped = await Promise.all(categories.map(async (cat) => {
 			const period = await BudgetRollover.getOrCreateCurrentPeriod(cat.id);
 			return {
 				id: cat.id,
@@ -34,7 +38,7 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
 				amountLimit: Number(cat.amountLimit ?? 0),
 				isCumulative: cat.isCumulative,
 				currentCarryOver: Number(period?.carryOver || 0),
-				keywords: cat.categoryKeyword.map((ck: any) => ck.keyword.name),
+				keywords: cat.categoryKeyword.map((ck) => ck.keyword.name),
 				transactionCount: cat._count.transaction,
 			};
 		}));
@@ -79,17 +83,18 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 
 			// 2. Handle keywords if provided
 			if (keywords && Array.isArray(keywords)) {
-				for (const kwName of keywords) {
+				const normalizedKeywords = normalizeKeywords(keywords);
+				for (const kwName of normalizedKeywords) {
 					const keyword = await tx.keyword.upsert({
 						where: {
 							name_userId: {
-								name: kwName.toLowerCase(),
+								name: kwName,
 								userId: req.user.id,
 							}
 						},
 						update: {},
 						create: {
-							name: kwName.toLowerCase(),
+							name: kwName,
 							userId: req.user.id,
 						}
 					});
@@ -107,9 +112,12 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 		});
 
 		res.status(201).json(result);
-	} catch (error: any) {
-		logger.error('API: Failed to create category', { userId: req.user.id, error: error.message, stack: error.stack });
-		if (error.code === 'P2002') {
+	} catch (error: unknown) {
+		const prismaError = error instanceof Prisma.PrismaClientKnownRequestError ? error : null;
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		const errorStack = error instanceof Error ? error.stack : undefined;
+		logger.error('API: Failed to create category', { userId: req.user.id, error: errorMessage, stack: errorStack });
+		if (prismaError?.code === 'P2002') {
 			res.status(400).json({ message: 'A category with this name already exists' });
 			return;
 		}
@@ -161,23 +169,24 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 
 			// 2. Update keywords if provided
 			if (keywords && Array.isArray(keywords)) {
+				const normalizedKeywords = normalizeKeywords(keywords);
 				// Remove old associations
 				await tx.categoryKeyword.deleteMany({
 					where: { categoryId: id }
 				});
 
 				// Create new ones
-				for (const kwName of keywords) {
+				for (const kwName of normalizedKeywords) {
 					const keyword = await tx.keyword.upsert({
 						where: {
 							name_userId: {
-								name: kwName.toLowerCase(),
+								name: kwName,
 								userId: req.user.id,
 							}
 						},
 						update: {},
 						create: {
-							name: kwName.toLowerCase(),
+							name: kwName,
 							userId: req.user.id,
 						}
 					});
@@ -195,8 +204,8 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 		});
 
 		res.status(200).json(result);
-	} catch (error: any) {
-		if (error.message === 'Category not found') {
+	} catch (error: unknown) {
+		if (error instanceof Error && error.message === 'Category not found') {
 			res.status(404).json({ message: error.message });
 			return;
 		}
@@ -264,12 +273,12 @@ export async function deleteCategory(req: Request, res: Response): Promise<void>
 		});
 
 		res.status(204).send();
-	} catch (error: any) {
-		if (error.message === 'Category not found') {
+	} catch (error: unknown) {
+		if (error instanceof Error && error.message === 'Category not found') {
 			res.status(404).json({ message: error.message });
 			return;
 		}
-		if (error.message === 'Cannot delete the default Other category') {
+		if (error instanceof Error && error.message === 'Cannot delete the default Other category') {
 			res.status(400).json({ message: error.message });
 			return;
 		}

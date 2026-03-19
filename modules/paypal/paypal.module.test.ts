@@ -325,13 +325,10 @@ describe('PaypalModule', () => {
 
 			const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
 			const spyCategoryFindMany = prismaMock.category.findMany.mockResolvedValue(categories);
-			const spy$Transaction = prismaMock.$transaction.mockResolvedValue(transaction);
-
 			prismaMock.transaction.create.mockResolvedValue(transactionTableResult);
 
 			const result = await PayPal.registerPaypalDataFromCSVData(csvData);
 			expect(result).toHaveLength(4);
-			expect(spy$Transaction).toHaveBeenCalledTimes(1);
 			expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
 			expect(spyCategoryFindMany).toHaveBeenCalledTimes(1);
 		});

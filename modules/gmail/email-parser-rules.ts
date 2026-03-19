@@ -28,7 +28,7 @@ const bankNotificationRule: EmailParserRule = {
 			subjectLower.includes('crédito')
 		);
 	},
-	parse: (body, _date) => {
+	parse: (body) => {
 		const amountMatch = body.match(
 			/(?:monto|amount|total|valor|bs\.?|usd|\$)\s*[:.]?\s*([\d.,]+)/i
 		);
@@ -65,7 +65,7 @@ const paypalReceiptRule: EmailParserRule = {
 			subject.toLowerCase().includes('receipt for your payment')
 		);
 	},
-	parse: (body, _date) => {
+	parse: (body) => {
 		const amountMatch = body.match(
 			/(?:total|amount|you (?:sent|paid|received))\s*[:.]?\s*\$?\s*([\d.,]+)\s*(USD|EUR)?/i
 		);
@@ -109,7 +109,7 @@ const subscriptionRule: EmailParserRule = {
 			subscriptionSenders.some((s) => fromLower.includes(s) && subjectLower.includes('payment'))
 		);
 	},
-	parse: (body, _date) => {
+	parse: (body) => {
 		const amountMatch = body.match(
 			/(?:total|amount|charge|cobro|precio|price)\s*[:.]?\s*\$?\s*([\d.,]+)\s*(USD|EUR)?/i
 		);
@@ -147,7 +147,7 @@ const invoiceRule: EmailParserRule = {
 			subjectLower.includes('confirmación de pedido')
 		);
 	},
-	parse: (body, _date) => {
+	parse: (body) => {
 		const amountMatch = body.match(
 			/(?:total|grand total|order total|amount|monto)\s*[:.]?\s*\$?\s*([\d.,]+)\s*(USD|EUR|VES)?/i
 		);

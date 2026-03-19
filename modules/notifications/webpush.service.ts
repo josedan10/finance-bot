@@ -1,6 +1,6 @@
 // Web Push Notification Service
 
-import webpush from 'web-push';
+import webpush, { PushSubscription as WebPushSubscription } from 'web-push';
 import { INotificationService } from './types';
 import { NotificationPayload, NotificationResult } from '../../src/enums/notifications';
 import { PrismaModule } from '../database/database.module';
@@ -67,7 +67,7 @@ export class WebPushNotificationService implements INotificationService {
 
         try {
           await webpush.sendNotification(
-            pushSubscription as any,
+            pushSubscription as WebPushSubscription,
             JSON.stringify({
               title: notificationTitle,
               body: notificationBody,
@@ -84,12 +84,15 @@ export class WebPushNotificationService implements INotificationService {
             })
           );
           successCount++;
-        } catch (error: any) {
+        } catch (error: unknown) {
           failCount++;
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const statusCode = typeof error === 'object' && error !== null && 'statusCode' in error
+            ? Number(error.statusCode)
+            : undefined;
           
           // If subscription is no longer valid (410 Gone), remove it
-          if (error.statusCode === 410) {
+          if (statusCode === 410) {
             logger.warn('Push subscription expired, removing', {
               subscriptionId: subscription.id,
               userId: payload.userId,
@@ -116,8 +119,9 @@ export class WebPushNotificationService implements INotificationService {
       });
 
       return {
-        success: failCount === 0,
+        success: successCount > 0,
         channel: 'webpush',
+        errorMessage: failCount > 0 ? `${failCount} subscription(s) failed` : undefined,
       };
     } catch (error) {
       logger.error('Failed to send web push notifications', {
@@ -148,35 +152,14 @@ export class WebPushNotificationService implements INotificationService {
     userId: number,
     subscription: PushSubscriptionData
   ): Promise<{ id: number }> {
-    // Check if this endpoint already exists for this user
-    const existing = await PrismaModule.pushSubscription.findFirst({
+    const savedSubscription = await PrismaModule.pushSubscription.upsert({
       where: {
-        userId,
-        endpoint: subscription.endpoint,
-      },
-    });
-
-    if (existing) {
-      // Update existing subscription
-      const updated = await PrismaModule.pushSubscription.update({
-        where: { id: existing.id },
-        data: {
-          p256dh: subscription.keys.p256dh,
-          auth: subscription.keys.auth,
-          expiresAt: subscription.expirationTime
-            ? new Date(subscription.expirationTime)
-            : null,
-          updatedAt: new Date(),
+        userId_endpoint: {
+          userId,
+          endpoint: subscription.endpoint,
         },
-      });
-
-      logger.info('Push subscription updated', { userId, subscriptionId: updated.id });
-      return { id: updated.id };
-    }
-
-    // Create new subscription
-    const created = await PrismaModule.pushSubscription.create({
-      data: {
+      },
+      create: {
         userId,
         endpoint: subscription.endpoint,
         p256dh: subscription.keys.p256dh,
@@ -185,10 +168,17 @@ export class WebPushNotificationService implements INotificationService {
           ? new Date(subscription.expirationTime)
           : null,
       },
+      update: {
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        expiresAt: subscription.expirationTime
+          ? new Date(subscription.expirationTime)
+          : null,
+      },
     });
 
-    logger.info('Push subscription saved', { userId, subscriptionId: created.id });
-    return { id: created.id };
+    logger.info('Push subscription saved', { userId, subscriptionId: savedSubscription.id });
+    return { id: savedSubscription.id };
   }
 
   /**

@@ -1,10 +1,10 @@
 services:
   zentra-ui:
-    image: zentra-ui
+    image: zentra-ui-dev
     container_name: local-zentra-ui-1
     build:
-      context: ../../../
-      dockerfile: finance-bot-ui/Dockerfile
+      context: ../../../finance-bot-ui
+      dockerfile: Dockerfile.dev
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5001}
         - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}
@@ -15,8 +15,14 @@ services:
         - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
     ports:
       - "${PORT:-8080}:8080"
+    volumes:
+      - ../../../finance-bot-ui:/app
+      - /app/node_modules
+      - /app/.next
     env_file:
       - ../../../finance-bot-ui/.env.local
+    environment:
+      - NODE_ENV=development
     networks:
       - zentra-network
 

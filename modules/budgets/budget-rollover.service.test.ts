@@ -1,6 +1,5 @@
 import { BudgetRollover } from './budget-rollover.service';
 import { prismaMock } from '../database/database.module.mock';
-import dayjs from 'dayjs';
 import { Decimal } from '@prisma/client/runtime/library';
 
 describe('BudgetRolloverService', () => {

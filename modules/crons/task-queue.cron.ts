@@ -218,7 +218,7 @@ export class TaskQueueModule {
 						});
 					}
 
-					const { transaction, isDuplicate }: any = await BaseTransactions.safeCreateTransaction({
+					const { isDuplicate } = await BaseTransactions.safeCreateTransaction({
 						userId: targetUserId,
 						date: email.date,
 						description: parsed.description.slice(0, 255),

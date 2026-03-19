@@ -13,6 +13,15 @@ import logger from '../src/lib/logger';
 import { BaseTransactions } from '../modules/base-transactions/base-transactions.module';
 
 const router = express.Router();
+const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
+
+function normalizeTransactionStatus(status?: string): string {
+	return status?.trim().toLowerCase() ?? '';
+}
+
+function isIgnoredTransactionStatus(status?: string): boolean {
+	return ignoredTransactionStatuses.has(normalizeTransactionStatus(status));
+}
 
 router.use((req: Request, res: Response, next) => {
 	res.header('Access-Control-Allow-Origin', '*');
@@ -251,6 +260,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 				paymentMethod?: string;
 				referenceId?: string;
 				currency?: string;
+				status?: string;
 			}>;
 		};
 
@@ -258,8 +268,14 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			return res.status(400).json({ message: 'Invalid transactions data' });
 		}
 
+		const balanceAffectingTransactions = transactions.filter((transaction) => !isIgnoredTransactionStatus(transaction.status));
+
+		if (balanceAffectingTransactions.length === 0) {
+			return res.status(201).json([]);
+		}
+
 		// 1. Prepare Categories
-		const categoryNames = [...new Set(transactions.map(t => t.category))];
+		const categoryNames = [...new Set(balanceAffectingTransactions.map(t => t.category))];
 		const existingCategories = await prisma.category.findMany({
 			where: { name: { in: categoryNames }, userId: req.user.id }
 		});
@@ -275,7 +291,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 		}
 
 		// 2. Prepare Payment Methods
-		const pmNames = [...new Set(transactions.filter(t => t.paymentMethod).map(t => t.paymentMethod!))];
+		const pmNames = [...new Set(balanceAffectingTransactions.filter(t => t.paymentMethod).map(t => t.paymentMethod!))];
 		if (!pmNames.includes('Cash')) pmNames.push('Cash'); // Ensure default exists
 
 		const existingPMs = await prisma.paymentMethod.findMany({
@@ -296,7 +312,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 
 		// 3. Create Transactions
 		const createdTransactions = [];
-		for (const t of transactions) {
+		for (const t of balanceAffectingTransactions) {
 			try {
 				const { transaction, isDuplicate } = await BaseTransactions.safeCreateTransaction({
 					userId: req.user.id,

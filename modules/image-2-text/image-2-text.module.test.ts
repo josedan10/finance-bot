@@ -1,4 +1,3 @@
-import nock from 'nock';
 import { Image2TextService as image2TextModule } from './image-2-text.module';
 import axios from 'axios';
 import Sinon from 'sinon';

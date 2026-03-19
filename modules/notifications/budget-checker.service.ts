@@ -26,7 +26,7 @@ export class BudgetCheckerService implements IBudgetChecker {
     const category = await this.prisma.category.findFirst({
       where: {
         id: categoryId,
-        userId: userId,
+        userId,
       },
     });
 
@@ -46,8 +46,8 @@ export class BudgetCheckerService implements IBudgetChecker {
     // 4. Calculate total spending this month
     const spending = await this.prisma.transaction.aggregate({
       where: {
-        userId: userId,
-        categoryId: categoryId,
+        userId,
+        categoryId,
         type: 'expense',
         date: {
           gte: startOfMonth,

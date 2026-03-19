@@ -4,11 +4,13 @@ import { firebaseAdmin } from './firebase';
 import { PrismaClient } from '@prisma/client';
 import OnboardingService from '../services/onboarding.service';
 
+const verifyIdToken = jest.fn();
+
 // Mock dependencies
 jest.mock('./firebase', () => ({
   firebaseAdmin: {
     auth: () => ({
-      verifyIdToken: jest.fn(),
+      verifyIdToken,
     }),
   },
 }));
@@ -24,7 +26,11 @@ jest.mock('@prisma/client', () => {
 });
 
 jest.mock('../services/onboarding.service', () => ({
-  setupUserDefaultCategories: jest.fn(),
+  __esModule: true,
+  default: {
+    setupUserDefaultCategories: jest.fn().mockResolvedValue(undefined),
+    setupUserDefaultPaymentMethods: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 describe('Auth Middleware', () => {

@@ -1,5 +1,4 @@
-import { google, gmail_v1 } from 'googleapis';
-import { authenticate } from '@google-cloud/local-auth';
+import { google, gmail_v1 as gmailV1 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
@@ -36,19 +35,6 @@ class GmailModule {
 		}
 	}
 
-	private async saveCredentials(client: OAuth2Client): Promise<void> {
-		const content = fs.readFileSync(this.credentialsPath, 'utf-8');
-		const keys = JSON.parse(content);
-		const key = keys.installed || keys.web;
-		const payload = JSON.stringify({
-			type: 'authorized_user',
-			client_id: key.client_id,
-			client_secret: key.client_secret,
-			refresh_token: client.credentials.refresh_token,
-		});
-		fs.writeFileSync(this.tokenPath, payload);
-	}
-
 	async authorize(): Promise<OAuth2Client> {
 		if (this.auth) return this.auth;
 
@@ -58,26 +44,24 @@ class GmailModule {
 			return client;
 		}
 
-		if (!fs.existsSync(this.credentialsPath)) {
+		if (!fs.existsSync(this.credentialsPath) || !fs.existsSync(this.tokenPath)) {
 			throw new Error(
-				`Gmail credentials file not found at ${this.credentialsPath}. Run "npm run gmail:auth" first.`
+				`Gmail OAuth credentials or token are missing. Run "npm run gmail:auth" to generate ${this.tokenPath} before starting the service.`
 			);
 		}
 
-		client = await authenticate({
-			scopes: config.GMAIL_SCOPES,
-			keyfilePath: this.credentialsPath,
-		});
-
-		if (client.credentials) {
-			await this.saveCredentials(client);
+		client = await this.loadSavedCredentials();
+		if (!client) {
+			throw new Error(
+				`Gmail token at ${this.tokenPath} could not be loaded. Re-run "npm run gmail:auth" to refresh the saved credentials.`
+			);
 		}
 
 		this.auth = client;
 		return client;
 	}
 
-	private getGmailClient(auth: OAuth2Client): gmail_v1.Gmail {
+	private getGmailClient(auth: OAuth2Client): gmailV1.Gmail {
 		return google.gmail({ version: 'v1', auth });
 	}
 
@@ -85,7 +69,7 @@ class GmailModule {
 		return Buffer.from(data, 'base64url').toString('utf-8');
 	}
 
-	private extractBody(payload: gmail_v1.Schema$MessagePart): string {
+	private extractBody(payload: gmailV1.Schema$MessagePart): string {
 		if (payload.body?.data) {
 			return this.decodeBase64Url(payload.body.data);
 		}
@@ -113,7 +97,7 @@ class GmailModule {
 		return '';
 	}
 
-	private getHeader(headers: gmail_v1.Schema$MessagePartHeader[] | undefined, name: string): string {
+	private getHeader(headers: gmailV1.Schema$MessagePartHeader[] | undefined, name: string): string {
 		return headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
 	}
 

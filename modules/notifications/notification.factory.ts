@@ -1,6 +1,6 @@
 // Notification Factory
 
-import { NotificationChannel, NotificationPayload, NotificationResult, ThresholdCrossed } from '../../src/enums/notifications';
+import { NotificationChannel, NotificationPayload, NotificationResult } from '../../src/enums/notifications';
 import { INotificationService, INotificationFactory, IBudgetChecker, INotificationPreferenceService } from './types';
 import { EmailNotificationService } from './email.service';
 import { WebPushNotificationService } from './webpush.service';

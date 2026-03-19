@@ -3,12 +3,41 @@ import { PrismaModule } from '../database/database.module';
 import { extractTransactionDetails } from '../../src/helpers/price.helper';
 import { ExchangeCurrencyCronServices } from '../crons/exchange-currency/exchange-currency.service';
 import { calculateUSDAmountByRate } from '../../src/helpers/rate.helper';
-import { Category, PrismaClient, Transaction } from '@prisma/client';
+import { Category, PaymentMethod, Prisma, PrismaClient, Transaction } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 import { redisClient } from '../../src/lib/redis';
 import { NotificationFactory } from '../notifications/notification.module';
+
+type TransactionWithRelations = Prisma.TransactionGetPayload<{
+	include: {
+		category: true;
+		paymentMethod: true;
+	};
+}>;
+
+type TransactionWithOptionalRelations = Transaction & {
+	category?: Category | null;
+	paymentMethod?: PaymentMethod | null;
+};
+
+type SafeCreateTransactionInput = Prisma.TransactionUncheckedCreateInput & {
+	userId: number;
+	amount: number | Decimal;
+	date: Date | string;
+	type: string;
+	currency: string;
+	description?: string | null;
+	referenceId?: string | null;
+	originalCurrencyAmount?: number | Decimal | null;
+	amountIsAlreadyNormalized?: boolean;
+};
+
+type SafeCreateTransactionResult = {
+	transaction: TransactionWithOptionalRelations;
+	isDuplicate: boolean;
+};
 
 class BaseTransactionsModule {
 	private _db: PrismaClient;
@@ -52,7 +81,7 @@ class BaseTransactionsModule {
 		const currency = splittedData.find((d) => d.includes('currency='))?.split('=')?.[1];
 		const date = splittedData.find((d) => d.includes('date='))?.split('=')?.[1] || dayjs().toISOString();
 
-		let amountInUSD;
+		let amountInUSD: number | null;
 
 		if (!amount || !description || !paymentMethodName || !type || !categoryName) {
 			const sampleData =
@@ -90,7 +119,7 @@ class BaseTransactionsModule {
 		}
 
 		const catCacheKey = `category:${userId}:${categoryName}`;
-		let category;
+		let category: Category | null;
 		const cachedCat = await redisClient.get(catCacheKey);
 
 		if (cachedCat) {
@@ -112,9 +141,9 @@ class BaseTransactionsModule {
 			throw new Error(`Category ${categoryName} not found`);
 		}
 
-		const { transaction }: any = await this.safeCreateTransaction({
+		const { transaction } = await this.safeCreateTransaction({
 			userId,
-			amount: amountInUSD,
+			amount: amountInUSD ?? Number(amount),
 			description,
 			type,
 			date: date ? dayjs(date).toDate() : dayjs().toDate(),
@@ -194,8 +223,9 @@ class BaseTransactionsModule {
 		currency: string;
 		description?: string;
 		referenceId?: string;
-	}): Promise<any> {
+	}): Promise<TransactionWithRelations | null> {
 		const { userId, amount, date, type, currency, description, referenceId } = data;
+		const normalizedAmount = amount instanceof Decimal ? amount : new Decimal(amount);
 
 		// 1. Priority: Exact referenceId match
 		if (referenceId) {
@@ -213,13 +243,13 @@ class BaseTransactionsModule {
 		}
 
 		// 2. Fuzzy: Amount + Currency + Date Window + Description Similarity
-		const startDate = dayjs(date).subtract(2, 'days').toDate();
-		const endDate = dayjs(date).add(2, 'days').toDate();
+		const startDate = dayjs(date).subtract(1, 'day').toDate();
+		const endDate = dayjs(date).add(1, 'day').toDate();
 
-		const potentialDuplicates = await this._db.transaction.findMany({
+		const potentialDuplicates = (await this._db.transaction.findMany({
 			where: {
 				userId,
-				amount: amount as any,
+				amount: normalizedAmount,
 				currency,
 				type,
 				date: {
@@ -231,7 +261,7 @@ class BaseTransactionsModule {
 				category: true,
 				paymentMethod: true,
 			},
-		});
+		})) ?? [];
 
 		if (potentialDuplicates.length === 0) return null;
 
@@ -267,15 +297,16 @@ class BaseTransactionsModule {
 	 * Creates a transaction only if it's not a duplicate.
 	 * Handles internal VES -> USD normalization if needed.
 	 */
-	async safeCreateTransaction(data: any) {
-		const { amount, currency, date, userId } = data;
+	async safeCreateTransaction(data: SafeCreateTransactionInput): Promise<SafeCreateTransactionResult> {
+		const { amount, currency, date } = data;
+		const transactionDate = date instanceof Date ? date : new Date(date);
 		
 		let finalAmount = Number(amount);
 		let originalCurrencyAmount = data.originalCurrencyAmount || null;
 
 		// Handle Normalization if not already USD
 		if (currency === 'VES' && !data.amountIsAlreadyNormalized) {
-			const dateStr = dayjs(date).format('YYYY-MM-DD');
+			const dateStr = dayjs(transactionDate).format('YYYY-MM-DD');
 			const converted = await this._VESToUSDWithExchangeRateByDate(dateStr, Number(amount));
 			if (converted !== null) {
 				finalAmount = converted;
@@ -290,11 +321,11 @@ class BaseTransactionsModule {
 		const duplicate = await this.findDuplicate({
 			userId: data.userId,
 			amount: finalAmount,
-			date: data.date,
+			date: transactionDate,
 			type: data.type,
 			currency: data.currency || 'USD',
-			description: data.description,
-			referenceId: data.referenceId,
+			description: data.description ?? undefined,
+			referenceId: data.referenceId ?? undefined,
 		});
 
 		if (duplicate) {
@@ -303,17 +334,18 @@ class BaseTransactionsModule {
 				userId: data.userId,
 				amount: finalAmount,
 				currency: data.currency,
-				date: data.date,
+				date: transactionDate,
 			});
 			return { transaction: duplicate, isDuplicate: true };
 		}
 
+		const { amountIsAlreadyNormalized: _amountIsAlreadyNormalized, ...transactionData } = data;
 		const transaction = await this._db.transaction.create({
 			data: {
-				...data,
+				...transactionData,
+				date: transactionDate,
 				amount: finalAmount,
 				originalCurrencyAmount,
-				amountIsAlreadyNormalized: undefined, // Clean up internal flag
 			},
 			include: {
 				category: true,
@@ -328,12 +360,9 @@ class BaseTransactionsModule {
 	 * Parses extracted text into structured transaction data without persisting it.
 	 */
 	async parseTransactionFromText(textLines: string[], userId: number) {
-		let date = dayjs().format('YYYY-MM-DD');
-		let amount;
-
 		const transactionDetails = extractTransactionDetails(textLines);
-		date = transactionDetails?.date || date;
-		amount = transactionDetails?.amount;
+		const date = transactionDetails?.date || dayjs().format('YYYY-MM-DD');
+		const amount = transactionDetails?.amount;
 
 		if (!amount) {
 			throw new Error('Amount not found');
@@ -361,12 +390,10 @@ class BaseTransactionsModule {
 		args: string[] | undefined,
 		userId: number
 	): Promise<{
-		transaction: Transaction;
+		transaction: TransactionWithOptionalRelations;
 		category: Category | null;
 	}> {
-		let amount;
-		let category: Category | null = null;
-		let date = dayjs().format('YYYY-MM-DD');
+		let amount: string | undefined;
 
 		if (args && args.length > 0) {
 			amount = args?.find((arg) => arg.includes('amount'))?.split('=')?.[1];
@@ -378,7 +405,7 @@ class BaseTransactionsModule {
 		const finalAmount = amount ? Number(amount) : parsed.amount;
 		const finalDate = parsed.date;
 
-		const { transaction }: any = await this.safeCreateTransaction({
+		const { transaction } = await this.safeCreateTransaction({
 			userId,
 			amount: finalAmount,
 			originalCurrencyAmount: parsed.originalAmount,
@@ -401,7 +428,7 @@ class BaseTransactionsModule {
 			});
 		}
 
-		return { transaction, category: (transaction as any).category };
+		return { transaction, category: transaction.category ?? null };
 	}
 }
 

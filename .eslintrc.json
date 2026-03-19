@@ -12,11 +12,26 @@
 	},
 	"rules": {
 		"semi": ["error", "always"],
+		"@typescript-eslint/no-unused-vars": [
+			"error",
+			{
+				"argsIgnorePattern": "^_",
+				"varsIgnorePattern": "^_"
+			}
+		],
 		"jest/no-disabled-tests": "warn",
 		"jest/no-focused-tests": "error",
 		"jest/no-identical-title": "error",
 		"jest/prefer-to-have-length": "warn",
 		"jest/valid-expect": "error"
 	},
-	"plugins": ["jest", "@typescript-eslint"]
+	"plugins": ["jest", "@typescript-eslint"],
+	"overrides": [
+		{
+			"files": ["**/*.test.ts"],
+			"rules": {
+				"@typescript-eslint/no-explicit-any": "off"
+			}
+		}
+	]
 }

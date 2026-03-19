@@ -3,6 +3,7 @@ import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
 import { PrismaClient } from '@prisma/client';
 import { BudgetCheckerService } from './budget-checker.service';
 import { Decimal } from '@prisma/client/runtime/library';
+import { BudgetRollover } from '../budgets/budget-rollover.service';
 
 describe('BudgetCheckerService', () => {
   let budgetChecker: BudgetCheckerService;
@@ -12,10 +13,12 @@ describe('BudgetCheckerService', () => {
     prismaMock = mockDeep<PrismaClient>();
     budgetChecker = new BudgetCheckerService();
     budgetChecker.setPrisma(prismaMock);
+    jest.spyOn(BudgetRollover, 'getOrCreateCurrentPeriod').mockResolvedValue({
+      carryOver: new Decimal(0),
+    } as never);
     jest.clearAllMocks();
   });
 
-  const mockUser = { id: 1, email: 'test@example.com' };
   const mockCategory = {
     id: 1,
     name: 'Food',

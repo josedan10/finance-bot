@@ -166,7 +166,7 @@ model ShopCategory {
   id         Int      @id @default(autoincrement())
   categoryId Int
   shopId     Int
-  category   Category @relation(fields: [categoryId], references: [id])
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   shop       Shop     @relation(fields: [shopId], references: [id])
 
   @@index([categoryId], map: "ShopCategory_categoryId_fkey")
@@ -247,6 +247,7 @@ model PushSubscription {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@unique([userId, endpoint(length: 191)])
 }
 
 model AISettings {

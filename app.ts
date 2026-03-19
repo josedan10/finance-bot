@@ -22,16 +22,24 @@ app.use('*', (req: Request, res: Response, next: NextFunction) => {
 	next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-	err.statusCode = err.statusCode || 500;
-	err.status = err.status || 'error';
+type ErrorResponse = Error & {
+	statusCode?: number;
+	status?: string;
+};
 
-	logger.error('Unhandled error', { error: err.message, stack: err.stack });
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+	const normalizedError: ErrorResponse = err instanceof Error
+		? (err as ErrorResponse)
+		: (new Error('Unknown error') as ErrorResponse);
+	normalizedError.statusCode = normalizedError.statusCode || 500;
+	normalizedError.status = normalizedError.status || 'error';
 
-	res.status(err.statusCode).json({
-		status: err.status,
-		message: err.message,
-		...(req.app.get('env') === 'development' && { stack: err.stack }),
+	logger.error('Unhandled error', { error: normalizedError.message, stack: normalizedError.stack });
+
+	res.status(normalizedError.statusCode).json({
+		status: normalizedError.status,
+		message: normalizedError.message,
+		...(req.app.get('env') === 'development' && { stack: normalizedError.stack }),
 	});
 });
 

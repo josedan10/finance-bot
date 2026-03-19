@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { IAIAssistant, AnalysisResult, Anomaly, BudgetSuggestion } from './ai-assistant.interface';
+import { IAIAssistant, AnalysisResult, Anomaly, BudgetSuggestion, AITransactionInput } from './ai-assistant.interface';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 
@@ -10,7 +10,7 @@ export class ChatGPTAssistant implements IAIAssistant {
     this.openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
   }
 
-  async analyzeExpenses(transactions: any[]): Promise<AnalysisResult> {
+  async analyzeExpenses(transactions: AITransactionInput[]): Promise<AnalysisResult> {
     try {
       const completion = await this.openai.chat.completions.create({
         messages: [
@@ -29,7 +29,7 @@ export class ChatGPTAssistant implements IAIAssistant {
     }
   }
 
-  async detectAnomalies(transactions: any[]): Promise<Anomaly[]> {
+  async detectAnomalies(transactions: AITransactionInput[]): Promise<Anomaly[]> {
     try {
       const completion = await this.openai.chat.completions.create({
         messages: [
@@ -48,7 +48,7 @@ export class ChatGPTAssistant implements IAIAssistant {
     }
   }
 
-  async suggestBudget(historicalData: any[]): Promise<BudgetSuggestion> {
+  async suggestBudget(historicalData: AITransactionInput[]): Promise<BudgetSuggestion> {
     try {
       const completion = await this.openai.chat.completions.create({
         messages: [

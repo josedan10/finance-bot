@@ -24,7 +24,7 @@ describe('AppError', () => {
     expect(error400.statusCode).toBe(400);
     expect(error400.status).toBe('fail'); // Ensure "fail" executes safely for 4XX
 
-    const error0 = new AppError('Strange Default Error', 0)
+    const error0 = new AppError('Strange Default Error', 0);
     expect(error0.statusCode).toBe(0);
     expect(error0.status).toBe('error');  // Ensure fallback is "error"
   });

@@ -7,8 +7,7 @@ export class OnboardingService {
 		try {
 			logger.info('Setting up default categories for user', { userId });
 
-			for (const key of Object.keys(CATEGORIES)) {
-				const categoryData = (CATEGORIES as any)[key];
+			for (const categoryData of Object.values(CATEGORIES)) {
 				
 				// Define some default limits
 				const categoryLimits: Record<string, number> = {
@@ -30,33 +29,33 @@ export class OnboardingService {
 					where: {
 						name_userId: {
 							name: categoryData.name,
-							userId: userId,
+							userId,
 						},
 					},
 					update: {},
 					create: {
 						name: categoryData.name,
-						userId: userId,
+						userId,
 						amountLimit: limit,
 						description: `Default category for ${categoryData.name}`,
 					},
 				});
 
 				// Add default keywords if they exist
-				if (categoryData.keywords && categoryData.keywords.length > 0) {
+				if ('keywords' in categoryData && categoryData.keywords && categoryData.keywords.length > 0) {
 					for (const keywordName of categoryData.keywords) {
 						// Create the keyword for this user
 						const keyword = await prisma.keyword.upsert({
 							where: {
 								name_userId: {
 									name: keywordName.toLowerCase(),
-									userId: userId,
+									userId,
 								},
 							},
 							update: {},
 							create: {
 								name: keywordName.toLowerCase(),
-								userId: userId,
+								userId,
 							},
 						});
 

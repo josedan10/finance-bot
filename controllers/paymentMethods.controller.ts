@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import logger from '../src/lib/logger';
 
@@ -17,7 +18,7 @@ export async function getPaymentMethods(req: Request, res: Response): Promise<vo
 			orderBy: { name: 'asc' }
 		});
 
-		const mapped = paymentMethods.map((pm: any) => ({
+		const mapped = paymentMethods.map((pm) => ({
 			id: pm.id,
 			name: pm.name,
 			transactionCount: pm._count.transaction,
@@ -50,8 +51,8 @@ export async function createPaymentMethod(req: Request, res: Response): Promise<
 		});
 
 		res.status(201).json(paymentMethod);
-	} catch (error: any) {
-		if (error.code === 'P2002') {
+	} catch (error: unknown) {
+		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
 			res.status(400).json({ message: 'A payment method with this name already exists' });
 			return;
 		}
@@ -91,7 +92,7 @@ export async function updatePaymentMethod(req: Request, res: Response): Promise<
 		});
 
 		res.status(200).json(updated);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Failed to update payment method', { userId: req.user.id, id, error });
 		res.status(500).json({ message: 'Failed to update payment method' });
 	}
@@ -151,12 +152,12 @@ export async function deletePaymentMethod(req: Request, res: Response): Promise<
 		});
 
 		res.status(204).send();
-	} catch (error: any) {
-		if (error.message === 'Payment method not found') {
+	} catch (error: unknown) {
+		if (error instanceof Error && error.message === 'Payment method not found') {
 			res.status(404).json({ message: error.message });
 			return;
 		}
-		if (error.message === 'Cannot delete the default Cash payment method') {
+		if (error instanceof Error && error.message === 'Cannot delete the default Cash payment method') {
 			res.status(400).json({ message: error.message });
 			return;
 		}

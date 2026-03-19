@@ -1,14 +1,9 @@
 import { createClient, RedisClientType } from 'redis';
 import logger from './logger';
-import { config } from '../config';
 
 class RedisService {
   private client: RedisClientType | null = null;
   private isConnecting: boolean = false;
-
-  constructor() {
-    // Initialize without connecting immediately.
-  }
 
   async getClient(): Promise<RedisClientType> {
     if (this.client && this.client.isOpen) {

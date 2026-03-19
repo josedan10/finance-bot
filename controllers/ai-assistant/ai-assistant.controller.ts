@@ -101,6 +101,7 @@ export async function analyzeTransactions(req: Request, res: Response): Promise<
       },
       include: { category: true },
       orderBy: { date: 'desc' },
+      take: 200,
     });
 
     if (transactions.length === 0) {

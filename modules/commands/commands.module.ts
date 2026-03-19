@@ -12,7 +12,8 @@ interface RegisterTransactionInput {
 	commandArgs: string[];
 }
 
-type CommandFunction = (data: any, userId: number) => Promise<string>;
+type CommandPayload = string | string[] | RegisterTransactionInput;
+type CommandFunction = (data: CommandPayload, userId: number) => Promise<string>;
 
 interface Commands {
 	[key: string]: CommandFunction;
@@ -47,7 +48,7 @@ class CommandsModule {
 		};
 
 		this.commands = {
-			cashTransaction: async (data: unknown, userId: number) => {
+			cashTransaction: async (data: unknown, _userId: number) => {
 				logger.info('Cash transaction command received', { data });
 				return 'Cash transaction';
 			},
@@ -59,7 +60,7 @@ class CommandsModule {
 				await PayPal.registerPaypalDataFromCSVData(data as string, userId);
 				return 'Paypal transactions registered';
 			},
-			monthlyReport: async (monthDate: unknown, userId: number) => {
+			monthlyReport: async (monthDate: unknown, _userId: number) => {
 				const reportData = await Reports.getMonthlyReport(monthDate as string);
 				return Reports.reportMessageOnMarkdown(reportData);
 			},
@@ -86,13 +87,15 @@ class CommandsModule {
 💬 ${transaction.description}
 ${transaction.reviewed ? '✅ Reviewed' : '❌ Not reviewed'}`;
 			},
-			test: async (data: unknown) => data as string,
-		} as unknown as Commands;
+			test: async (data: unknown, _userId: number) => {
+				return data as string;
+			},
+		};
 	}
 
 	async executeCommand(command: string, data: unknown, userId: number = 1): Promise<string> {
 		if (this.commands[command]) {
-			return this.commands[command](data as string, userId);
+			return this.commands[command](data as CommandPayload, userId);
 		}
 
 		throw new Error(`Command ${command} not found`);

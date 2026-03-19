@@ -82,10 +82,10 @@ class PaypalModule {
 			const [
 				ppDate,
 				time,
-				_timezone,
+				,
 				name,
 				transactionPaypalType,
-				_status,
+				,
 				currency,
 				amount,
 				referenceId,

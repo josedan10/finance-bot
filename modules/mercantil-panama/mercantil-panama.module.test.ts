@@ -26,41 +26,37 @@ describe('Mercantil Panamá Module: ', () => {
 
 		const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
 		const spyCategoryFindMany = prismaMock.category.findMany.mockResolvedValue(categories);
-		const spy$Transaction = prismaMock.$transaction.mockResolvedValue([
-			{ id: 1, type: 'credit' },
-			{ id: 2, type: 'debit' },
-			{ id: 3, type: 'debit' },
-		]);
-
-		prisma.transaction.create = sandbox.stub().resolves({ id: 1 });
+		prisma.transaction.create = sandbox.stub().callsFake(async ({ data }: { data: { type: string } }) => ({
+			id: 1,
+			...data,
+		}));
 
 		const data = await MercantilPanama.registerMercantilTransactionsFromCSVData(exampleCSVData);
 
 		expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
 		expect(spyCategoryFindMany).toHaveBeenCalledTimes(1);
-		expect(spy$Transaction).toHaveBeenCalledTimes(1);
 
 		expect(data).toHaveLength(3);
 		expect((data[0] as { type: string }).type).toBe('credit');
 		expect((data[1] as { type: string }).type).toBe('debit');
 	});
 	test('Register 0 transactions', async () => {
-		prisma.transaction.create = sandbox.stub().resolves({ id: 1 });
+		prisma.transaction.create = sandbox.stub().callsFake(async ({ data }: { data: { type: string } }) => ({
+			id: 1,
+			...data,
+		}));
 
 		const paymentMethod = await createPaymentMethod({ id: 1 });
 		const categories = [await createCategory({ id: 1 })];
 
 		const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
 		const spyCategoryFindMany = prismaMock.category.findMany.mockResolvedValue(categories);
-		const spy$Transaction = prismaMock.$transaction.mockResolvedValue([]);
-
 		const data =
 			await MercantilPanama.registerMercantilTransactionsFromCSVData(`"Mercantil Banco, Sistema de Banca por Internet",,,,
     Fecha,Descripción,No. de Referencia,Débito,Crédito`);
 
 		expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
 		expect(spyCategoryFindMany).toHaveBeenCalledTimes(1);
-		expect(spy$Transaction).toHaveBeenCalledTimes(1);
 		expect(data).toHaveLength(0);
 	});
 });

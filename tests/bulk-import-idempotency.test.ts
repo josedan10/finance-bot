@@ -4,23 +4,45 @@ import { prismaMock } from '../modules/database/database.module.mock';
 import { createCategory, createPaymentMethod, createTransaction } from '../prisma/factories';
 import { Decimal } from '@prisma/client/runtime/library';
 
+import app from '../app';
+
 // Mock the auth middleware
 jest.mock('../src/lib/auth.middleware', () => ({
 	requireAuth: (req: any, res: any, next: any) => {
 		req.user = { id: 1, email: 'test@example.com' };
 		next();
 	},
-	requireRole: (roles: string[]) => (req: any, res: any, next: any) => {
+	requireRole: (_roles: string[]) => (req: any, res: any, next: any) => {
 		req.user = { id: 1, email: 'test@example.com', role: 'admin' };
 		next();
 	},
 }));
 
-import app from '../app';
-
 describe('Bulk Import Idempotency', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+	});
+
+	it('should ignore cancelled-like transactions during bulk import', async () => {
+		const response = await request(app)
+			.post('/api/transactions/bulk')
+			.send({
+				transactions: [
+					{
+						date: '2026-03-18',
+						description: 'Payment that never posted',
+						amount: 15,
+						category: 'Food',
+						type: 'expense',
+						status: 'cancelled',
+					},
+				],
+			});
+
+		expect(response.status).toBe(201);
+		expect(response.body).toEqual([]);
+		expect(prismaMock.category.findMany).not.toHaveBeenCalled();
+		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
 	});
 
 	it('should prevent duplication when uploading the same CSV batch twice', async () => {

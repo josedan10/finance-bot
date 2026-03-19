@@ -1,19 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import { firebaseAdmin } from './firebase';
 import { AppError } from './appError';
-import { PrismaClient } from '@prisma/client';
-import { redisClient } from './redis';
+import { PrismaClient, User } from '@prisma/client';
 import OnboardingService from '../services/onboarding.service';
 import logger from './logger';
 
 const prisma = new PrismaClient();
+export type AuthenticatedUser = User & { role?: string };
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-      firebaseUser?: any;
-    }
+declare module 'express-serve-static-core' {
+  interface Request {
+    user: AuthenticatedUser;
+    firebaseUser?: DecodedIdToken;
   }
 }
 
@@ -59,11 +58,11 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 
         // Initialize default categories and payment methods for the new user
         // We do this in the background to not block the first request
-        OnboardingService.setupUserDefaultCategories(newUser.id).catch(e => 
-          logger.error('Auth: Onboarding categories failed', { userId: newUser.id, error: e })
+        OnboardingService.setupUserDefaultCategories(newUser.id).catch((error) =>
+          logger.error('Auth: Onboarding categories failed', { userId: newUser.id, error })
         );
-        OnboardingService.setupUserDefaultPaymentMethods(newUser.id).catch(e => 
-          logger.error('Auth: Onboarding methods failed', { userId: newUser.id, error: e })
+        OnboardingService.setupUserDefaultPaymentMethods(newUser.id).catch((error) =>
+          logger.error('Auth: Onboarding methods failed', { userId: newUser.id, error })
         );
       } catch (createError) {
         logger.error('Auth: Failed to auto-create user in DB', { uid, error: createError });
@@ -80,14 +79,17 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     req.firebaseUser = decodedToken;
     req.user = user;
     next();
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const authError = error instanceof Error ? error : new Error('Unauthorized');
+    const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined;
+
     logger.error('Auth: Token validation failed', {
-      code: error.code,
-      message: error.message,
-      stack: error.stack,
+      code: errorCode,
+      message: authError.message,
+      stack: authError.stack,
     });
 
-    if (error.code === 'auth/id-token-expired') {
+    if (errorCode === 'auth/id-token-expired') {
       return next(new AppError('Token expired', 401));
     }
     return next(new AppError('Unauthorized', 401));
@@ -95,7 +97,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 };
 
 export const requireRole = (roles: string[]) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user || !req.user.role) {
       return next(new AppError('Unauthorized: Role not found', 403));
     }

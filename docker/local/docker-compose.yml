@@ -10,6 +10,7 @@ services:
     volumes:
       - ../../../finance-bot:/app/finance-bot
       - /app/finance-bot/node_modules
+      - /app/finance-bot/dist
     environment:
       - DATABASE_URL=mysql://root:d!YG19j06eXp@local-mysql-zentra-1:3306/zentra
       - REDIS_URL=redis://redis-zentra:6379

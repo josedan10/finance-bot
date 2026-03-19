@@ -1,8 +1,9 @@
 import request from 'supertest';
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import express from 'express';
 import { NotificationFactory } from './notification.module';
 import { PrismaModule } from '../database/database.module';
+
+import app from '../../app';
 
 // Mock the auth middleware
 jest.mock('../../src/lib/auth.middleware', () => ({
@@ -10,7 +11,7 @@ jest.mock('../../src/lib/auth.middleware', () => ({
     req.user = { id: 1, email: 'test@example.com' };
     next();
   },
-  requireRole: (roles: string[]) => (req: any, res: any, next: any) => {
+  requireRole: (_roles: string[]) => (req: any, res: any, next: any) => {
     req.user = { id: 1, email: 'test@example.com', role: 'admin' };
     next();
   },
@@ -38,8 +39,6 @@ jest.mock('../database/database.module', () => ({
     },
   },
 }));
-
-import app from '../../app';
 
 const mockNF = NotificationFactory as any;
 const mockPrisma = PrismaModule as any;

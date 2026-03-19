@@ -31,7 +31,7 @@ export class EmailNotificationService implements INotificationService {
         to: payload.userEmail,
         subject: `⚠️ Budget Alert: ${payload.categoryName} at ${payload.percentage}%`,
         html: this.buildEmailTemplate(payload, thresholdInfo),
-        text: this.buildPlainTextTemplate(payload, thresholdInfo),
+        text: this.buildPlainTextTemplate(payload),
       };
 
       await this.transporter.sendMail(mailOptions);
@@ -61,7 +61,7 @@ export class EmailNotificationService implements INotificationService {
     }
   }
 
-  async isAvailable(userId: number): Promise<boolean> {
+  async isAvailable(_userId: number): Promise<boolean> {
     // Check if SMTP is configured
     return !!(process.env.SMTP_USER && process.env.SMTP_PASS);
   }
@@ -139,8 +139,7 @@ export class EmailNotificationService implements INotificationService {
   }
 
   private buildPlainTextTemplate(
-    payload: NotificationPayload,
-    thresholdInfo?: { percentage: number; label: string; color: string }
+    payload: NotificationPayload
   ): string {
     return `
 Budget Alert - ${payload.categoryName} at ${payload.percentage}%

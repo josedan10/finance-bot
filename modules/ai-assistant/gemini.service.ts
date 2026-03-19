@@ -1,18 +1,18 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { IAIAssistant, AnalysisResult, Anomaly, BudgetSuggestion } from './ai-assistant.interface';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { IAIAssistant, AnalysisResult, Anomaly, BudgetSuggestion, AITransactionInput } from './ai-assistant.interface';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 
 export class GeminiAssistant implements IAIAssistant {
   private genAI: GoogleGenerativeAI;
-  private model: any;
+  private model: GenerativeModel;
 
   constructor() {
     this.genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
-  async analyzeExpenses(transactions: any[]): Promise<AnalysisResult> {
+  async analyzeExpenses(transactions: AITransactionInput[]): Promise<AnalysisResult> {
     try {
       const prompt = `
         Analyze the following financial transactions and provide a summary in JSON format.
@@ -38,7 +38,7 @@ export class GeminiAssistant implements IAIAssistant {
     }
   }
 
-  async detectAnomalies(transactions: any[]): Promise<Anomaly[]> {
+  async detectAnomalies(transactions: AITransactionInput[]): Promise<Anomaly[]> {
     try {
       const prompt = `
         Look for anomalies in these transactions and return a JSON array of anomalies.
@@ -64,7 +64,7 @@ export class GeminiAssistant implements IAIAssistant {
     }
   }
 
-  async suggestBudget(historicalData: any[]): Promise<BudgetSuggestion> {
+  async suggestBudget(historicalData: AITransactionInput[]): Promise<BudgetSuggestion> {
     try {
       const prompt = `
         Based on this historical financial data, suggest a budget limit for one category.

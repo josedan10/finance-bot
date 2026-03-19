@@ -29,7 +29,8 @@
 		"migrations": "npx prisma migrate deploy",
 		"seed": "npx prisma db seed",
 		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false",
-		"gmail:auth": "ts-node scripts/gmail-auth.ts"
+		"gmail:auth": "ts-node scripts/gmail-auth.ts",
+		"transactions:delete-all": "ts-node scripts/delete-all-transactions.ts"
 	},
 	"dependencies": {
 		"@babel/core": "^7.24.3",
@@ -73,6 +74,7 @@
 		"@types/supertest": "^6.0.2",
 		"@typescript-eslint/eslint-plugin": "^6.21.0",
 		"cross-env": "^10.1.0",
+		"csv-parse": "^6.2.0",
 		"eslint": "^8.31.0",
 		"eslint-config-prettier": "8.6.0",
 		"eslint-config-standard": "^17.0.0",

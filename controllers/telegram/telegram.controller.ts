@@ -1,6 +1,5 @@
 import commandsModule from '../../modules/commands/commands.module';
 import telegramBot from '../../modules/telegram/telegram.module';
-import { TELEGRAM_FILE_URL } from '../../src/telegram/variables';
 import { config } from '../../src/config';
 import { Request, Response } from 'express';
 import logger from '../../src/lib/logger';

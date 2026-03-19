@@ -1,9 +1,3 @@
-export interface IAIAssistant {
-  analyzeExpenses(transactions: any[]): Promise<AnalysisResult>;
-  detectAnomalies(transactions: any[]): Promise<Anomaly[]>;
-  suggestBudget(historicalData: any[]): Promise<BudgetSuggestion>;
-}
-
 export type AnalysisResult = {
   categories: { name: string; amount: number }[];
   trends: string[];
@@ -20,3 +14,19 @@ export type BudgetSuggestion = {
   suggestedLimit: number;
   reason: string;
 };
+
+export type AITransactionInput = {
+  id?: number;
+  date?: string;
+  amount: number;
+  currency?: string;
+  category?: string;
+  description?: string | null;
+  type?: string;
+};
+
+export interface IAIAssistant {
+  analyzeExpenses(transactions: AITransactionInput[]): Promise<AnalysisResult>;
+  detectAnomalies(transactions: AITransactionInput[]): Promise<Anomaly[]>;
+  suggestBudget(historicalData: AITransactionInput[]): Promise<BudgetSuggestion>;
+}

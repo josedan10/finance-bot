@@ -3,8 +3,24 @@ import telegramBot from '../../modules/telegram/telegram.module';
 import { TELEGRAM_FILE_URL } from '../telegram/variables';
 import logger from '../lib/logger';
 
+type TelegramPhoto = {
+	file_id: string;
+	file_size: number;
+};
+
+type TelegramDocument = {
+	file_id?: string;
+};
+
+type TelegramMessage = {
+	text?: string;
+	caption?: string;
+	photo?: TelegramPhoto[];
+	document?: TelegramDocument;
+};
+
 export class TelegramService {
-  public async handleWebhookMessage(chatId: number, message: any): Promise<void> {
+  public async handleWebhookMessage(chatId: number, message: TelegramMessage): Promise<void> {
     let commandResponse;
     let command;
 
@@ -27,9 +43,7 @@ export class TelegramService {
           return;
         }
 
-        const bestPhoto = photos.sort(
-          (a: { file_size: number }, b: { file_size: number }) => b.file_size - a.file_size
-        )[0];
+        const bestPhoto = photos.sort((a, b) => b.file_size - a.file_size)[0];
 
         const filePath = await telegramBot.getFilePath(bestPhoto.file_id);
         const filePathResult = (filePath as { result?: { file_path?: string } })?.result?.file_path;
