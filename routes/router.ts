@@ -4,7 +4,6 @@ import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
 import dayjs from 'dayjs';
 import { TelegramRouter as telegramRouter } from './telegram';
 import { AIAssistantRouter as aiAssistantRouter } from './ai-assistant';
-import { PrismaModule as prisma } from '../modules/database/database.module';
 import { requireAuth, requireRole } from '../src/lib/auth.middleware';
 import { firebaseAdmin } from '../src/lib/firebase';
 import * as CategoryController from '../controllers/categories.controller';
@@ -212,34 +211,13 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			finalPaymentMethodId = cashMethod.id;
 		}
 
-		// 3. Handle Currency Conversion
-		const txCurrency = currency || 'USD';
-		let finalAmountInUSD = amount;
-		let originalCurrencyAmount = null;
-
-		if (txCurrency === 'VES') {
-			originalCurrencyAmount = amount;
-			// Find latest BCV rate
-			const latestRate = await prisma.dailyExchangeRate.findFirst({
-				orderBy: { date: 'desc' },
-			});
-
-			if (latestRate && latestRate.bcvPrice) {
-				finalAmountInUSD = Number((amount / Number(latestRate.bcvPrice)).toFixed(2));
-			} else {
-				// If no rate found, we keep USD amount as null or handle it later via cron
-				// For now we'll set it to 0 and let the cron update it
-				finalAmountInUSD = 0;
-			}
-		}
-
+		// 3. Handle Creation via Gatekeeper (Deduplication & Normalization)
 		const { transaction }: any = await BaseTransactions.safeCreateTransaction({
 			userId: req.user.id,
 			date: new Date(date),
 			description,
-			amount: finalAmountInUSD,
-			originalCurrencyAmount: originalCurrencyAmount,
-			currency: txCurrency,
+			amount: amount,
+			currency: currency || 'USD',
 			type: type === 'income' ? 'credit' : 'debit',
 			categoryId: matchedCategory?.id,
 			paymentMethodId: finalPaymentMethodId,
@@ -274,6 +252,8 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 				category: string;
 				type: 'income' | 'expense';
 				paymentMethod?: string;
+				referenceId?: string;
+				currency?: string;
 			}>;
 		};
 
@@ -318,24 +298,29 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 		const defaultPmId = pmMap.get('Cash') || (pmMap.size > 0 ? pmMap.values().next().value : null);
 
 		// 3. Create Transactions
-		const createdTransactions = await prisma.$transaction(
-			transactions.map(t => prisma.transaction.create({
-				data: {
+		const createdTransactions = [];
+		for (const t of transactions) {
+			try {
+				const { transaction, isDuplicate }: any = await BaseTransactions.safeCreateTransaction({
 					userId: req.user.id,
 					date: new Date(t.date),
 					description: t.description,
 					amount: t.amount,
-					currency: 'USD',
+					currency: t.currency || 'USD',
 					type: t.type === 'income' ? 'credit' : 'debit',
 					categoryId: categoryMap.get(t.category),
 					paymentMethodId: t.paymentMethod ? pmMap.get(t.paymentMethod) : defaultPmId,
-				},
-				include: { 
-					category: true,
-					paymentMethod: true,
+					referenceId: t.referenceId,
+				});
+
+				if (!isDuplicate) {
+					createdTransactions.push(transaction);
 				}
-			}))
-		);
+			} catch (err) {
+				logger.error('Failed to create transaction in bulk batch', { error: err, transaction: t });
+				// Continue with the rest of the batch
+			}
+		}
 
 		const mapped = createdTransactions.map(t => ({
 			id: String(t.id),
@@ -346,6 +331,8 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			paymentMethod: t.paymentMethod?.name ?? 'Other',
 			type: t.type === 'credit' ? 'income' : 'expense',
 			source: 'upload',
+			referenceId: t.referenceId,
+			currency: t.currency,
 		}));
 
 		res.status(201).json(mapped);
@@ -670,7 +657,7 @@ router.get('/api/categories', requireAuth, async (req: Request, res: Response) =
 			const period = await BudgetRollover.getOrCreateCurrentPeriod(cat.id);
 			return {
 				...cat,
-				currentCarryOver: Number(period.carryOver || 0),
+				currentCarryOver: Number(period?.carryOver || 0),
 			};
 		}));
 

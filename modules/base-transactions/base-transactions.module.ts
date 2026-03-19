@@ -184,17 +184,18 @@ class BaseTransactionsModule {
 	 * Looks for a potential duplicate transaction.
 	 * A transaction is considered a duplicate if it has:
 	 * 1. Matching referenceId (High confidence)
-	 * 2. Same userId + similar amount + date within a 48-hour window (+/- 1 day) + matching description keywords (Fuzzy)
+	 * 2. Same userId + normalized amount + currency + date within a 48-hour window (+/- 1 day) + matching description keywords (Fuzzy)
 	 */
 	async findDuplicate(data: {
 		userId: number;
 		amount: number | Decimal;
 		date: Date;
 		type: string;
+		currency: string;
 		description?: string;
 		referenceId?: string;
 	}): Promise<any> {
-		const { userId, amount, date, type, description, referenceId } = data;
+		const { userId, amount, date, type, currency, description, referenceId } = data;
 
 		// 1. Priority: Exact referenceId match
 		if (referenceId) {
@@ -211,7 +212,7 @@ class BaseTransactionsModule {
 			if (refMatch) return refMatch;
 		}
 
-		// 2. Fuzzy: Amount + Date Window + Description Similarity
+		// 2. Fuzzy: Amount + Currency + Date Window + Description Similarity
 		const startDate = dayjs(date).subtract(2, 'days').toDate();
 		const endDate = dayjs(date).add(2, 'days').toDate();
 
@@ -219,6 +220,7 @@ class BaseTransactionsModule {
 			where: {
 				userId,
 				amount: amount as any,
+				currency,
 				type,
 				date: {
 					gte: startDate,
@@ -263,13 +265,34 @@ class BaseTransactionsModule {
 
 	/**
 	 * Creates a transaction only if it's not a duplicate.
+	 * Handles internal VES -> USD normalization if needed.
 	 */
 	async safeCreateTransaction(data: any) {
+		const { amount, currency, date, userId } = data;
+		
+		let finalAmount = Number(amount);
+		let originalCurrencyAmount = data.originalCurrencyAmount || null;
+
+		// Handle Normalization if not already USD
+		if (currency === 'VES' && !data.amountIsAlreadyNormalized) {
+			const dateStr = dayjs(date).format('YYYY-MM-DD');
+			const converted = await this._VESToUSDWithExchangeRateByDate(dateStr, Number(amount));
+			if (converted !== null) {
+				finalAmount = converted;
+				originalCurrencyAmount = Number(amount);
+			}
+		} else if (currency === 'USD') {
+			finalAmount = Number(amount);
+			// For USD, original amount is the same as final amount
+			if (!originalCurrencyAmount) originalCurrencyAmount = finalAmount;
+		}
+
 		const duplicate = await this.findDuplicate({
 			userId: data.userId,
-			amount: data.amount,
+			amount: finalAmount,
 			date: data.date,
 			type: data.type,
+			currency: data.currency || 'USD',
 			description: data.description,
 			referenceId: data.referenceId,
 		});
@@ -278,14 +301,20 @@ class BaseTransactionsModule {
 			logger.info('Duplicate transaction detected, skipping creation', {
 				originalId: duplicate.id,
 				userId: data.userId,
-				amount: data.amount,
+				amount: finalAmount,
+				currency: data.currency,
 				date: data.date,
 			});
 			return { transaction: duplicate, isDuplicate: true };
 		}
 
 		const transaction = await this._db.transaction.create({
-			data,
+			data: {
+				...data,
+				amount: finalAmount,
+				originalCurrencyAmount,
+				amountIsAlreadyNormalized: undefined, // Clean up internal flag
+			},
 			include: {
 				category: true,
 				paymentMethod: true,

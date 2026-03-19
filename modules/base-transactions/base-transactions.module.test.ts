@@ -62,6 +62,7 @@ describe('BaseTransactions', () => {
 				amount: 100,
 				date: new Date(),
 				type: 'debit',
+				currency: 'USD',
 				referenceId: 'REF123'
 			});
 
@@ -84,6 +85,7 @@ describe('BaseTransactions', () => {
 				amount: 50,
 				date: fixedDate,
 				type: 'debit',
+				currency: 'USD',
 				description: 'McDonalds payment'
 			});
 
@@ -104,10 +106,59 @@ describe('BaseTransactions', () => {
 				amount: 50,
 				date: new Date(),
 				type: 'debit',
+				currency: 'USD',
 				description: 'Netflix subscription'
 			});
 
 			expect(result).toBeNull();
+		});
+
+		it('should NOT match as duplicate if amounts are the same but currencies are different', async () => {
+			const existingTx = await createTransaction({ 
+				id: 13, 
+				amount: 50 as any, 
+				currency: 'USD',
+				type: 'debit'
+			});
+			prismaMock.transaction.findMany.mockResolvedValue([existingTx]);
+
+			const result = await BaseTransactions.findDuplicate({
+				userId: 1,
+				amount: 50,
+				date: new Date(),
+				type: 'debit',
+				currency: 'VES',
+				description: 'Same amount, different currency'
+			});
+
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('safeCreateTransaction', () => {
+		it('should normalize VES amounts internally if not already normalized', async () => {
+			prismaMock.transaction.findMany.mockResolvedValue([]); // No duplicates
+			prismaMock.dailyExchangeRate.findFirst.mockResolvedValue({ bcvPrice: 40 as any } as any);
+			
+			const transaction = await createTransaction({ id: 20, amount: 2.5 as any, currency: 'VES', originalCurrencyAmount: 100 as any });
+			prismaMock.transaction.create.mockResolvedValue(transaction);
+
+			const result = await BaseTransactions.safeCreateTransaction({
+				userId: 1,
+				amount: 100,
+				currency: 'VES',
+				date: new Date(),
+				type: 'debit',
+				description: '100 VES transaction'
+			});
+
+			expect(Number(result.transaction.amount)).toBe(2.5);
+			expect(prismaMock.transaction.create).toHaveBeenCalledWith(expect.objectContaining({
+				data: expect.objectContaining({
+					amount: 2.5,
+					originalCurrencyAmount: 100
+				})
+			}));
 		});
 	});
 });
