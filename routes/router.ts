@@ -282,6 +282,26 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			return res.status(201).json([]);
 		}
 
+		const dates = balanceAffectingTransactions.map((transaction) => new Date(transaction.date));
+		const startDate = new Date(Math.min(...dates.map((date) => date.getTime())));
+		startDate.setDate(startDate.getDate() - 1);
+		const endDate = new Date(Math.max(...dates.map((date) => date.getTime())));
+		endDate.setDate(endDate.getDate() + 1);
+
+		const existingTransactions = await prisma.transaction.findMany({
+			where: {
+				userId: req.user.id,
+				date: {
+					gte: startDate,
+					lte: endDate,
+				},
+			},
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+
 		// 1. Prepare Categories
 		const categoryNames = [...new Set(balanceAffectingTransactions.map(t => t.category))];
 		const existingCategories = await prisma.category.findMany({
@@ -322,6 +342,27 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 		const createdTransactions = [];
 		for (const t of balanceAffectingTransactions) {
 			try {
+				const existingDuplicate = BaseTransactions.findDuplicateInCandidates({
+					userId: req.user.id,
+					amount: t.amount,
+					date: new Date(t.date),
+					type: t.type === 'income' ? 'credit' : 'debit',
+					currency: t.currency || 'USD',
+					description: t.description,
+					referenceId: t.referenceId,
+				}, existingTransactions);
+
+				if (existingDuplicate) {
+					logger.info('Duplicate transaction detected against existing records, skipping creation', {
+						originalId: existingDuplicate.id,
+						userId: req.user.id,
+						amount: t.amount,
+						currency: t.currency || 'USD',
+						date: t.date,
+					});
+					continue;
+				}
+
 				const { transaction, isDuplicate } = await BaseTransactions.safeCreateTransaction({
 					userId: req.user.id,
 					date: new Date(t.date),
@@ -332,6 +373,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 					categoryId: categoryMap.get(t.category),
 					paymentMethodId: t.paymentMethod ? pmMap.get(t.paymentMethod) : defaultPmId,
 					referenceId: t.referenceId,
+					skipDuplicateCheck: true,
 				});
 
 				if (!isDuplicate) {

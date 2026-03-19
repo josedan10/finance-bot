@@ -45,6 +45,44 @@ describe('Bulk Import Idempotency', () => {
 		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
 	});
 
+	it('should keep similar transactions that come from the same CSV batch', async () => {
+		const category = await createCategory({ id: 1, name: 'Food' });
+		const pm = await createPaymentMethod({ id: 1, name: 'Cash' });
+		const tx1 = await createTransaction({
+			id: 201,
+			amount: new Decimal(15),
+			description: 'Lunch',
+			date: new Date('2026-03-18'),
+		});
+		const tx2 = await createTransaction({
+			id: 202,
+			amount: new Decimal(15),
+			description: 'Lunch',
+			date: new Date('2026-03-18'),
+			referenceId: 'ref-2',
+		});
+
+		prismaMock.transaction.findMany.mockResolvedValueOnce([]);
+		prismaMock.category.findMany.mockResolvedValue([category]);
+		prismaMock.paymentMethod.findMany.mockResolvedValue([pm]);
+		prismaMock.transaction.create
+			.mockResolvedValueOnce(tx1)
+			.mockResolvedValueOnce(tx2);
+
+		const transactions = [
+			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food', referenceId: 'ref-1' },
+			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food', referenceId: 'ref-2' },
+		];
+
+		const response = await request(app)
+			.post('/api/transactions/bulk')
+			.send({ transactions });
+
+		expect(response.status).toBe(201);
+		expect(response.body).toHaveLength(2);
+		expect(prismaMock.transaction.create).toHaveBeenCalledTimes(2);
+	});
+
 	it('should prevent duplication when uploading the same CSV batch twice', async () => {
 		const category = await createCategory({ id: 1, name: 'Food' });
 		const pm = await createPaymentMethod({ id: 1, name: 'Cash' });

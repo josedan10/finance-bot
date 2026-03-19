@@ -18,8 +18,8 @@ type TransactionWithRelations = Prisma.TransactionGetPayload<{
 }>;
 
 type TransactionWithOptionalRelations = Transaction & {
-	category?: Category | null;
-	paymentMethod?: PaymentMethod | null;
+	category: Category | null;
+	paymentMethod: PaymentMethod | null;
 };
 
 type SafeCreateTransactionInput = Prisma.TransactionUncheckedCreateInput & {
@@ -32,11 +32,22 @@ type SafeCreateTransactionInput = Prisma.TransactionUncheckedCreateInput & {
 	referenceId?: string | null;
 	originalCurrencyAmount?: number | Decimal | null;
 	amountIsAlreadyNormalized?: boolean;
+	skipDuplicateCheck?: boolean;
 };
 
 type SafeCreateTransactionResult = {
 	transaction: TransactionWithOptionalRelations;
 	isDuplicate: boolean;
+};
+
+type DuplicateLookupInput = {
+	userId: number;
+	amount: number | Decimal;
+	date: Date;
+	type: string;
+	currency: string;
+	description?: string;
+	referenceId?: string;
 };
 
 class BaseTransactionsModule {
@@ -215,16 +226,53 @@ class BaseTransactionsModule {
 	 * 1. Matching referenceId (High confidence)
 	 * 2. Same userId + normalized amount + currency + date within a 48-hour window (+/- 1 day) + matching description keywords (Fuzzy)
 	 */
-	async findDuplicate(data: {
-		userId: number;
-		amount: number | Decimal;
-		date: Date;
-		type: string;
-		currency: string;
-		description?: string;
-		referenceId?: string;
-	}): Promise<TransactionWithRelations | null> {
-		const { userId, amount, date, type, currency, description, referenceId } = data;
+	private normalizeDescription(description: string): string[] {
+		return description
+			.toLowerCase()
+			.replace(/[^a-z0-9 ]/g, '')
+			.split(' ')
+			.filter((word) => word.length >= 2);
+	}
+
+	private isDuplicateCandidate(
+		data: DuplicateLookupInput,
+		candidate: TransactionWithOptionalRelations
+	): boolean {
+		const { amount, description } = data;
+
+		if (Number(candidate.amount) !== Number(amount)) return false;
+
+		if (!description) return true;
+		if (!candidate.description) return false;
+
+		const newKeywords = this.normalizeDescription(description);
+		const candidateKeywords = this.normalizeDescription(candidate.description);
+		const overlap = newKeywords.filter((word) => candidateKeywords.includes(word));
+
+		return (
+			overlap.length >= 2 ||
+			(overlap.length >= 1 && (newKeywords.length <= 2 || candidateKeywords.length <= 2)) ||
+			description.toLowerCase().includes(candidate.description.toLowerCase()) ||
+			candidate.description.toLowerCase().includes(description.toLowerCase())
+		);
+	}
+
+	findDuplicateInCandidates(
+		data: DuplicateLookupInput,
+		candidates: TransactionWithRelations[]
+	): TransactionWithRelations | null {
+		const { referenceId } = data;
+
+		if (referenceId) {
+			const referenceMatch = candidates.find((candidate) => candidate.referenceId === referenceId);
+			if (referenceMatch) return referenceMatch;
+		}
+
+		return candidates.find((candidate) => this.isDuplicateCandidate(data, candidate)) ?? null;
+	}
+
+	async findDuplicate(data: DuplicateLookupInput): Promise<TransactionWithRelations | null> {
+		const { userId, amount, date, type, currency, referenceId } = data;
 		const normalizedAmount = amount instanceof Decimal ? amount : new Decimal(amount);
 
 		// 1. Priority: Exact referenceId match
@@ -265,32 +313,7 @@ class BaseTransactionsModule {
 
 		if (potentialDuplicates.length === 0) return null;
 
-		// If no description provided for comparison, return the first date/amount match
-		if (!description) return potentialDuplicates[0];
-
-		// Refine with description similarity (keyword overlap)
-		const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(' ').filter(w => w.length >= 2);
-		const newKeywords = normalize(description);
-
-		for (const candidate of potentialDuplicates) {
-			if (!candidate.description) continue;
-			
-			// Exact amount check (converting Decimal/whatever to Number for safety)
-			if (Number(candidate.amount) !== Number(amount)) continue;
-
-			const candidateKeywords = normalize(candidate.description);
-			const overlap = newKeywords.filter(w => candidateKeywords.includes(w));
-			
-			// If at least 2 significant words overlap, or 1 word overlaps and both descriptions are short, or one description contains the other
-			if (overlap.length >= 2 || 
-				(overlap.length >= 1 && (newKeywords.length <= 2 || candidateKeywords.length <= 2)) ||
-				description.toLowerCase().includes(candidate.description.toLowerCase()) || 
-				candidate.description.toLowerCase().includes(description.toLowerCase())) {
-				return candidate;
-			}
-		}
-
-		return null;
+		return this.findDuplicateInCandidates(data, potentialDuplicates);
 	}
 
 	/**
@@ -318,28 +341,30 @@ class BaseTransactionsModule {
 			if (!originalCurrencyAmount) originalCurrencyAmount = finalAmount;
 		}
 
-		const duplicate = await this.findDuplicate({
-			userId: data.userId,
-			amount: finalAmount,
-			date: transactionDate,
-			type: data.type,
-			currency: data.currency || 'USD',
-			description: data.description ?? undefined,
-			referenceId: data.referenceId ?? undefined,
-		});
-
-		if (duplicate) {
-			logger.info('Duplicate transaction detected, skipping creation', {
-				originalId: duplicate.id,
+		if (!data.skipDuplicateCheck) {
+			const duplicate = await this.findDuplicate({
 				userId: data.userId,
 				amount: finalAmount,
-				currency: data.currency,
 				date: transactionDate,
+				type: data.type,
+				currency: data.currency || 'USD',
+				description: data.description ?? undefined,
+				referenceId: data.referenceId ?? undefined,
 			});
-			return { transaction: duplicate, isDuplicate: true };
+
+			if (duplicate) {
+				logger.info('Duplicate transaction detected, skipping creation', {
+					originalId: duplicate.id,
+					userId: data.userId,
+					amount: finalAmount,
+					currency: data.currency,
+					date: transactionDate,
+				});
+				return { transaction: duplicate, isDuplicate: true };
+			}
 		}
 
-		const { amountIsAlreadyNormalized: _amountIsAlreadyNormalized, ...transactionData } = data;
+		const { amountIsAlreadyNormalized: _amountIsAlreadyNormalized, skipDuplicateCheck: _skipDuplicateCheck, ...transactionData } = data;
 		const transaction = await this._db.transaction.create({
 			data: {
 				...transactionData,
