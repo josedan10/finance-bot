@@ -1,6 +1,16 @@
 import { faker } from '@faker-js/faker';
-import { Category, DailyExchangeRate, Keyword, PaymentMethod, Transaction } from '@prisma/client';
+import { Category, DailyExchangeRate, Keyword, PaymentMethod, Transaction, User } from '@prisma/client';
 import { TransactionTypeArray } from '../../src/enums/transactions';
+
+export function createUser(data: Partial<User> = {}): User {
+	return {
+		id: faker.datatype.number({ min: 1, max: 100 }),
+		email: faker.internet.email(),
+		firebaseId: faker.datatype.uuid(),
+		createdAt: faker.date.recent(),
+		...data,
+	} as User;
+}
 
 export function createCategory(data: Partial<Category> = {}): Category {
 	return {

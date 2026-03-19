@@ -117,8 +117,15 @@ router.delete('/api/auth/cleanup-test-user', requireAuth, async (req: Request, r
 
 router.get('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
+		const { search, categoryId, paymentMethodId } = req.query;
+		
 		const transactions = await prisma.transaction.findMany({
-			where: { userId: req.user.id },
+			where: { 
+				userId: req.user.id,
+				description: search ? { contains: search as string } : undefined,
+				categoryId: categoryId ? Number(categoryId) : undefined,
+				paymentMethodId: paymentMethodId ? Number(paymentMethodId) : undefined,
+			},
 			orderBy: { date: 'desc' },
 			include: { 
 				category: true,
@@ -183,6 +190,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			paymentMethodId?: number;
 			currency?: string;
 		};
+
 
 		if (!date || !description || amount === undefined || !category || !type) {
 			return res.status(400).json({ message: 'Missing required fields' });
