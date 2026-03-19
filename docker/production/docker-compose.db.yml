@@ -1,29 +1,31 @@
+services:
+  mysql-zentra-production:
+    image: mysql:8.0
+    container_name: zentra-mysql-production
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: zentra
+    ports:
+      - "3306:3306"
+    networks:
+      - zentra-production-network
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis-zentra-production:
+    image: redis:alpine
+    container_name: zentra-redis-production
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - zentra-production-network
+
 networks:
-  finance-bot-production-network:
+  zentra-production-network:
+    name: zentra-production-network
     driver: bridge
 
-services:
-  mysql-finance-bot-production:
-    image: mysql
-    platform: linux/amd64
-    env_file:
-      - ./.env.db
-
-    ports:
-      - '3308:3306'
-    networks:
-      - finance-bot-production-network
-
-  redis-finance-bot-production:
-    image: redis:alpine
-    platform: linux/amd64
-    command: redis-server --appendonly yes
-    ports:
-      - '6379:6379'
-    networks:
-      - finance-bot-production-network
-    volumes:
-      - redis-data:/data
-
 volumes:
-  redis-data:
+  mysql_data:

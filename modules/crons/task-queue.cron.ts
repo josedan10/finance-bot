@@ -6,6 +6,7 @@ import { ScraperPydolarModule } from '../scraper-api-pydolar/scraper-api-pydolar
 import { ExchangeCurrencyCronServices } from './exchange-currency/exchange-currency.service';
 import { GmailService } from '../gmail/gmail.module';
 import { emailParser } from '../gmail/email-parser';
+import { BaseTransactions } from '../base-transactions/base-transactions.module';
 import dayjs from 'dayjs';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
@@ -195,33 +196,38 @@ export class TaskQueueModule {
 				}
 
 				try {
+					// 1. Dynamic User Lookup (if email is known)
+					// In a real multi-tenant app, we'd lookup the user by their Gmail account email
+					// For now, we'll try to find a user with the 'from' email or default to ID 1
+					const userEmailMatch = await prisma.user.findFirst({
+						where: { email: email.from.toLowerCase() }
+					});
+					const targetUserId = userEmailMatch?.id || 1;
+
 					const paymentMethod = await prisma.paymentMethod.findFirst({
-						where: { name: { contains: parsed.paymentMethod } },
+						where: { 
+							name: { contains: parsed.paymentMethod },
+							userId: targetUserId
+						},
 					});
 
 					let category = null;
 					if (parsed.category) {
 						category = await prisma.category.findUnique({
-							where: { name_userId: { name: parsed.category, userId: 1 } },
+							where: { name_userId: { name: parsed.category, userId: targetUserId } },
 						});
 					}
 
-					await prisma.transaction.create({
-						data: {
-							date: email.date,
-							description: parsed.description.slice(0, 255),
-							amount: parsed.amount,
-							currency: parsed.currency,
-							type: parsed.type,
-							referenceId: parsed.referenceId || null,
-							user: { connect: { id: 1 } },
-							...(paymentMethod && {
-								paymentMethod: { connect: { id: paymentMethod.id } },
-							}),
-							...(category && {
-								category: { connect: { id: category.id } },
-							}),
-						},
+					const { transaction, isDuplicate }: any = await BaseTransactions.safeCreateTransaction({
+						userId: targetUserId,
+						date: email.date,
+						description: parsed.description.slice(0, 255),
+						amount: parsed.amount,
+						currency: parsed.currency,
+						type: parsed.type,
+						referenceId: parsed.referenceId || null,
+						paymentMethodId: paymentMethod?.id,
+						categoryId: category?.id,
 					});
 
 					await prisma.processedEmail.create({
@@ -229,18 +235,22 @@ export class TaskQueueModule {
 							messageId: email.messageId,
 							from: email.from.slice(0, 255),
 							subject: email.subject.slice(0, 500),
-							result: `registered:${ruleName}`,
+							result: isDuplicate ? `skipped:duplicate:${ruleName}` : `registered:${ruleName}`,
 						},
 					});
 
 					await GmailService.markAsRead(email.messageId);
 
-					registered++;
-					summaryLines.push(
-						`  ${parsed.type === 'debit' ? '💸' : '💰'} ${parsed.amount} ${parsed.currency} - ${parsed.description} (${ruleName})`
-					);
+					if (!isDuplicate) {
+						registered++;
+						summaryLines.push(
+							`  ${parsed.type === 'debit' ? '💸' : '💰'} ${parsed.amount} ${parsed.currency} - ${parsed.description} (${ruleName})`
+						);
+					} else {
+						skipped++;
+					}
 
-					logger.info('Transaction registered from email', {
+					logger.info(isDuplicate ? 'Transaction skipped (duplicate)' : 'Transaction registered from email', {
 						messageId: email.messageId,
 						amount: parsed.amount,
 						currency: parsed.currency,

@@ -33,7 +33,7 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
 				description: cat.description,
 				amountLimit: Number(cat.amountLimit ?? 0),
 				isCumulative: cat.isCumulative,
-				currentCarryOver: Number(period.carryOver || 0),
+				currentCarryOver: Number(period?.carryOver || 0),
 				keywords: cat.categoryKeyword.map((ck: any) => ck.keyword.name),
 				transactionCount: cat._count.transaction,
 			};

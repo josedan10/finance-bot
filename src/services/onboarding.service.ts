@@ -83,6 +83,34 @@ export class OnboardingService {
 			logger.error('Failed to setup default categories', { userId, error });
 		}
 	}
+
+	async setupUserDefaultPaymentMethods(userId: number) {
+		try {
+			logger.info('Setting up default payment methods for user', { userId });
+
+			const defaults = ['Cash', 'Bank Account'];
+
+			for (const name of defaults) {
+				await prisma.paymentMethod.upsert({
+					where: {
+						name_userId: {
+							name,
+							userId,
+						},
+					},
+					update: {},
+					create: {
+						name,
+						userId,
+					},
+				});
+			}
+
+			logger.info('Default payment methods setup complete', { userId });
+		} catch (error) {
+			logger.error('Failed to setup default payment methods', { userId, error });
+		}
+	}
 }
 
 export default new OnboardingService();

@@ -1,6 +1,6 @@
 # AGENTS.md - Backend Development
 
-This document provides specific instructions for backend development in the `finance-bot/` directory.
+This document provides specific instructions for backend development in the `zentra-api/` (formerly `finance-bot/`) directory.
 
 ## Architecture Overview
 

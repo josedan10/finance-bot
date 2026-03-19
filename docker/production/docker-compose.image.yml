@@ -1,11 +1,17 @@
 services:
-  image-text-extractor:
+  zentra-image-extractor-production:
+    image: zentra-image-extractor-production
+    container_name: zentra-image-extractor-production
     build:
-      context: ../../services/image_recognition_service/
-      dockerfile: ../../docker/local/image-service/Dockerfile
+      context: ../../services/image_recognition_service
+      dockerfile: Dockerfile
+    restart: always
     ports:
-      - '4000:4000'
-    volumes:
-      - ../../services/image_recognition_service/:/app
+      - "4000:4000"
     networks:
-      - finance-bot-production-network
+      - zentra-production-network
+
+networks:
+  zentra-production-network:
+    name: zentra-production-network
+    external: true

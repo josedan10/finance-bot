@@ -8,7 +8,7 @@ const logger = winston.createLogger({
 			? winston.format.json()
 			: winston.format.combine(winston.format.colorize(), winston.format.simple())
 	),
-	defaultMeta: { service: 'finance-bot' },
+	defaultMeta: { service: 'zentra-bot' },
 	transports: [new winston.transports.Console()],
 });
 

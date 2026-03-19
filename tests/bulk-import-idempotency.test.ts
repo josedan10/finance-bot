@@ -1,0 +1,74 @@
+import request from 'supertest';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { prismaMock } from '../modules/database/database.module.mock';
+import { createCategory, createPaymentMethod, createTransaction } from '../prisma/factories';
+import { Decimal } from '@prisma/client/runtime/library';
+
+// Mock the auth middleware
+jest.mock('../src/lib/auth.middleware', () => ({
+	requireAuth: (req: any, res: any, next: any) => {
+		req.user = { id: 1, email: 'test@example.com' };
+		next();
+	},
+	requireRole: (roles: string[]) => (req: any, res: any, next: any) => {
+		req.user = { id: 1, email: 'test@example.com', role: 'admin' };
+		next();
+	},
+}));
+
+import app from '../app';
+
+describe('Bulk Import Idempotency', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+	});
+
+	it('should prevent duplication when uploading the same CSV batch twice', async () => {
+		const category = await createCategory({ id: 1, name: 'Food' });
+		const pm = await createPaymentMethod({ id: 1, name: 'Cash' });
+		const existingTx = await createTransaction({ 
+			id: 101, 
+			amount: new Decimal(15), 
+			description: 'Lunch', 
+			date: new Date('2026-03-18') 
+		});
+		
+		// Setup common mocks
+		prismaMock.category.findMany.mockResolvedValue([category]);
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.paymentMethod.findMany.mockResolvedValue([pm]);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(pm);
+
+		const transactions = [
+			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food' }
+		];
+
+		// --- FIRST UPLOAD ---
+		// Duplicate check (findMany) returns empty
+		prismaMock.transaction.findMany.mockResolvedValueOnce([]); 
+		// Create returns the new transaction
+		prismaMock.transaction.create.mockResolvedValue(existingTx);
+
+		const response1 = await request(app)
+			.post('/api/transactions/bulk')
+			.send({ transactions });
+
+		expect(response1.status).toBe(201);
+		expect(response1.body).toHaveLength(1);
+		expect(prismaMock.transaction.create).toHaveBeenCalledTimes(1);
+
+		// --- SECOND UPLOAD ---
+		// Duplicate check (findMany) now returns the existing transaction
+		prismaMock.transaction.findMany.mockResolvedValueOnce([existingTx]); 
+
+		const response2 = await request(app)
+			.post('/api/transactions/bulk')
+			.send({ transactions });
+
+		expect(response2.status).toBe(201);
+		expect(response2.body).toHaveLength(0); // Should be empty because it was skipped
+		
+		// THE VERIFICATION: Still only 1 creation call total
+		expect(prismaMock.transaction.create).toHaveBeenCalledTimes(1); 
+	});
+});

@@ -1,17 +1,19 @@
 services:
-  finance-bot-ui:
-    image: finance-bot-ui
+  zentra-ui-production:
+    image: zentra-ui-production
+    container_name: zentra-ui-production
     build:
       context: ../../../finance-bot-ui
       dockerfile: Dockerfile
+    restart: always
     ports:
-      - '8080:8080'
+      - "80:8080"
     environment:
-      - NODE_ENV=production
-      - PORT=8080
-      - NEXT_PUBLIC_API_URL=http://localhost:5000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     networks:
-      - finance-bot-production-network
-    depends_on:
-      - express-bot-production-api
-    restart: unless-stopped
+      - zentra-production-network
+
+networks:
+  zentra-production-network:
+    name: zentra-production-network
+    external: true

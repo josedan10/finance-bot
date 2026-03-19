@@ -18,8 +18,8 @@ jest.mock('web-push', () => ({
 jest.mock('../../src/config', () => ({
   config: {
     TEST_CHAT_ID: 123,
-    VAPID_PUBLIC_KEY: 'BIZwiUIyWaFVLiI9SDpul6Z-6bLWgVV58ZzFcCkUxTCDFZz23OjsA53_nf3V-PPOQvveZgckrObUUNmEnxoj5Nk',
-    VAPID_PRIVATE_KEY: 'Ge9lgSNdANlZhDbkpEz-6X77z8nlcOyhgpIiqCLlJG8',
+    VAPID_PUBLIC_KEY: 'YOUR_PUBLIC_VAPID_KEY_PLACEHOLDER',
+    VAPID_PRIVATE_KEY: 'YOUR_PRIVATE_VAPID_KEY_PLACEHOLDER',
     VAPID_SUBJECT: 'mailto:test@test.com',
   }
 }));
