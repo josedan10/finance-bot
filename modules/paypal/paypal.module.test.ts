@@ -317,10 +317,6 @@ describe('PaypalModule', () => {
 			});
 
 			console.log(categories);
-			const transaction = [1, 2, 3, 4].map((id) => ({
-				id,
-			}));
-
 			const transactionTableResult = await createTransaction({ id: 1 });
 
 			const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
