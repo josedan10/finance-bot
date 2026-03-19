@@ -3,6 +3,7 @@
 import { PrismaClient } from '@prisma/client';
 import { IBudgetChecker } from './types';
 import { ThresholdCrossed, DEFAULT_THRESHOLDS } from '../../src/enums/notifications';
+import { BudgetRollover } from '../budgets/budget-rollover.service';
 
 export class BudgetCheckerService implements IBudgetChecker {
   private prisma: PrismaClient;
@@ -34,12 +35,15 @@ export class BudgetCheckerService implements IBudgetChecker {
       return [];
     }
 
-    // 2. Get the start of the current month
+    // 2. Handle Cumulative Rollover (JIT)
+    const currentPeriod = await BudgetRollover.getOrCreateCurrentPeriod(categoryId);
+    const carryOver = currentPeriod ? Number(currentPeriod.carryOver || 0) : 0;
+
+    // 3. Get the start of the current month
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // 3. Calculate total spending this month (excluding the new transaction if it was already saved)
-    // We need to get the total including the new transaction
+    // 4. Calculate total spending this month
     const spending = await this.prisma.transaction.aggregate({
       where: {
         userId: userId,
@@ -56,11 +60,12 @@ export class BudgetCheckerService implements IBudgetChecker {
 
     const totalSpent = (spending._sum.amount?.toNumber() || 0) + newTransactionAmount;
     
-    // 4. Calculate percentage
+    // 5. Calculate percentage based on Effective Budget (Limit + CarryOver)
     const budgetLimit = category.amountLimit.toNumber();
-    const percentage = (totalSpent / budgetLimit) * 100;
+    const effectiveBudget = budgetLimit + carryOver;
+    const percentage = (totalSpent / effectiveBudget) * 100;
 
-    // 5. Get user's custom thresholds or use defaults
+    // 6. Get user's custom thresholds or use defaults
     const preferences = await this.prisma.notificationPreference.findUnique({
       where: { userId },
     });
