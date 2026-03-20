@@ -1,5 +1,5 @@
 import axios, { AxiosRequestConfig } from 'axios';
-import { TELEGRAM_BOT_URL, TELEGRAM_FILE_URL } from '../../src/telegram/variables';
+import { HAS_TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_URL, TELEGRAM_FILE_URL } from '../../src/telegram/variables';
 import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
@@ -28,6 +28,10 @@ class TelegramBot {
 		params: Record<string, unknown> = {},
 		headers: Record<string, string> = {}
 	): Promise<TelegramResponse> {
+		if (!this.token || !HAS_TELEGRAM_BOT_TOKEN) {
+			throw new Error('TELEGRAM_BOT_TOKEN environment variable is required');
+		}
+
 		const config: AxiosRequestConfig = { params, headers };
 		const response = await axios.post(`${this.url}/${method}`, data, config);
 		return response?.data;

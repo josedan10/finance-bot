@@ -132,16 +132,20 @@ Debits: 938.9000000000001`;
 		const images = ['image1', 'image2', 'image3'];
 		const telegramFileIds = ['file1', 'file2', 'file3'];
 
-		const texts = ['text1', 'text2', 'text3'];
+		const texts = [{ text: 'text1' }, { text: 'text2' }, { text: 'text3' }];
 
 		const transactionAndCategory = {
-			transaction: createTransaction({
-				description: 'My Description',
-				originalCurrencyAmount: new Decimal(100.0),
-				currency: 'USD',
-				date: new Date(),
-				reviewed: false,
-			}),
+			transaction: {
+				...createTransaction({
+					description: 'My Description',
+					originalCurrencyAmount: new Decimal(100.0),
+					currency: 'USD',
+					date: new Date(),
+					reviewed: false,
+				}),
+				category: null,
+				paymentMethod: null,
+			},
 			category: createCategory({
 				name: 'CATEGORY_NAME',
 			}),
@@ -169,16 +173,20 @@ Debits: 938.9000000000001`;
 		const images = ['image1', 'image2', 'image3'];
 		const telegramFileIds = ['file1', 'file2', 'file3'];
 
-		const texts = ['text1', 'text2', 'text3'];
+		const texts = [{ text: 'text1' }, { text: 'text2' }, { text: 'text3' }];
 
 		const transactionAndCategory = {
-			transaction: createTransaction({
-				description: 'My Description',
-				originalCurrencyAmount: new Decimal(100.0),
-				currency: 'USD',
-				date: new Date(),
-				reviewed: true,
-			}),
+			transaction: {
+				...createTransaction({
+					description: 'My Description',
+					originalCurrencyAmount: new Decimal(100.0),
+					currency: 'USD',
+					date: new Date(),
+					reviewed: true,
+				}),
+				category: null,
+				paymentMethod: null,
+			},
 			category: createCategory({
 				name: 'CATEGORY_NAME',
 			}),
