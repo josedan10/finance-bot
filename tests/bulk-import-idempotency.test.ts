@@ -131,4 +131,46 @@ describe('Bulk Import Idempotency', () => {
 		// THE VERIFICATION: Still only 1 creation call total
 		expect(prismaMock.transaction.create).toHaveBeenCalledTimes(1); 
 	});
+
+	it('should use the selected payment method from the CSV upload instead of defaulting to Cash', async () => {
+		const category = await createCategory({ id: 1, name: 'Food' });
+		const payoneer = await createPaymentMethod({ id: 5, name: 'Payoneer' });
+		const cash = await createPaymentMethod({ id: 6, name: 'Cash' });
+		const createdTx = await createTransaction({
+			id: 301,
+			amount: new Decimal(20),
+			description: 'Subscription',
+			date: new Date('2026-03-19'),
+			paymentMethodId: payoneer.id,
+		});
+
+		prismaMock.transaction.findMany.mockResolvedValueOnce([]);
+		prismaMock.category.findMany.mockResolvedValue([category]);
+		prismaMock.paymentMethod.findMany.mockResolvedValue([payoneer, cash]);
+		prismaMock.transaction.create.mockResolvedValue(createdTx);
+
+		const response = await request(app)
+			.post('/api/transactions/bulk')
+			.send({
+				transactions: [
+					{
+						date: '2026-03-19',
+						description: 'Subscription',
+						amount: 20,
+						category: 'Food',
+						type: 'expense',
+						paymentMethod: 'Payoneer',
+					},
+				],
+			});
+
+		expect(response.status).toBe(201);
+		expect(prismaMock.transaction.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					paymentMethodId: payoneer.id,
+				}),
+			})
+		);
+	});
 });
