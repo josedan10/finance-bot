@@ -165,6 +165,20 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 				throw new Error('Category not found');
 			}
 
+			if (isCumulative === true) {
+				const fallbackRule = await tx.budgetFallbackRule.findFirst({
+					where: {
+						userId: req.user.id,
+						sourceCategoryId: id,
+						enabled: true,
+					},
+				});
+
+				if (fallbackRule) {
+					throw new Error('Categories with a fallback rule cannot also carry over leftover budget');
+				}
+			}
+
 			// 1. Update category fields
 			const categoryUpdateData = {
 						name: name ?? existing.name,
@@ -218,6 +232,11 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 	} catch (error: unknown) {
 		if (error instanceof Error && error.message === 'Category not found') {
 			res.status(404).json({ message: error.message });
+			return;
+		}
+
+		if (error instanceof Error && error.message === 'Categories with a fallback rule cannot also carry over leftover budget') {
+			res.status(400).json({ message: error.message });
 			return;
 		}
 		logger.error('Failed to update category', { userId: req.user.id, id, error });
@@ -287,6 +306,11 @@ export async function deleteCategory(req: Request, res: Response): Promise<void>
 	} catch (error: unknown) {
 		if (error instanceof Error && error.message === 'Category not found') {
 			res.status(404).json({ message: error.message });
+			return;
+		}
+
+		if (error instanceof Error && error.message === 'Categories with a fallback rule cannot also carry over leftover budget') {
+			res.status(400).json({ message: error.message });
 			return;
 		}
 		if (error instanceof Error && error.message === 'Cannot delete the default Other category') {

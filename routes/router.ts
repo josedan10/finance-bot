@@ -426,10 +426,19 @@ router.delete('/api/transactions/:id', requireAuth, async (req: Request, res: Re
 router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		const { category, keyword } = req.body as { category: string; keyword: string };
+		const { category, keyword, applyToMatchingTransactions } = req.body as {
+			category: string;
+			keyword?: string;
+			applyToMatchingTransactions?: boolean;
+		};
+		const normalizedKeyword = keyword?.trim().toLowerCase();
 
-		if (Number.isNaN(id) || !category || !keyword) {
+		if (Number.isNaN(id) || !category) {
 			return res.status(400).json({ message: 'Missing required fields' });
+		}
+
+		if (applyToMatchingTransactions && !normalizedKeyword) {
+			return res.status(400).json({ message: 'Keyword is required to apply categorization to matching transactions' });
 		}
 
 		// Find or create the category for this user
@@ -465,19 +474,70 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			},
 		});
 
-		// Add the keyword
-		const newKeyword = await prisma.keyword.upsert({
-			where: { name_userId: { name: keyword.toLowerCase(), userId: req.user.id } },
-			update: {},
-			create: { name: keyword.toLowerCase(), userId: req.user.id },
-		});
+		let propagatedCount = 0;
 
-		// Link keyword to category
-		await prisma.categoryKeyword.upsert({
-			where: { categoryId_keywordId: { categoryId: matchedCategory.id, keywordId: newKeyword.id } },
-			update: {},
-			create: { categoryId: matchedCategory.id, keywordId: newKeyword.id },
-		});
+		if (normalizedKeyword) {
+			// Add or update the keyword mapping
+			const newKeyword = await prisma.keyword.upsert({
+				where: { name_userId: { name: normalizedKeyword, userId: req.user.id } },
+				update: {},
+				create: { name: normalizedKeyword, userId: req.user.id },
+			});
+
+			await prisma.categoryKeyword.deleteMany({
+				where: {
+					keywordId: newKeyword.id,
+					categoryId: {
+						not: matchedCategory.id,
+					},
+					category: {
+						userId: req.user.id,
+					},
+				},
+			});
+
+			// Link keyword to category
+			await prisma.categoryKeyword.upsert({
+				where: { categoryId_keywordId: { categoryId: matchedCategory.id, keywordId: newKeyword.id } },
+				update: {},
+				create: { categoryId: matchedCategory.id, keywordId: newKeyword.id },
+			});
+
+			if (applyToMatchingTransactions) {
+				const candidateTransactions = await prisma.transaction.findMany({
+					where: {
+						userId: req.user.id,
+						id: {
+							not: existingTransaction.id,
+						},
+					},
+					select: {
+						id: true,
+						description: true,
+					},
+				});
+
+				const matchingTransactionIds = candidateTransactions
+					.filter((transaction) => transaction.description?.toLowerCase().includes(normalizedKeyword) ?? false)
+					.map((transaction) => transaction.id);
+
+				if (matchingTransactionIds.length > 0) {
+					const propagationResult = await prisma.transaction.updateMany({
+						where: {
+							userId: req.user.id,
+							id: {
+								in: matchingTransactionIds,
+							},
+						},
+						data: {
+							categoryId: matchedCategory.id,
+						},
+					});
+
+					propagatedCount = propagationResult.count;
+				}
+			}
+		}
 
 		res.status(200).json({
 			id: String(updated.id),
@@ -491,6 +551,8 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			type: updated.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
 			referenceId: updated.referenceId ?? undefined,
+			propagatedCount,
+			assignedKeyword: normalizedKeyword ?? undefined,
 		});
 	} catch (error) {
 		logger.error('Failed to categorize transaction', { error, userId: req.user.id });
@@ -606,6 +668,11 @@ router.post('/api/budgets/fallback-rules', requireAuth, async (req: Request, res
 		if (categories.length !== 2) {
 			return res.status(404).json({ message: 'Category not found' });
 		}
+
+		await prisma.category.update({
+			where: { id: sourceCategoryId },
+			data: { isCumulative: false },
+		});
 
 		await prisma.$executeRaw(
 			Prisma.sql`

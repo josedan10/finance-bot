@@ -134,5 +134,120 @@ describe('Transaction API (CRUD)', () => {
 		});
 		expect(prismaMock.transaction.delete).not.toHaveBeenCalled();
 		expect(prismaMock.transaction.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it('should allow a simple category change without assigning a keyword', async () => {
+		const category = createCategory({ id: 3, userId: 1, name: 'Travel' } as never);
+		const paymentMethod = createPaymentMethod({ id: 5, userId: 1, name: 'Card' } as never);
+		const transaction = createTransaction({
+			id: 31,
+			userId: 1,
+			description: 'Flight',
+			amount: new Decimal(120),
+			currency: 'USD',
+			type: 'debit',
+			paymentMethodId: paymentMethod.id,
+		} as never);
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.transaction.findFirst.mockResolvedValue({
+			...transaction,
+			category: null,
+			paymentMethod,
+		} as never);
+		prismaMock.transaction.update.mockResolvedValue({
+			...transaction,
+			category,
+			paymentMethod,
+		} as never);
+
+		const response = await request(app)
+			.patch('/api/transactions/31/categorize')
+			.send({ category: 'Travel' });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			id: '31',
+			category: 'Travel',
+			propagatedCount: 0,
+		});
+		expect(prismaMock.keyword.upsert).not.toHaveBeenCalled();
+		expect(prismaMock.categoryKeyword.upsert).not.toHaveBeenCalled();
+	});
+
+	it('should propagate categorization to matching transactions when requested', async () => {
+		const category = createCategory({ id: 4, userId: 1, name: 'Entertainment' } as never);
+		const paymentMethod = createPaymentMethod({ id: 6, userId: 1, name: 'Cash' } as never);
+		const transaction = createTransaction({
+			id: 41,
+			userId: 1,
+			description: 'Netflix subscription',
+			amount: new Decimal(15),
+			currency: 'USD',
+			type: 'debit',
+			paymentMethodId: paymentMethod.id,
+		} as never);
+		const keyword = createKeyword({ id: 11, userId: 1, name: 'netflix' } as never);
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.transaction.findFirst.mockResolvedValue({
+			...transaction,
+			category: null,
+			paymentMethod,
+		} as never);
+		prismaMock.transaction.update.mockResolvedValue({
+			...transaction,
+			category,
+			paymentMethod,
+		} as never);
+		prismaMock.keyword.upsert.mockResolvedValue(keyword);
+		prismaMock.categoryKeyword.deleteMany.mockResolvedValue({ count: 1 } as never);
+		prismaMock.categoryKeyword.upsert.mockResolvedValue({
+			id: 12,
+			categoryId: category.id,
+			keywordId: keyword.id,
+		} as never);
+		prismaMock.transaction.findMany.mockResolvedValue([
+			{ id: 55, description: 'netflix family plan' },
+			{ id: 56, description: 'NETFLIX annual charge' },
+			{ id: 57, description: 'Spotify premium' },
+		] as never);
+		prismaMock.transaction.updateMany.mockResolvedValue({ count: 2 } as never);
+
+		const response = await request(app)
+			.patch('/api/transactions/41/categorize')
+			.send({ category: 'Entertainment', keyword: 'Netflix', applyToMatchingTransactions: true });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			id: '41',
+			category: 'Entertainment',
+			propagatedCount: 2,
+			assignedKeyword: 'netflix',
+		});
+		expect(prismaMock.categoryKeyword.deleteMany).toHaveBeenCalled();
+		expect(prismaMock.transaction.findMany).toHaveBeenCalledWith({
+			where: {
+				userId: 1,
+				id: {
+					not: 41,
+				},
+			},
+			select: {
+				id: true,
+				description: true,
+			},
+		});
+		expect(prismaMock.transaction.updateMany).toHaveBeenCalledWith({
+			where: {
+				userId: 1,
+				id: {
+					in: [55, 56],
+				},
+			},
+			data: {
+				categoryId: 4,
+			},
 		});
 	});
+});

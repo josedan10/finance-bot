@@ -99,6 +99,55 @@ describe('Budget Routes', () => {
 				userId: 1,
 			},
 		});
+		expect(prismaMock.category.update).toHaveBeenCalledWith({
+			where: { id: 11 },
+			data: { isCumulative: false },
+		});
 		expect(prismaMock.$executeRaw).toHaveBeenCalled();
+	});
+
+	it('should reject enabling carry-over when the category already has a fallback rule', async () => {
+		const category = createCategory({
+			id: 15,
+			userId: 1,
+			name: 'Food',
+			amountLimit: new Decimal(200),
+			isCumulative: false,
+		});
+
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) =>
+			Promise.resolve().then(() => {
+				if (typeof callback !== 'function') {
+					throw new Error('Expected transaction callback');
+				}
+
+				// eslint-disable-next-line n/no-callback-literal
+				return callback({
+					category: {
+						findFirst: jest.fn().mockResolvedValue(category as never),
+						update: jest.fn(),
+					},
+					budgetFallbackRule: {
+						findFirst: jest.fn().mockResolvedValue({ id: 1, sourceCategoryId: 15, enabled: true } as never),
+					},
+					categoryKeyword: {
+						deleteMany: jest.fn(),
+						create: jest.fn(),
+					},
+					keyword: {
+						upsert: jest.fn(),
+					},
+				});
+			})
+		);
+
+		const response = await request(app)
+			.put('/api/categories/15')
+			.send({ isCumulative: true });
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({
+			message: 'Categories with a fallback rule cannot also carry over leftover budget',
+		});
 	});
 });
