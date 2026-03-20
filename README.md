@@ -120,6 +120,12 @@ The API starts on the port defined in your `.env` file (default `5000`).
 | POST | `/telegram/webhook` | Incoming webhook handler |
 | POST | `/telegram/setCommands` | Register bot commands |
 
+### Bulk transaction imports
+
+- `POST /api/transactions/bulk` accepts an optional `paymentMethod` string on each transaction row.
+- If a payment method is provided during CSV upload, the API will use or create that payment method for the authenticated user.
+- If no payment method is provided, the API falls back to the user's `Cash` payment method.
+
 ## Environment Variables
 
 | Variable | Example | Description |
