@@ -4,15 +4,23 @@ import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 
 export class ChatGPTAssistant implements IAIAssistant {
-  private openai: OpenAI;
+  private openai: OpenAI | null = null;
 
-  constructor() {
-    this.openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+  private getClient(): OpenAI {
+    if (!config.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is required');
+    }
+
+    if (!this.openai) {
+      this.openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+    }
+
+    return this.openai;
   }
 
   async analyzeExpenses(transactions: AITransactionInput[]): Promise<AnalysisResult> {
     try {
-      const completion = await this.openai.chat.completions.create({
+      const completion = await this.getClient().chat.completions.create({
         messages: [
           { role: 'system', content: 'You are a financial analyst. Provide your analysis in JSON format.' },
           { role: 'user', content: `Analyze these transactions: ${JSON.stringify(transactions)}. Response should be a JSON object with "categories" (name and amount) and "trends" (array of strings).` }
@@ -31,7 +39,7 @@ export class ChatGPTAssistant implements IAIAssistant {
 
   async detectAnomalies(transactions: AITransactionInput[]): Promise<Anomaly[]> {
     try {
-      const completion = await this.openai.chat.completions.create({
+      const completion = await this.getClient().chat.completions.create({
         messages: [
           { role: 'system', content: 'You are a financial analyst. Detect anomalies in JSON format.' },
           { role: 'user', content: `Analyze these transactions for anomalies: ${JSON.stringify(transactions)}. Response should be a JSON object with an "anomalies" array, each having transactionId, reason, and severity (low/medium/high).` }
@@ -50,7 +58,7 @@ export class ChatGPTAssistant implements IAIAssistant {
 
   async suggestBudget(historicalData: AITransactionInput[]): Promise<BudgetSuggestion> {
     try {
-      const completion = await this.openai.chat.completions.create({
+      const completion = await this.getClient().chat.completions.create({
         messages: [
           { role: 'system', content: 'You are a financial planner. Suggest a budget in JSON format.' },
           { role: 'user', content: `Based on this data, suggest a budget for one category: ${JSON.stringify(historicalData)}. Response should be a JSON object with categoryName, suggestedLimit, and reason.` }

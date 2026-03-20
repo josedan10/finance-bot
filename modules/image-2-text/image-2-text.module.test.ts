@@ -27,7 +27,7 @@ describe('Image2TextModule', () => {
 		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg']);
 
 		// Assert that the result is an array with one element containing the extracted text
-		expect(result).toEqual(['Lorem Ipsum text']);
+		expect(result).toEqual([{ text: 'Lorem Ipsum text', metadata: undefined }]);
 	});
 
 	// extracts text from multiple images successfully
@@ -40,7 +40,10 @@ describe('Image2TextModule', () => {
 		]);
 
 		// Assert that the result is an array with two elements containing the extracted text
-		expect(result).toEqual(['Lorem ipsum', 'Lorem ipsum']);
+		expect(result).toEqual([
+			{ text: 'Lorem ipsum', metadata: undefined },
+			{ text: 'Lorem ipsum', metadata: undefined },
+		]);
 	});
 
 	// handles empty array of image urls gracefully

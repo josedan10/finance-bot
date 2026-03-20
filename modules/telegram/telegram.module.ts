@@ -12,12 +12,10 @@ interface TelegramResponse {
 }
 
 class TelegramBot {
-	private token?: string;
 	private url: string;
 	private fileUrl: string;
 
 	constructor() {
-		this.token = process.env.TELEGRAM_BOT_TOKEN;
 		this.url = TELEGRAM_BOT_URL;
 		this.fileUrl = TELEGRAM_FILE_URL;
 	}
@@ -28,7 +26,7 @@ class TelegramBot {
 		params: Record<string, unknown> = {},
 		headers: Record<string, string> = {}
 	): Promise<TelegramResponse> {
-		if (!this.token || !HAS_TELEGRAM_BOT_TOKEN) {
+		if (!process.env.TELEGRAM_BOT_TOKEN && !HAS_TELEGRAM_BOT_TOKEN) {
 			throw new Error('TELEGRAM_BOT_TOKEN environment variable is required');
 		}
 
