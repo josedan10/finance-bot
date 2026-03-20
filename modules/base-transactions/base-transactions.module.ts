@@ -121,7 +121,7 @@ class BaseTransactionsModule {
 			});
 
 			if (paymentMethod) {
-				await redisClient.set(pmCacheKey, JSON.stringify(paymentMethod), 3600); // 1 hour
+				await redisClient.set(pmCacheKey, JSON.stringify(paymentMethod), { EX: 3600 }); // 1 hour
 			}
 		}
 
@@ -144,7 +144,7 @@ class BaseTransactionsModule {
 			});
 
 			if (category) {
-				await redisClient.set(catCacheKey, JSON.stringify(category), 3600); // 1 hour
+				await redisClient.set(catCacheKey, JSON.stringify(category), { EX: 3600 }); // 1 hour
 			}
 		}
 
@@ -212,7 +212,7 @@ class BaseTransactionsModule {
 			if (keyword.categoryKeyword.length > 0) {
 				const category = keyword.categoryKeyword[0].category;
 				logger.info(`Category found: ${category.name} with keyword: ${keyword.name}`);
-				await redisClient.set(keywordCacheKey, JSON.stringify(category), 3600 * 24); // 24 hours
+				await redisClient.set(keywordCacheKey, JSON.stringify(category), { EX: 3600 * 24 }); // 24 hours
 				return category;
 			}
 		}

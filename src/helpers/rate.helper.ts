@@ -32,7 +32,7 @@ export async function searchRateByDate(date?: string) {
 
 	if (rate) {
 		// Cache for 12 hours
-		await redisClient.set(cacheKey, JSON.stringify(rate), 43200);
+		await redisClient.set(cacheKey, JSON.stringify(rate), { EX: 43200 });
 	}
 
 	return rate;
