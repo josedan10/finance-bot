@@ -7,6 +7,12 @@ import OpenAI from 'openai';
 // Mock the AI SDKs
 jest.mock('@google/generative-ai');
 jest.mock('openai');
+jest.mock('../../src/config', () => ({
+  config: {
+    GOOGLE_AI_API_KEY: 'test-google-key',
+    OPENAI_API_KEY: 'test-openai-key',
+  },
+}));
 
 const MockGoogleAI = GoogleGenerativeAI as jest.MockedClass<typeof GoogleGenerativeAI>;
 
