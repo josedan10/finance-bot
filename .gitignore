@@ -4,6 +4,9 @@
 .env.db
 client_secret.json
 token.json
+credentials.json
+firebase-service-account.json
+service-account.json
 /screenshots
 /pages
 /cookies

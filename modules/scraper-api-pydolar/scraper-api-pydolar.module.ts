@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { config } from '../../src/config';
 
 class ScraperPydolar {
-	private url: string = 'https://pydolarve.org/api/v1/dollar';
+	private url: string = config.PYDOLAR_API_URL;
 
 	async getPricesData() {
 		try {
@@ -13,7 +14,7 @@ class ScraperPydolar {
 				monitor: currency.enparalelovzla.price,
 			};
 		} catch (error) {
-			throw new Error('Error getting daily exchange rate task');
+			throw new Error('Error getting daily exchange rate task', { cause: error });
 		}
 	}
 }

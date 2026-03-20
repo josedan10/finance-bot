@@ -1,6 +1,7 @@
 import Sinon from 'sinon';
 import { calculateUSDAmountByRate, searchRateByDate } from './rate.helper';
 import { createDailyExchangeRate } from '../../prisma/factories';
+import { Decimal } from '@prisma/client/runtime/library';
 import { prismaMock } from '../../modules/database/database.module.mock';
 
 const sandbox = Sinon.createSandbox();
@@ -14,7 +15,7 @@ describe('searchRateByDate', () => {
 	// Returns a DailyExchangeRate object when a valid date is provided
 	it('should return a DailyExchangeRate object when a valid date is provided', async () => {
 		const validDate = '2022-01-01';
-		const expectedRate = await createDailyExchangeRate({ id: 1, date: '2022-01-01', bcvPrice: 1 });
+		const expectedRate = await createDailyExchangeRate({ id: 1, date: new Date('2022-01-01'), bcvPrice: new Decimal(1) });
 		const mockFindFirst = prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(expectedRate);
 
 		const result = await searchRateByDate(validDate);
@@ -35,7 +36,7 @@ describe('searchRateByDate', () => {
 	});
 
 	it('should return a DailyExchangeRate object when no date is provided', async () => {
-		const expectedRate = await createDailyExchangeRate({ id: 1, date: '2022-01-01', bcvPrice: 1 });
+		const expectedRate = await createDailyExchangeRate({ id: 1, date: new Date('2022-01-01'), bcvPrice: new Decimal(1) });
 
 		const mockFindFirst = prismaMock.dailyExchangeRate.findFirst.mockResolvedValue(expectedRate);
 

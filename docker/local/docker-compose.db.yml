@@ -1,15 +1,30 @@
-networks:
-  finance-bot-network:
-    driver: bridge
-
 services:
-  mysql-finance-bot:
-    image: mysql
-    platform: linux/amd64
+  mysql-zentra:
+    image: mysql:8.0
+    container_name: local-mysql-zentra-1
+    command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: d!YG19j06eXp
-      MYSQL_DATABASE: finance-bot
+      MYSQL_DATABASE: zentra
     ports:
-      - '3308:3306'
+      - "0.0.0.0:3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
     networks:
-      - finance-bot-network
+      - zentra-network
+
+  redis-zentra:
+    image: redis:alpine
+    container_name: redis-zentra
+    ports:
+      - "0.0.0.0:6380:6379"
+    networks:
+      - zentra-network
+
+networks:
+  zentra-network:
+    name: zentra-network
+    driver: bridge
+
+volumes:
+  mysql_data:

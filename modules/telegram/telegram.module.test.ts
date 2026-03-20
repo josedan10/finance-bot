@@ -11,10 +11,10 @@ const sandbox = Sinon.createSandbox();
 describe('>> Telegram Bot Module: ', function () {
 	beforeAll(() => {
 		/*
-        Mock API using nock for the REST API
-        Endpoint. Any calls to URL https://api.telegram.org/bot
-        will be intercepted by the fake_api nock  
-    */
+				Mock API using nock for the REST API
+				Endpoint. Any calls to URL https://api.telegram.org/bot
+				will be intercepted by the fake_api nock  
+		*/
 
 		nock(`${TELEGRAM_BOT_URL}`).post('/getMe').reply(200, mockResponse);
 
@@ -86,7 +86,7 @@ describe('sendImage', () => {
 		const telegramBot = TelegramModule;
 
 		// Mock the sendRequest method
-		const spySendReq = sandbox.stub(telegramBot, 'sendRequest').resolves({});
+		const spySendReq = sandbox.stub(telegramBot, 'sendRequest').resolves({ ok: true });
 
 		// Mock the fs.createReadStream method
 		const spyCreateReadStream = sandbox.stub(fs, 'createReadStream').resolves('stream');

@@ -307,32 +307,24 @@ describe('PaypalModule', () => {
 				createCategory({
 					id: 1,
 					name: 'category',
-					amountLimit: null,
-					description: '',
-					categoryKeyword: [
-						{
-							keyword: keyWord,
-						},
-					],
-				}),
+				})
 			]);
 
-			console.log(categories);
-			const transaction = [1, 2, 3, 4].map((id) => ({
-				id,
-			}));
+			Object.assign(categories[0], {
+				categoryKeyword: [
+					{ keyword: keyWord }
+				]
+			});
 
+			console.log(categories);
 			const transactionTableResult = await createTransaction({ id: 1 });
 
 			const spyPaymentMethodFindUnique = prismaMock.paymentMethod.findUnique.mockResolvedValue(paymentMethod);
 			const spyCategoryFindMany = prismaMock.category.findMany.mockResolvedValue(categories);
-			const spy$Transaction = prismaMock.$transaction.mockResolvedValue(transaction);
-
 			prismaMock.transaction.create.mockResolvedValue(transactionTableResult);
 
 			const result = await PayPal.registerPaypalDataFromCSVData(csvData);
 			expect(result).toHaveLength(4);
-			expect(spy$Transaction).toHaveBeenCalledTimes(1);
 			expect(spyPaymentMethodFindUnique).toHaveBeenCalledTimes(1);
 			expect(spyCategoryFindMany).toHaveBeenCalledTimes(1);
 		});

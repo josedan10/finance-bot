@@ -3,8 +3,52 @@ import { PrismaModule } from '../database/database.module';
 import { extractTransactionDetails } from '../../src/helpers/price.helper';
 import { ExchangeCurrencyCronServices } from '../crons/exchange-currency/exchange-currency.service';
 import { calculateUSDAmountByRate } from '../../src/helpers/rate.helper';
-import { Category, PrismaClient, Transaction } from '@prisma/client';
+import { Category, PaymentMethod, Prisma, PrismaClient, Transaction } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { config } from '../../src/config';
+import logger from '../../src/lib/logger';
+import { redisClient } from '../../src/lib/redis';
+import { NotificationFactory } from '../notifications/notification.module';
+
+type TransactionWithRelations = Prisma.TransactionGetPayload<{
+	include: {
+		category: true;
+		paymentMethod: true;
+	};
+}>;
+
+type TransactionWithOptionalRelations = Transaction & {
+	category: Category | null;
+	paymentMethod: PaymentMethod | null;
+};
+
+type SafeCreateTransactionInput = Prisma.TransactionUncheckedCreateInput & {
+	userId: number;
+	amount: number | Decimal;
+	date: Date | string;
+	type: string;
+	currency: string;
+	description?: string | null;
+	referenceId?: string | null;
+	originalCurrencyAmount?: number | Decimal | null;
+	amountIsAlreadyNormalized?: boolean;
+	skipDuplicateCheck?: boolean;
+};
+
+type SafeCreateTransactionResult = {
+	transaction: TransactionWithOptionalRelations;
+	isDuplicate: boolean;
+};
+
+type DuplicateLookupInput = {
+	userId: number;
+	amount: number | Decimal;
+	date: Date;
+	type: string;
+	currency: string;
+	description?: string;
+	referenceId?: string;
+};
 
 class BaseTransactionsModule {
 	private _db: PrismaClient;
@@ -21,7 +65,8 @@ class BaseTransactionsModule {
 	 */
 	async _VESToUSDWithExchangeRateByDate(date: string, amount: number | Decimal) {
 		const currentHour = dayjs().hour();
-		const rateIsNotAvailable = currentHour < 9 || currentHour >= 11;
+		const rateIsNotAvailable =
+			currentHour < config.RATE_AVAILABLE_START_HOUR || currentHour >= config.RATE_AVAILABLE_END_HOUR;
 		const currentDay = dayjs().format('YYYY-MM-DD');
 		const currentDayIsNotEqualToTransactionDate = currentDay !== date;
 		const isWeekend = dayjs().day() === 6 || dayjs().day() === 0;
@@ -35,14 +80,7 @@ class BaseTransactionsModule {
 		return null;
 	}
 
-	/**
-	 * @description
-	 * Process a manual transaction of any type of method
-	 *
-	 * @param {array} data splitted data from the command by spaces
-	 * @returns {object} transaction created
-	 */
-	async registerManualTransactions(data: string[]) {
+	async registerManualTransactions(data: string[], userId: number) {
 		const joinedData = data.join(' ');
 		const splittedData = joinedData.split(';');
 
@@ -54,7 +92,7 @@ class BaseTransactionsModule {
 		const currency = splittedData.find((d) => d.includes('currency='))?.split('=')?.[1];
 		const date = splittedData.find((d) => d.includes('date='))?.split('=')?.[1] || dayjs().toISOString();
 
-		let amountInUSD;
+		let amountInUSD: number | null;
 
 		if (!amount || !description || !paymentMethodName || !type || !categoryName) {
 			const sampleData =
@@ -68,135 +106,354 @@ class BaseTransactionsModule {
 			amountInUSD = Number(amount);
 		}
 
-		const paymentMethod = await this._db.paymentMethod.findUnique({
-			where: {
-				name: paymentMethodName,
-			},
-		});
+		const pmCacheKey = `payment_method:${userId}:${paymentMethodName}`;
+		let paymentMethod;
+		const cachedPm = await redisClient.get(pmCacheKey);
+
+		if (cachedPm) {
+			paymentMethod = JSON.parse(cachedPm);
+		} else {
+			paymentMethod = await this._db.paymentMethod.findFirst({
+				where: {
+					name: paymentMethodName,
+					userId,
+				},
+			});
+
+			if (paymentMethod) {
+				await redisClient.set(pmCacheKey, JSON.stringify(paymentMethod), 3600); // 1 hour
+			}
+		}
 
 		if (!paymentMethod) {
 			throw new Error(`Payment method ${paymentMethodName} not found`);
 		}
 
-		const category = await this._db.category.findUnique({
-			where: {
-				name: categoryName,
-			},
-		});
+		const catCacheKey = `category:${userId}:${categoryName}`;
+		let category: Category | null;
+		const cachedCat = await redisClient.get(catCacheKey);
+
+		if (cachedCat) {
+			category = JSON.parse(cachedCat);
+		} else {
+			category = await this._db.category.findFirst({
+				where: {
+					name: categoryName,
+					userId,
+				},
+			});
+
+			if (category) {
+				await redisClient.set(catCacheKey, JSON.stringify(category), 3600); // 1 hour
+			}
+		}
 
 		if (!category) {
 			throw new Error(`Category ${categoryName} not found`);
 		}
 
-		const transaction = await this._db.transaction.create({
-			data: {
-				amount: amountInUSD,
-				description,
-				type,
-				date: date ? dayjs(date).toDate() : dayjs().toDate(),
-				currency: currency || 'USD',
-				originalCurrencyAmount: currency !== 'USD' ? Number(amount) : null,
-				paymentMethod: {
-					connect: {
-						id: paymentMethod.id,
-					},
-				},
-				category: {
-					connect: {
-						id: category.id,
-					},
-				},
-			},
+		const { transaction } = await this.safeCreateTransaction({
+			userId,
+			amount: amountInUSD ?? Number(amount),
+			description,
+			type,
+			date: date ? dayjs(date).toDate() : dayjs().toDate(),
+			currency: currency || 'USD',
+			originalCurrencyAmount: currency !== 'USD' ? Number(amount) : null,
+			paymentMethodId: paymentMethod.id,
+			categoryId: category.id,
 		});
+
+		// Check budget thresholds and send notifications (async, non-blocking)
+		if (type === 'expense' || type === 'debit') {
+			NotificationFactory.notifyBudgetThreshold(userId, category.id, Number(amountInUSD)).catch((error) => {
+				logger.error('Failed to check budget notifications', {
+					error: error instanceof Error ? error.message : 'Unknown error',
+					userId,
+					categoryId: category.id,
+				});
+			});
+		}
 
 		return transaction;
 	}
 
+	private async findCategoryByWords(words: string[], userId: number): Promise<Category | null> {
+		const lowerWords = words.map((w) => w.toLowerCase()).filter((w) => w.length > 0);
+		if (lowerWords.length === 0) return null;
+
+		const keywordHash = Buffer.from(lowerWords.join('_')).toString('base64');
+		const keywordCacheKey = `category_keywords:${userId}:${keywordHash}`;
+
+		const cachedCategoryStr = await redisClient.get(keywordCacheKey);
+		if (cachedCategoryStr) {
+			const cachedCategory = JSON.parse(cachedCategoryStr);
+			logger.info(`Category found from cache: ${cachedCategory.name}`);
+			return cachedCategory;
+		}
+
+		const keywords = await this._db.keyword.findMany({
+			where: {
+				name: { in: lowerWords },
+				userId,
+			},
+			select: {
+				name: true,
+				categoryKeyword: {
+					select: {
+						category: true,
+					},
+					take: 1,
+				},
+			},
+		});
+
+		for (const keyword of keywords) {
+			if (keyword.categoryKeyword.length > 0) {
+				const category = keyword.categoryKeyword[0].category;
+				logger.info(`Category found: ${category.name} with keyword: ${keyword.name}`);
+				await redisClient.set(keywordCacheKey, JSON.stringify(category), 3600 * 24); // 24 hours
+				return category;
+			}
+		}
+
+		return null;
+	}
+
 	/**
-	 * @description
-	 * Receives an array of text from images, search for a category and payment method and create a transaction.
-	 * If there is no category that can match using the keywords, it will create a task, and a .txt file related to the image text, so the user can manually assign the category later.
-	 *
-	 * @param {Array} data array of text from images
-	 * @param {Array} telegramFileIds array of file_ids from telegram
-	 * @param {Array} args array of arguments from the command ex: ['amount=100', 'desc=My description']
-	 * @returns {Object} transaction created
+	 * Looks for a potential duplicate transaction.
+	 * A transaction is considered a duplicate if it has:
+	 * 1. Matching referenceId (High confidence)
+	 * 2. Same userId + normalized amount + currency + date within a 48-hour window (+/- 1 day) + matching description keywords (Fuzzy)
 	 */
-	async registerTransactionFromImages(
-		data: string[],
-		telegramFileIds: string[],
-		args?: string[]
-	): Promise<{
-		transaction: Transaction;
-		category: Category | null;
-	}> {
-		let amount;
-		let category: Category | null = null;
-		let date = dayjs().format('YYYY-MM-DD');
+	private normalizeDescription(description: string): string[] {
+		return description
+			.toLowerCase()
+			.replace(/[^a-z0-9 ]/g, '')
+			.split(' ')
+			.filter((word) => word.length >= 2);
+	}
 
-		if (args && args.length > 0) {
-			amount = args?.find((arg) => arg.includes('amount'))?.split('=')?.[1];
+	private isDuplicateCandidate(
+		data: DuplicateLookupInput,
+		candidate: TransactionWithOptionalRelations
+	): boolean {
+		const { amount, description } = data;
+
+		if (Number(candidate.amount) !== Number(amount)) return false;
+
+		if (!description) return true;
+		if (!candidate.description) return false;
+
+		const newKeywords = this.normalizeDescription(description);
+		const candidateKeywords = this.normalizeDescription(candidate.description);
+		const overlap = newKeywords.filter((word) => candidateKeywords.includes(word));
+
+		return (
+			overlap.length >= 2 ||
+			(overlap.length >= 1 && (newKeywords.length <= 2 || candidateKeywords.length <= 2)) ||
+			description.toLowerCase().includes(candidate.description.toLowerCase()) ||
+			candidate.description.toLowerCase().includes(description.toLowerCase())
+		);
+	}
+
+	findDuplicateInCandidates(
+		data: DuplicateLookupInput,
+		candidates: TransactionWithRelations[]
+	): TransactionWithRelations | null {
+		const { referenceId } = data;
+
+		if (referenceId) {
+			const referenceMatch = candidates.find((candidate) => candidate.referenceId === referenceId);
+			if (referenceMatch) return referenceMatch;
 		}
 
-		if (!amount) {
-			const transactionDetails = extractTransactionDetails(data);
-			date = transactionDetails?.date || date;
-			amount = transactionDetails?.amount;
+		return candidates.find((candidate) => this.isDuplicateCandidate(data, candidate)) ?? null;
+	}
+
+	async findDuplicate(data: DuplicateLookupInput): Promise<TransactionWithRelations | null> {
+		const { userId, amount, date, type, currency, referenceId } = data;
+		const normalizedAmount = amount instanceof Decimal ? amount : new Decimal(amount);
+
+		// 1. Priority: Exact referenceId match
+		if (referenceId) {
+			const refMatch = await this._db.transaction.findFirst({
+				where: {
+					userId,
+					referenceId,
+				},
+				include: {
+					category: true,
+					paymentMethod: true,
+				},
+			});
+			if (refMatch) return refMatch;
 		}
-		// Convert to USD using the current exchange rate
+
+		// 2. Fuzzy: Amount + Currency + Date Window + Description Similarity
+		const startDate = dayjs(date).subtract(1, 'day').toDate();
+		const endDate = dayjs(date).add(1, 'day').toDate();
+
+		const potentialDuplicates = (await this._db.transaction.findMany({
+			where: {
+				userId,
+				amount: normalizedAmount,
+				currency,
+				type,
+				date: {
+					gte: startDate,
+					lte: endDate,
+				},
+			},
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		})) ?? [];
+
+		if (potentialDuplicates.length === 0) return null;
+
+		return this.findDuplicateInCandidates(data, potentialDuplicates);
+	}
+
+	/**
+	 * Creates a transaction only if it's not a duplicate.
+	 * Handles internal VES -> USD normalization if needed.
+	 */
+	async safeCreateTransaction(data: SafeCreateTransactionInput): Promise<SafeCreateTransactionResult> {
+		const { amount, currency, date } = data;
+		const transactionDate = date instanceof Date ? date : new Date(date);
+		
+		let finalAmount = Number(amount);
+		let originalCurrencyAmount = data.originalCurrencyAmount || null;
+
+		// Handle Normalization if not already USD
+		if (currency === 'VES' && !data.amountIsAlreadyNormalized) {
+			const dateStr = dayjs(transactionDate).format('YYYY-MM-DD');
+			const converted = await this._VESToUSDWithExchangeRateByDate(dateStr, Number(amount));
+			if (converted !== null) {
+				finalAmount = converted;
+				originalCurrencyAmount = Number(amount);
+			}
+		} else if (currency === 'USD') {
+			finalAmount = Number(amount);
+			// For USD, original amount is the same as final amount
+			if (!originalCurrencyAmount) originalCurrencyAmount = finalAmount;
+		}
+
+		if (!data.skipDuplicateCheck) {
+			const duplicate = await this.findDuplicate({
+				userId: data.userId,
+				amount: finalAmount,
+				date: transactionDate,
+				type: data.type,
+				currency: data.currency || 'USD',
+				description: data.description ?? undefined,
+				referenceId: data.referenceId ?? undefined,
+			});
+
+			if (duplicate) {
+				logger.info('Duplicate transaction detected, skipping creation', {
+					originalId: duplicate.id,
+					userId: data.userId,
+					amount: finalAmount,
+					currency: data.currency,
+					date: transactionDate,
+				});
+				return { transaction: duplicate, isDuplicate: true };
+			}
+		}
+
+		const { amountIsAlreadyNormalized: _amountIsAlreadyNormalized, skipDuplicateCheck: _skipDuplicateCheck, ...transactionData } = data;
+		const transaction = await this._db.transaction.create({
+			data: {
+				...transactionData,
+				date: transactionDate,
+				amount: finalAmount,
+				originalCurrencyAmount,
+			},
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+
+		return { transaction, isDuplicate: false };
+	}
+
+	/**
+	 * Parses extracted text into structured transaction data without persisting it.
+	 */
+	async parseTransactionFromText(textLines: string[], userId: number) {
+		const transactionDetails = extractTransactionDetails(textLines);
+		const date = transactionDetails?.date || dayjs().format('YYYY-MM-DD');
+		const amount = transactionDetails?.amount;
 
 		if (!amount) {
 			throw new Error('Amount not found');
 		}
 
 		const amountInUSD = amount && date ? await this._VESToUSDWithExchangeRateByDate(date, Number(amount)) : null;
+		const words = textLines.join(' ').replaceAll('\n', ' ').split(' ');
+		const category = await this.findCategoryByWords(words, userId);
 
-		// Transform the line array into a words array
-		const words = data.join(' ').replaceAll('\n', ' ').split(' ');
+		return {
+			date,
+			amount: amountInUSD || Number(amount),
+			originalAmount: Number(amount),
+			currency: amountInUSD ? 'USD' : 'VES',
+			description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
+			category: category?.name || 'Other',
+			categoryId: category?.id,
+			type: 'debit' as const,
+		};
+	}
 
-		for (const word of words) {
-			category = await this._db.category.findFirst({
-				where: {
-					categoryKeyword: {
-						some: {
-							keyword: {
-								name: word.toLowerCase(),
-							},
-						},
-					},
-				},
-			});
+	async registerTransactionFromImages(
+		data: string[],
+		telegramFileIds: string[],
+		args: string[] | undefined,
+		userId: number
+	): Promise<{
+		transaction: TransactionWithOptionalRelations;
+		category: Category | null;
+	}> {
+		let amount: string | undefined;
 
-			if (category) {
-				console.log(`Category found: ${category.name} with keyword: ${word}`);
-				break;
-			}
+		if (args && args.length > 0) {
+			amount = args?.find((arg) => arg.includes('amount'))?.split('=')?.[1];
 		}
 
-		const transaction = await this._db.transaction.create({
-			data: {
-				...(amountInUSD ? { amount: amountInUSD } : {}),
-				originalCurrencyAmount: Number(amount),
-				description: words.join(' ').slice(0, 100),
-				type: 'debit',
-				date: date ? dayjs(date).toDate() : dayjs().toDate(),
-				currency: 'VES',
-				telegramFileIds: telegramFileIds.join(','),
-				...(category
-					? {
-							category: {
-								connect: {
-									id: category.id,
-								},
-							},
-					  }
-					: {}),
-			},
+		const parsed = await this.parseTransactionFromText(data, userId);
+		
+		// If amount was forced by args, override
+		const finalAmount = amount ? Number(amount) : parsed.amount;
+		const finalDate = parsed.date;
+
+		const { transaction } = await this.safeCreateTransaction({
+			userId,
+			amount: finalAmount,
+			originalCurrencyAmount: parsed.originalAmount,
+			description: parsed.description,
+			type: 'debit',
+			date: dayjs(finalDate).toDate(),
+			currency: parsed.currency,
+			telegramFileIds: telegramFileIds.join(','),
+			categoryId: parsed.categoryId,
 		});
 
-		console.log('category', category);
+		// Check budget thresholds and send notifications (async, non-blocking)
+		if (transaction.categoryId) {
+			NotificationFactory.notifyBudgetThreshold(userId, transaction.categoryId, Number(finalAmount)).catch((error) => {
+				logger.error('Failed to check budget notifications', {
+					error: error instanceof Error ? error.message : 'Unknown error',
+					userId,
+					categoryId: transaction.categoryId,
+				});
+			});
+		}
 
-		return { transaction, category };
+		return { transaction, category: transaction.category ?? null };
 	}
 }
 

@@ -4,64 +4,57 @@ import { PrismaModule as prisma } from '../database/database.module';
 import TelegramModule from '../telegram/telegram.module';
 import { ScraperPydolarModule } from '../scraper-api-pydolar/scraper-api-pydolar.module';
 import { ExchangeCurrencyCronServices } from './exchange-currency/exchange-currency.service';
+import { GmailService } from '../gmail/gmail.module';
+import { emailParser } from '../gmail/email-parser';
+import { BaseTransactions } from '../base-transactions/base-transactions.module';
 import dayjs from 'dayjs';
 import { config } from '../../src/config';
+import logger from '../../src/lib/logger';
 
-// once per hour
-// const dailyUpdateExchangeRateTaskCronExpression = '0 * * * 1-5';
-
-// once per day
-const createDailyTaskCronExpression = '0 10 * * 1-5';
-const dailyUpdateTransactionsTableCronExpression = '0 9 * * 0-6';
-
-// TEST CRON EXPRESSIONS
-// run every 10 minutes
-const dailyUpdateExchangeRateTaskCronExpression = '0 */10 * * * *';
-
-// run every 30 seconds
-// const dailyUpdateExchangeRateTaskCronExpression = '*/30 * * * * *';
-
-// run every 30 minutes
-// const createDailyTaskCronExpression = '0 */30 * * * *';
+const CRON_EXPRESSIONS = {
+	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10 * * 1-5',
+	updateExchangeRate: process.env.CRON_UPDATE_EXCHANGE_RATE || '0 * * * 1-5',
+	updateTransactionsTable: process.env.CRON_UPDATE_TRANSACTIONS || '0 9 * * 0-6',
+	checkGmailEmails: process.env.CRON_CHECK_GMAIL || '0 */30 * * 1-5',
+};
 
 export class TaskQueueModule {
 	private startDailyExchangeRateMonitor = cron.schedule(
-		dailyUpdateExchangeRateTaskCronExpression,
+		CRON_EXPRESSIONS.updateExchangeRate,
 		this._updateDailyExchangeRateFunction.bind(this),
-		{
-			timezone: 'America/Caracas',
-		}
+		{ timezone: config.CRON_TIMEZONE }
 	);
 
 	private createDailyExchangeRateTask = cron.schedule(
-		createDailyTaskCronExpression,
+		CRON_EXPRESSIONS.createDailyTask,
 		this._createDailyExchangeRateTask.bind(this),
-		{
-			timezone: 'America/Caracas',
-			scheduled: true,
-		}
+		{ timezone: config.CRON_TIMEZONE, scheduled: true }
 	);
 
 	private startDailyUpdateTransactionsTable = cron.schedule(
-		dailyUpdateTransactionsTableCronExpression,
+		CRON_EXPRESSIONS.updateTransactionsTable,
 		this._updateDailyTransactionsTable.bind(this),
-		{
-			timezone: 'America/Caracas',
-			scheduled: true,
-		}
+		{ timezone: config.CRON_TIMEZONE, scheduled: true }
+	);
+
+	private checkGmailSchedule = cron.schedule(
+		CRON_EXPRESSIONS.checkGmailEmails,
+		this._checkGmailEmails.bind(this),
+		{ timezone: config.CRON_TIMEZONE, scheduled: true }
 	);
 
 	start() {
-		console.log('Starting task queue module...');
+		logger.info('Starting task queue module...', { cronExpressions: CRON_EXPRESSIONS });
 
 		this.createDailyExchangeRateTask.start();
 		this.startDailyExchangeRateMonitor.start();
 		this.startDailyUpdateTransactionsTable.start();
+		this.checkGmailSchedule.start();
 	}
 
 	private async _createDailyExchangeRateTask() {
 		try {
-			console.log('Creating daily exchange rate task...');
+			logger.info('Creating daily exchange rate task...');
 			await prisma.taskQueue.create({
 				data: {
 					type: TASK_TYPE.DAILY_UPDATE_EXCHANGE_RATE,
@@ -70,13 +63,13 @@ export class TaskQueueModule {
 				},
 			});
 		} catch (error) {
-			console.log('Error creating daily exchange rate task', error);
+			logger.error('Error creating daily exchange rate task', { error });
 		}
 	}
 
 	private async _updateDailyExchangeRateFunction() {
 		let getExistingTask;
-		console.log('Running cron job to get daily exchange rate...');
+		logger.info('Running cron job to get daily exchange rate...');
 
 		try {
 			getExistingTask = await prisma.taskQueue.findFirst({
@@ -87,7 +80,7 @@ export class TaskQueueModule {
 			});
 		} catch (error: unknown) {
 			const errorResponse = error as Error;
-			console.log('Error getting daily exchange rate task', error);
+			logger.error('Error getting daily exchange rate task', { error });
 			TelegramModule.sendMessage(
 				`Error getting daily exchange rate task. \n\n${errorResponse.message}`,
 				config.TEST_CHAT_ID
@@ -96,7 +89,7 @@ export class TaskQueueModule {
 		}
 
 		if (!getExistingTask) {
-			console.log('No pending task found');
+			logger.info('No pending task found');
 			return;
 		}
 
@@ -117,9 +110,8 @@ export class TaskQueueModule {
 				`Daily exchange rate completed. \n\nMonitor Rate: ${prices.monitor} \nBCV Rate: ${prices.bcv}`,
 				config.TEST_CHAT_ID
 			);
-			console.log('Cron job to get daily exchange rate completed');
+			logger.info('Cron job to get daily exchange rate completed');
 
-			// Save price on database
 			await prisma.dailyExchangeRate.create({
 				data: {
 					monitorPrice: Number(prices.monitor),
@@ -129,7 +121,7 @@ export class TaskQueueModule {
 			});
 		} catch (error: unknown) {
 			const errorResponse = error as Error;
-			console.log('Error checking daily exchange rate function', errorResponse);
+			logger.error('Error checking daily exchange rate function', { error: errorResponse.message });
 
 			if (getExistingTask) {
 				await prisma.taskQueue.update({
@@ -153,9 +145,145 @@ export class TaskQueueModule {
 	private async _updateDailyTransactionsTable() {
 		try {
 			await ExchangeCurrencyCronServices.getAmountResult();
-			console.log('Your amount in dollar from transactions table is up to date!!');
+			logger.info('Transaction amounts in dollars are up to date');
 		} catch (error) {
-			console.log(error);
+			logger.error('Error updating daily transactions table', { error });
+		}
+	}
+
+	private async _checkGmailEmails() {
+		logger.info('Running Gmail email check...');
+
+		try {
+			const emails = await GmailService.getUnreadEmails();
+
+			if (emails.length === 0) {
+				logger.info('No new emails to process');
+				return;
+			}
+
+			const results = emailParser.parseEmails(emails);
+			let registered = 0;
+			let skipped = 0;
+			let failed = 0;
+			const summaryLines: string[] = [];
+
+			for (const result of results) {
+				const { email, parsed, ruleName } = result;
+
+				const alreadyProcessed = await prisma.processedEmail.findUnique({
+					where: { messageId: email.messageId },
+				});
+
+				if (alreadyProcessed) {
+					logger.info('Email already processed, skipping', { messageId: email.messageId });
+					skipped++;
+					continue;
+				}
+
+				if (!parsed) {
+					await prisma.processedEmail.create({
+						data: {
+							messageId: email.messageId,
+							from: email.from.slice(0, 255),
+							subject: email.subject.slice(0, 500),
+							result: 'no_match',
+						},
+					});
+					await GmailService.markAsRead(email.messageId);
+					skipped++;
+					continue;
+				}
+
+				try {
+					// 1. Dynamic User Lookup (if email is known)
+					// In a real multi-tenant app, we'd lookup the user by their Gmail account email
+					// For now, we'll try to find a user with the 'from' email or default to ID 1
+					const userEmailMatch = await prisma.user.findFirst({
+						where: { email: email.from.toLowerCase() }
+					});
+					const targetUserId = userEmailMatch?.id || 1;
+
+					const paymentMethod = await prisma.paymentMethod.findFirst({
+						where: { 
+							name: { contains: parsed.paymentMethod },
+							userId: targetUserId
+						},
+					});
+
+					let category = null;
+					if (parsed.category) {
+						category = await prisma.category.findUnique({
+							where: { name_userId: { name: parsed.category, userId: targetUserId } },
+						});
+					}
+
+					const { isDuplicate } = await BaseTransactions.safeCreateTransaction({
+						userId: targetUserId,
+						date: email.date,
+						description: parsed.description.slice(0, 255),
+						amount: parsed.amount,
+						currency: parsed.currency,
+						type: parsed.type,
+						referenceId: parsed.referenceId || null,
+						paymentMethodId: paymentMethod?.id,
+						categoryId: category?.id,
+					});
+
+					await prisma.processedEmail.create({
+						data: {
+							messageId: email.messageId,
+							from: email.from.slice(0, 255),
+							subject: email.subject.slice(0, 500),
+							result: isDuplicate ? `skipped:duplicate:${ruleName}` : `registered:${ruleName}`,
+						},
+					});
+
+					await GmailService.markAsRead(email.messageId);
+
+					if (!isDuplicate) {
+						registered++;
+						summaryLines.push(
+							`  ${parsed.type === 'debit' ? '💸' : '💰'} ${parsed.amount} ${parsed.currency} - ${parsed.description} (${ruleName})`
+						);
+					} else {
+						skipped++;
+					}
+
+					logger.info(isDuplicate ? 'Transaction skipped (duplicate)' : 'Transaction registered from email', {
+						messageId: email.messageId,
+						amount: parsed.amount,
+						currency: parsed.currency,
+						rule: ruleName,
+					});
+				} catch (error) {
+					logger.error('Error registering transaction from email', {
+						messageId: email.messageId,
+						error,
+					});
+					failed++;
+				}
+			}
+
+			const summary = [
+				`📧 Gmail check complete: ${emails.length} emails scanned`,
+				`✅ ${registered} transactions registered`,
+				skipped > 0 ? `⏭️ ${skipped} skipped (already processed or no match)` : '',
+				failed > 0 ? `❌ ${failed} failed` : '',
+				...summaryLines,
+			]
+				.filter(Boolean)
+				.join('\n');
+
+			await TelegramModule.sendMessage(summary, config.TEST_CHAT_ID);
+			logger.info('Gmail check completed', { registered, skipped, failed });
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+			logger.error('Error in Gmail cron job', { error: errorMessage });
+			await TelegramModule.sendMessage(
+				`❌ Gmail check error: ${errorMessage}`,
+				config.TEST_CHAT_ID
+			);
 		}
 	}
 }

@@ -1,104 +1,152 @@
 # Finance Bot API
 
-This is a tool designed to manage your personal finances. The most important feature on this application, is the ability to send bill images to extract the ammount and use the keywords to clasify the transaction on different categories.
+A tool designed to manage your personal finances. The most important feature is the ability to send bill images to extract the amount and use keywords to classify transactions into different categories.
 
-## Deployment
+## Prerequisites
 
-We strongly recommend defining the port number in the .env file. You can copy the .env.example file and rename it to .env. Then you can define the port number.
+- Node.js 22+
+- npm
+- Docker & Docker Compose
+- ngrok (for Telegram webhook in development)
 
-`npm install`
+## Getting Started (Full Stack with Docker)
 
-Build and start the project in development mode using the following commands:
+This is the recommended way to run the entire project. It starts the API, MySQL database, image service, and the frontend UI together.
 
-`npm run docker:build`
-`npm run docker:start`
+### 1. Set up environment variables
 
-Once the server starts, execute on a parallel terminal the following commands:
+Copy the example env file and fill in your values:
 
-`docker exec -it <CONTAINER-ID> npx prisma migrate dev`
-`docker exec -it <CONTAINER-ID> npx prisma db seed`
+```bash
+cp .env.example .env
+```
 
-Use ngrok to set up the webhook:
+Required variables (see [Environment Variables](#environment-variables) below for the full list):
 
-`ngrok http 5000`
+```
+PORT=5000
+TELEGRAM_BOT_TOKEN=your_token_here
+DATABASE_URL=mysql://root:d!YG19j06eXp@local-mysql-finance-bot-1:3306/finance-bot
+```
 
-We recommend using the Postman extension to work with the local host at the following link:
+### 2. Install dependencies
 
-https://marketplace.visualstudio.com/items?itemName=Postman.postman-for-vscode
+```bash
+npm install
+```
 
-Copy the ngrok URL and set the webhook URL using the following route:
+### 3. Build and start all services
 
-`${your_local_url}/telegram/setWebhook`
+```bash
+npm run docker:dev
+```
 
-The Docker image is built using the following command:
+This starts:
 
-`./deploy.sh production`
+| Service | URL | Description |
+|---|---|---|
+| **API** | http://localhost:4001 | Express backend |
+| **UI** | http://localhost:8080 | Next.js frontend |
+| **MySQL** | localhost:3308 | Database |
+| **Image Service** | http://localhost:4000 | OCR text extractor |
+
+### 4. Run database migrations and seed
+
+In a separate terminal, find the API container ID and run migrations:
+
+```bash
+docker ps
+docker exec -it <API_CONTAINER_ID> npx prisma migrate dev
+docker exec -it <API_CONTAINER_ID> npx prisma db seed
+```
+
+### 5. Set up Telegram webhook (development)
+
+Start ngrok pointing to the API port:
+
+```bash
+ngrok http 4001
+```
+
+Then set the webhook using the ngrok URL:
+
+```
+POST ${your_ngrok_url}/telegram/setWebhook
+```
+
+## Docker Commands
+
+### Local Development
+
+| Command | Description |
+|---|---|
+| `npm run docker:dev` | Build and start all services (API + DB + Image + UI) |
+| `npm run docker:start-dev` | Start all services without rebuilding |
+| `npm run docker:build-dev` | Build all services without cache |
+| `npm run docker:start-db` | Start only the database |
+| `npm run docker:image-service` | Start only the image service |
+
+> The image service now uses **EasyOCR**. After OCR dependency changes, rebuild the image service container so the new model/runtime is used. The first startup can take longer while model assets are prepared.
+
+### Production
+
+| Command | Description |
+|---|---|
+| `npm run docker:build` | Build all production images |
+| `npm run docker:start` | Start all production services (detached) |
+| `npm run docker:migrations` | Run Prisma migrations in the production container |
+| `./deploy.sh production` | Full production deploy script |
+
+## Running Without Docker
+
+Start the database separately, then run the API locally:
+
+```bash
+npm run docker:start-db
+npm run dev
+```
+
+The API starts on the port defined in your `.env` file (default `5000`).
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/` | Health check - "Server is Working" |
+| GET | `/health` | Health status with timestamp |
+| GET | `/telegram` | Telegram bot info |
+| POST | `/telegram/setWebhook` | Set Telegram webhook URL |
+| POST | `/telegram/sendMessage` | Send a message via the bot |
+| POST | `/telegram/webhook` | Incoming webhook handler |
+| POST | `/telegram/setCommands` | Register bot commands |
 
 ## Environment Variables
 
-`TELEGRAM_BOT_TOKEN=1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ`
+| Variable | Example | Description |
+|---|---|---|
+| `PORT` | `5000` | API server port |
+| `TELEGRAM_BOT_TOKEN` | `1234567890:ABC...` | Telegram bot token ([create one here](https://core.telegram.org/bots#how-do-i-create-a-bot)) |
+| `TEST_CHAT_ID` | `123456789` | Default chat ID for bot messages |
+| `DATABASE_URL` | `mysql://root:pass@host:3306/db` | MySQL connection string |
+| `IG_USERNAME` | `user` | Instagram username for puppeteer scraper |
+| `IG_PASSWORD` | `pass` | Instagram password for puppeteer scraper |
+| `APP_MODE` | `production` | Enables headless mode for puppeteer |
+| `SAVE_SCREENSHOTS` | `1` | Save puppeteer screenshots |
+| `IMAGE_2_TEXT_SERVICE_URL` | `http://zentra-image-extractor:4000/` | OCR service URL |
+| `GOOGLE_AI_API_KEY` | `AIzaSy...` | API Key for Google Gemini |
+| `OPENAI_API_KEY` | `sk-...` | API Key for OpenAI (ChatGPT) |
 
-Search for your own Telegram token on the Telegram documentation at the following link:
+## Installation Notes
 
-https://core.telegram.org/bots#how-do-i-create-a-bot
-
-`PORT=5000`
-
-Port where will be running the API
-
-`TEST_CHAT_ID=XXXXXXXXX`
-
-Default chat id where you will receive bot messages
-
-`DATABASE_URL="XXXXXXXXXX"`
-
-This is the db you will have the db you use on the project
-
-`IG_USERNAME="XXXXXXXXXX"`
-`IG_PASSWORD="XXXXXXXXXX"`
-
-IG credentials for puppeteer scraper
-
-`APP_MODE="production"`
-
-Production mode activates the headless mode of puppeteer
-
-`SAVE_SCREENSHOTS="1"`
-
-This save the screenshots that were made by puppeteer
-
-`IMAGE_2_TEXT_SERVICE_URL="http://local-image-text-extractor-1:4000/"`
-
-This url connects image to text server
-
-## Installation
-
-We use Prisma as an ORM. You must install it. Prisma docs: https://www.prisma.io/
-
-**Requirements:**
-
-- Docker (install the MySQL extension: https://marketplace.visualstudio.com/items?itemName=formulahendry.vscode-mysql for VSCode)
-
-- Need to use ngrok to connect your local machine with telegram API
-
-- While running the database command, open another terminal and run npx prisma migrate dev to execute the migrations and run the DB seeders.
-
-- To run the seeders manually execute npx prisma db seed. (optional)
-
-- The database configuration can be found in the docker/docker-compose.yml file.
+- **ORM:** Prisma ([docs](https://www.prisma.io/))
+- **Docker:** Required for MySQL. The [MySQL VSCode extension](https://marketplace.visualstudio.com/items?itemName=formulahendry.vscode-mysql) is recommended for browsing the database.
+- **ngrok:** Required to expose your local API to Telegram's webhook system.
+- **Postman:** The [VSCode extension](https://marketplace.visualstudio.com/items?itemName=Postman.postman-for-vscode) is recommended for testing API routes locally.
 
 ## Running Tests
 
-To run tests, run the following command
-
 ```bash
-  npm run test
+npm run test
 ```
 
-We use the following libraries:
-
-[Sinon JS](https://sinonjs.org/)
-
-[Nock](https://github.com/nock/nock)
-
-[Jest JS](https://jestjs.io/)
+Testing libraries: [Jest](https://jestjs.io/) | [Sinon](https://sinonjs.org/) | [Nock](https://github.com/nock/nock)

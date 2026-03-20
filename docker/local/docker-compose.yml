@@ -1,19 +1,29 @@
 services:
-  express-bot-api:
-    image: express-api-bot
-    platform: linux/amd64
+  zentra-api:
+    image: zentra-api
+    container_name: local-zentra-api-1
     build:
-      context: ../../
-      dockerfile: docker/local/Dockerfile
-
-    environment:
-      - DATABASE_URL=mysql://root:d!YG19j06eXp@local-mysql-finance-bot-1:3306/finance-bot
+      context: ../../..
+      dockerfile: finance-bot/docker/local/Dockerfile
     ports:
-      - '4001:4001'
-    networks:
-      - finance-bot-network
-    depends_on:
-      - mysql-finance-bot
+      - "${PORT:-5001}:5001"
     volumes:
-      - ../../:/app
-      - /app/node_modules
+      - ../../../finance-bot:/app/finance-bot
+      - /app/finance-bot/node_modules
+      - /app/finance-bot/dist
+    environment:
+      - DATABASE_URL=mysql://root:d!YG19j06eXp@local-mysql-zentra-1:3306/zentra
+      - REDIS_URL=redis://redis-zentra:6379
+      - PORT=5001
+      - NODE_ENV=development
+      - IMAGE_2_TEXT_SERVICE_URL=http://zentra-image-extractor:4000
+    networks:
+      - zentra-network
+    depends_on:
+      - mysql-zentra
+      - redis-zentra
+
+networks:
+  zentra-network:
+    name: zentra-network
+    external: true

@@ -1,27 +1,91 @@
-datasource db {
-  url      = env("DATABASE_URL")
-  provider = "mysql"
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      Int                       @id @default(autoincrement())
+  firebaseId              String                    @unique @db.VarChar(128)
+  email                   String                    @unique @db.VarChar(255)
+  createdAt               DateTime                  @default(now())
+  aiSettings              AISettings?
+  categories              Category[]
+  keywords                Keyword[]
+  notificationLogs        NotificationLog[]
+  notificationPreferences NotificationPreference?
+  budgetFallbackRules     BudgetFallbackRule[]
+  paymentMethods          PaymentMethod[]
+  platformMonthlyRegister PlatformMonthlyRegister[]
+  pushSubscriptions       PushSubscription[]
+  shops                   Shop[]
+  suscriptions            Suscription[]
+  transactions            Transaction[]
+}
+
 model Category {
-  id              Int               @id @default(autoincrement())
-  name            String            @unique @db.VarChar(20)
-  description     String?           @db.VarChar(255)
-  amountLimit     Decimal?          @db.Decimal(10, 2)
-  transaction     Transaction[]
-  shopCategory    ShopCategory[]
-  categoryKeyword CategoryKeyword[]
+  id               Int               @id @default(autoincrement())
+  name             String            @db.VarChar(20)
+  description      String?           @db.VarChar(255)
+  icon             String?           @db.VarChar(50)
+  amountLimit      Decimal?          @db.Decimal(10, 2)
+  isCumulative     Boolean           @default(false)
+  userId           Int
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryKeyword  CategoryKeyword[]
+  notificationLogs NotificationLog[]
+  shopCategory     ShopCategory[]
+  transaction      Transaction[]
+  budgetPeriods    BudgetPeriod[]
+  sourceFallbackRules BudgetFallbackRule[] @relation("BudgetFallbackSource")
+  targetFallbackRules BudgetFallbackRule[] @relation("BudgetFallbackTarget")
+
+  @@unique([name, userId])
+  @@index([userId], map: "Category_userId_fkey")
+}
+
+model BudgetFallbackRule {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  sourceCategoryId Int
+  targetCategoryId Int
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceCategory   Category @relation("BudgetFallbackSource", fields: [sourceCategoryId], references: [id], onDelete: Cascade)
+  targetCategory   Category @relation("BudgetFallbackTarget", fields: [targetCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceCategoryId])
+  @@index([userId])
+  @@index([targetCategoryId])
+}
+
+model BudgetPeriod {
+  id         Int      @id @default(autoincrement())
+  categoryId Int
+  month      Int // 1-12
+  year       Int
+  carryOver  Decimal  @default(0) @db.Decimal(10, 2)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, year, month])
+  @@index([categoryId], map: "BudgetPeriod_categoryId_fkey")
 }
 
 model Keyword {
   id              Int               @id @default(autoincrement())
-  name            String            @unique @db.VarChar(100)
+  name            String            @db.VarChar(100)
   description     String?           @db.VarChar(255)
+  userId          Int
   categoryKeyword CategoryKeyword[]
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([name, userId])
+  @@index([userId], map: "Keyword_userId_fkey")
 }
 
 model CategoryKeyword {
@@ -32,13 +96,19 @@ model CategoryKeyword {
   keyword    Keyword  @relation(fields: [keywordId], references: [id])
 
   @@unique([categoryId, keywordId])
+  @@index([keywordId], map: "CategoryKeyword_keywordId_fkey")
 }
 
 model PaymentMethod {
   id                      Int                       @id @default(autoincrement())
-  name                    String                    @unique @db.VarChar(20)
-  transaction             Transaction[]
+  name                    String                    @db.VarChar(20)
+  userId                  Int
+  user                    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   platformMonthlyRegister PlatformMonthlyRegister[]
+  transaction             Transaction[]
+
+  @@unique([name, userId])
+  @@index([userId], map: "PaymentMethod_userId_fkey")
 }
 
 model Transaction {
@@ -46,77 +116,174 @@ model Transaction {
   date                   DateTime
   description            String?        @db.VarChar(255)
   amount                 Decimal?       @db.Decimal(10, 2)
-  originalCurrencyAmount Decimal?       @db.Decimal(10, 2)
-  referenceId            String?        @db.VarChar(30)
   currency               String         @db.VarChar(3)
   type                   String         @db.VarChar(10)
-  isMonthly              Boolean        @default(false)
-  isAnnually             Boolean        @default(false)
-  telegramFileIds        String?        @db.VarChar(255)
-  category               Category?      @relation(fields: [categoryId], references: [id])
   categoryId             Int?
-  shopId                 Int?
-  shop                   Shop?          @relation(fields: [shopId], references: [id])
-  paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
   paymentMethodId        Int?
+  isMonthly              Boolean        @default(false)
+  shopId                 Int?
+  referenceId            String?        @db.VarChar(30)
+  isAnnually             Boolean        @default(false)
+  originalCurrencyAmount Decimal?       @db.Decimal(10, 2)
+  telegramFileIds        String?        @db.VarChar(255)
   reviewed               Boolean        @default(false)
   reviewedAt             DateTime?
+  userId                 Int
+  category               Category?      @relation(fields: [categoryId], references: [id])
+  paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  shop                   Shop?          @relation(fields: [shopId], references: [id])
+  user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique(fields: [description, referenceId, date])
+  @@unique([description, referenceId, date, userId])
+  @@index([categoryId], map: "Transaction_categoryId_fkey")
+  @@index([paymentMethodId], map: "Transaction_paymentMethodId_fkey")
+  @@index([shopId], map: "Transaction_shopId_fkey")
+  @@index([userId], map: "Transaction_userId_fkey")
 }
 
 model PlatformMonthlyRegister {
   id              Int           @id @default(autoincrement())
   startAmount     Decimal       @db.Decimal(10, 2)
   endAmount       Decimal       @db.Decimal(10, 2)
-  year            Int           @db.Int
-  month           Int           @db.Int
+  year            Int
+  month           Int
   paymentMethodId Int
+  userId          Int
   paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([paymentMethodId, year, month])
+  @@unique([paymentMethodId, year, month, userId])
   @@index([paymentMethodId, year, month])
+  @@index([userId], map: "PlatformMonthlyRegister_userId_fkey")
 }
 
 model Suscription {
   id          Int     @id @default(autoincrement())
-  name        String  @unique @db.VarChar(20)
+  name        String  @db.VarChar(20)
   keyWord     String? @db.VarChar(20)
   paymentDate String? @db.VarChar(10)
   type        String  @db.VarChar(20)
+  userId      Int
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([name, userId])
+  @@index([userId], map: "Suscription_userId_fkey")
 }
 
 model Shop {
   id           Int            @id @default(autoincrement())
-  name         String         @unique @db.VarChar(20)
+  name         String         @db.VarChar(20)
   keyWord      String?        @db.VarChar(20)
+  userId       Int
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   shopCategory ShopCategory[]
   transaction  Transaction[]
+
+  @@unique([name, userId])
+  @@index([userId], map: "Shop_userId_fkey")
 }
 
 model ShopCategory {
   id         Int      @id @default(autoincrement())
   categoryId Int
   shopId     Int
-  category   Category @relation(fields: [categoryId], references: [id])
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   shop       Shop     @relation(fields: [shopId], references: [id])
+
+  @@index([categoryId], map: "ShopCategory_categoryId_fkey")
+  @@index([shopId], map: "ShopCategory_shopId_fkey")
 }
 
 model DailyExchangeRate {
   id           Int      @id @default(autoincrement())
   monitorPrice Decimal? @db.Decimal(10, 2)
   bcvPrice     Decimal? @db.Decimal(10, 2)
-  date         DateTime
+  date         DateTime @unique
   createdAt    DateTime @default(now())
+
+  @@index([date])
+}
+
+model ProcessedEmail {
+  id        Int      @id @default(autoincrement())
+  messageId String   @unique @db.VarChar(255)
+  from      String   @db.VarChar(255)
+  subject   String   @db.VarChar(500)
+  result    String?  @db.Text
+  createdAt DateTime @default(now())
 }
 
 model TaskQueue {
   id                Int       @id @default(autoincrement())
-  body              String?   @db.Text()
-  type              String    @db.VarChar(100)
-  status            String    @default("pending") @db.VarChar(15)
-  attemptsRemaining Int       @default(10) @db.Int
+  body              String?   @db.Text
   createdBy         String?   @db.VarChar(20)
   createdAt         DateTime  @default(now())
+  attemptsRemaining Int       @default(10)
+  status            String    @default("pending") @db.VarChar(15)
+  type              String    @db.VarChar(100)
   completedAt       DateTime?
+
+  @@index([type, status])
+}
+
+model NotificationPreference {
+  id                 Int      @id @default(autoincrement())
+  userId             Int      @unique
+  emailEnabled       Boolean  @default(true)
+  webPushEnabled     Boolean  @default(true)
+  thresholds         String   @default("[50, 70, 90]") @db.VarChar(50)
+  disabledCategories String?  @db.VarChar(255)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NotificationLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  categoryId   Int
+  channel      String   @db.VarChar(20)
+  threshold    Int
+  percentage   Decimal  @db.Decimal(5, 2)
+  status       String   @default("sent") @db.VarChar(10)
+  errorMessage String?  @db.Text
+  createdAt    DateTime @default(now())
+  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, categoryId, createdAt])
+  @@index([userId, channel, createdAt])
+  @@index([categoryId], map: "NotificationLog_categoryId_fkey")
+}
+
+model PushSubscription {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  endpoint  String    @db.Text
+  p256dh    String    @db.VarChar(100)
+  auth      String    @db.VarChar(50)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  expiresAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@unique([userId, endpoint(length: 191)])
+}
+
+model AISettings {
+  id         Int        @id @default(autoincrement())
+  userId     Int        @unique
+  aiEnabled  Boolean    @default(false)
+  aiProvider AIProvider @default(GEMINI)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum AIProvider {
+  GEMINI
+  CHATGPT
 }

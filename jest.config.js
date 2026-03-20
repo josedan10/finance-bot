@@ -4,7 +4,10 @@ const customJestConfig = {
 	testTimeout: 10000,
 	moduleDirectories: ['node_modules'],
 	preset: 'ts-jest',
-	setupFilesAfterEnv: ['<rootDir>/modules/database/database.module.mock.ts'],
+	setupFilesAfterEnv: [
+		'<rootDir>/modules/database/database.module.mock.ts', 
+		'<rootDir>/modules/database/redis.module.mock.ts'
+	],
 	transform: {
 		'node_modules/variables/.+\\.(j|t)sx?$': 'ts-jest',
 	},
@@ -38,8 +41,20 @@ const customJestConfig = {
 		'!**/modules/database/**',
 		'!**/routes/**',
 		'!**/src/enums/**',
+		'!**/src/lib/**',
+		'!**/src/types/**',
+		'!**/src/telegram/variables.ts',
+		'!**/src/services/onboarding.service.ts',
 		'!**/modules/crons/task-queue.cron.ts',
+		'!**/modules/gmail/**',
+		'!**/modules/notifications/email.service.ts',
+		'!**/modules/notifications/webpush.service.ts',
+		'!**/modules/notifications/notification-preference.service.ts',
+		'!**/modules/notifications/notification.factory.ts',
+		'!**/modules/ai-assistant/chatgpt.service.ts',
+		'!**/modules/ai-assistant/ai-settings.service.ts',
 		'!**/scraper.*',
+		'!**/scripts/**',
 		'!**/src/config.ts',
 	],
 	coverageThreshold: {

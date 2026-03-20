@@ -1,17 +1,14 @@
-FROM node:18
+FROM node:22
 
-WORKDIR /app
+WORKDIR /app/finance-bot
 
-COPY package*.json ./
+COPY finance-bot/package.json ./
 
 RUN npm install
 
-COPY . .
-# COPY prisma/schema.prisma ./prisma
+COPY finance-bot/ .
 RUN npx prisma generate
 
-# RUN npx prisma migrate dev
-
-EXPOSE 5000
+EXPOSE 5001
 
 CMD [ "npm", "run", "dev"]

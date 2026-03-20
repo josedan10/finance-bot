@@ -1,48 +1,50 @@
-import createError from 'http-errors';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import cookieParser from 'cookie-parser';
-import logger from 'morgan';
-import * as dotenv from 'dotenv';
+import morgan from 'morgan';
 import { RouterApp as indexRouter } from './routes';
 import { TaskQueueModuleService } from './modules/crons/task-queue.cron';
-
-dotenv.config();
+import logger from './src/lib/logger';
+import { AppError } from './src/lib/appError';
 
 const app = express();
 
-app.use(logger('dev'));
+const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
+app.use(morgan(morganFormat));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(logger('combined'));
 
 app.use('/', indexRouter);
 
-app.use('*', (req: Request, res: Response) => {
-	res.status(404).send("Sorry, can't find that!");
+app.use('*', (req: Request, res: Response, next: NextFunction) => {
+	next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 
-// catch 404 and forward to error handler
-app.use((req: Request, res: Response, next: NextFunction) => {
-	next(createError(404));
+type ErrorResponse = Error & {
+	statusCode?: number;
+	status?: string;
+};
+
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+	const normalizedError: ErrorResponse = err instanceof Error
+		? (err as ErrorResponse)
+		: (new Error('Unknown error') as ErrorResponse);
+	normalizedError.statusCode = normalizedError.statusCode || 500;
+	normalizedError.status = normalizedError.status || 'error';
+
+	logger.error('Unhandled error', { error: normalizedError.message, stack: normalizedError.stack });
+
+	res.status(normalizedError.statusCode).json({
+		status: normalizedError.status,
+		message: normalizedError.message,
+		...(req.app.get('env') === 'development' && { stack: normalizedError.stack }),
+	});
 });
 
-// error handler
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-app.use((err: any, req: Request, res: Response) => {
-	// set locals, only providing error in development
-	res.locals.message = err.message;
-	res.locals.error = req.app.get('env') === 'development' ? err : {};
-
-	// render the error page
-	res.status(err.status || 500);
-	res.send('An error occurred!');
-
-	console.error(err);
-});
-
-TaskQueueModuleService.start();
+if (process.env.NODE_ENV !== 'test') {
+	TaskQueueModuleService.start();
+}
 
 export default app;
