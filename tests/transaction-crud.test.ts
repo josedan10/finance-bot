@@ -136,6 +136,36 @@ describe('Transaction API (CRUD)', () => {
 		expect(prismaMock.transaction.deleteMany).not.toHaveBeenCalled();
 	});
 
+	it('should reject transaction creation when type is invalid instead of coercing it to debit', async () => {
+		const response = await request(app).post('/api/transactions').send({
+			date: '2026-03-20',
+			description: 'Broken payload',
+			amount: 10,
+			category: 'Food',
+			type: 'garbage',
+			currency: 'USD',
+		});
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: 'Missing or invalid required fields' });
+		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
+	});
+
+	it('should reject transaction creation when type casing is invalid', async () => {
+		const response = await request(app).post('/api/transactions').send({
+			date: '2026-03-20',
+			description: 'Case payload',
+			amount: 10,
+			category: 'Food',
+			type: 'Income',
+			currency: 'USD',
+		});
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: 'Missing or invalid required fields' });
+		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
+	});
+
 	it('should allow a simple category change without assigning a keyword', async () => {
 		const category = createCategory({ id: 3, userId: 1, name: 'Travel' } as never);
 		const paymentMethod = createPaymentMethod({ id: 5, userId: 1, name: 'Card' } as never);

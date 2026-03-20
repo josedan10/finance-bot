@@ -11,7 +11,7 @@ import { NotificationFactory } from '../modules/notifications/notification.modul
 import { NotificationPreferenceInput } from '../src/enums/notifications';
 import { config } from '../src/config';
 import logger from '../src/lib/logger';
-import { BaseTransactions } from '../modules/base-transactions/base-transactions.module';
+import { BaseTransactions, mapTransactionType } from '../modules/base-transactions/base-transactions.module';
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
@@ -197,6 +197,11 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			return res.status(400).json({ message: 'Missing required fields' });
 		}
 
+		const normalizedType = mapTransactionType(type);
+		if (!normalizedType) {
+			return res.status(400).json({ message: 'Missing or invalid required fields' });
+		}
+
 		// 1. Match Category
 		const matchedCategory = await prisma.category.findFirst({
 			where: { name: category, userId: req.user.id },
@@ -233,7 +238,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			description,
 			amount,
 			currency: currency || 'USD',
-			type: type === 'income' ? 'credit' : 'debit',
+			type: normalizedType,
 			categoryId: matchedCategory?.id,
 			paymentMethodId: finalPaymentMethodId,
 		});
@@ -281,6 +286,12 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 
 		if (balanceAffectingTransactions.length === 0) {
 			return res.status(201).json([]);
+		}
+
+		for (const transaction of balanceAffectingTransactions) {
+			if (!mapTransactionType(transaction.type)) {
+				return res.status(400).json({ message: 'Missing or invalid required fields' });
+			}
 		}
 
 		const dates = balanceAffectingTransactions.map((transaction) => new Date(transaction.date));
@@ -343,11 +354,16 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 		const createdTransactions = [];
 		for (const t of balanceAffectingTransactions) {
 			try {
+				const normalizedType = mapTransactionType(t.type);
+				if (!normalizedType) {
+					return res.status(400).json({ message: 'Missing or invalid required fields' });
+				}
+
 				const existingDuplicate = BaseTransactions.findDuplicateInCandidates({
 					userId: req.user.id,
 					amount: t.amount,
 					date: new Date(t.date),
-					type: t.type === 'income' ? 'credit' : 'debit',
+					type: normalizedType,
 					currency: t.currency || 'USD',
 					description: t.description,
 					referenceId: t.referenceId,
@@ -370,7 +386,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 					description: t.description,
 					amount: t.amount,
 					currency: t.currency || 'USD',
-					type: t.type === 'income' ? 'credit' : 'debit',
+					type: normalizedType,
 					categoryId: categoryMap.get(t.category),
 					paymentMethodId: t.paymentMethod ? pmMap.get(t.paymentMethod) : defaultPmId,
 					referenceId: t.referenceId,

@@ -24,6 +24,12 @@ Handles the conversion of Venezuelan Bolívares (VES) to USD using historical ex
 Maps transaction descriptions to user categories using a keyword database.
 - **Optimization**: Uses Redis (`RedisModule`) to cache user keywords, drastically reducing database load during bulk CSV imports or heavy email processing.
 
+### 4. Transaction Type Normalization (`mapTransactionType`)
+Normalizes accepted transaction type inputs before they reach persistence logic.
+- **Accepted external values**: `income`, `expense`
+- **Accepted internal values**: `credit`, `debit`
+- **Safety rule**: Invalid or misspelled values are rejected instead of being silently coerced to `debit`, protecting financial data integrity.
+
 ## Interactions
 - **Database (`PrismaModule`)**: For all CRUD operations.
 - **Crons (`ExchangeCurrencyCronServices`)**: To fetch historical rates.

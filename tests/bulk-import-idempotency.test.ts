@@ -70,8 +70,8 @@ describe('Bulk Import Idempotency', () => {
 			.mockResolvedValueOnce(tx2);
 
 		const transactions = [
-			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food', referenceId: 'ref-1' },
-			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food', referenceId: 'ref-2' },
+			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food', type: 'expense', referenceId: 'ref-1' },
+			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food', type: 'expense', referenceId: 'ref-2' },
 		];
 
 		const response = await request(app)
@@ -100,7 +100,7 @@ describe('Bulk Import Idempotency', () => {
 		prismaMock.paymentMethod.findFirst.mockResolvedValue(pm);
 
 		const transactions = [
-			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food' }
+			{ date: '2026-03-18', description: 'Lunch', amount: 15, category: 'Food', type: 'expense' }
 		];
 
 		// --- FIRST UPLOAD ---
@@ -172,5 +172,46 @@ describe('Bulk Import Idempotency', () => {
 				}),
 			})
 		);
+	});
+
+	it('should reject bulk import when a transaction type is invalid', async () => {
+		const response = await request(app)
+			.post('/api/transactions/bulk')
+			.send({
+				transactions: [
+					{
+						date: '2026-03-19',
+						description: 'Invalid type row',
+						amount: 20,
+						category: 'Food',
+						type: 'garbage',
+					},
+				],
+			});
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: 'Missing or invalid required fields' });
+		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
+		expect(prismaMock.category.findMany).not.toHaveBeenCalled();
+	});
+
+	it('should reject bulk import when a transaction type casing is invalid', async () => {
+		const response = await request(app)
+			.post('/api/transactions/bulk')
+			.send({
+				transactions: [
+					{
+						date: '2026-03-19',
+						description: 'Case invalid row',
+						amount: 20,
+						category: 'Food',
+						type: 'Income',
+					},
+				],
+			});
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: 'Missing or invalid required fields' });
+		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
 	});
 });
