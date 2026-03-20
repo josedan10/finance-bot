@@ -16,6 +16,7 @@ services:
       - REDIS_URL=redis://redis-zentra:6379
       - PORT=5001
       - NODE_ENV=development
+      - IMAGE_2_TEXT_SERVICE_URL=http://zentra-image-extractor:4000
     networks:
       - zentra-network
     depends_on:

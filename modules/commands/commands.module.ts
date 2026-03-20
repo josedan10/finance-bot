@@ -70,7 +70,8 @@ class CommandsModule {
 			},
 			registerTransaction: async (input: unknown, userId: number) => {
 				const { images, telegramFileIds, commandArgs } = input as RegisterTransactionInput;
-				const texts = await Image2TextService.extractTextFromImages(images);
+				const extractedResults = await Image2TextService.extractTextFromImages(images);
+				const texts = extractedResults.map((result) => result.text);
 				const { transaction, category } = await BaseTransactions.registerTransactionFromImages(
 					texts,
 					telegramFileIds,

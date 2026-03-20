@@ -10,6 +10,25 @@ import {
   isBeloWithdrawDescription,
 } from '../../src/helpers/belo-withdraw.helper';
 
+function formatMetadataDateTime(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  const normalized = value.trim().replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(' ', 'T');
+  const parsed = new Date(normalized);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const hours = String(parsed.getHours()).padStart(2, '0');
+  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 async function findMatchingBeloWithdraw(userId: number, parsed: {
   amount: number;
   date: string;
@@ -85,30 +104,51 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // 2. Parse text into structured transaction data
-    const textLines = extractedTexts[0].split('\n');
-    const parsed = await BaseTransactions.parseTransactionFromText(textLines, req.user.id);
+    const extractedReceipt = extractedTexts[0];
+    const textLines = extractedReceipt.text.split('\n');
+    let parsed: Awaited<ReturnType<typeof BaseTransactions.parseTransactionFromText>> | null = null;
+    let duplicate = null;
+    let beloWithdrawMatch = null;
+    let requiresManualReview = true;
+    let parseWarning: string | null = null;
 
-    // 3. Check for duplicates
-    const duplicate = await BaseTransactions.findDuplicate({
-      userId: req.user.id,
-      amount: parsed.amount,
-      date: new Date(parsed.date),
-      type: parsed.type,
-      currency: parsed.currency,
-      description: parsed.description
-    });
-    const beloWithdrawMatch = await findMatchingBeloWithdraw(req.user.id, {
-      amount: parsed.amount,
-      date: parsed.date,
-      currency: parsed.currency,
-    });
+    try {
+      parsed = await BaseTransactions.parseTransactionFromText(textLines, req.user.id);
+      requiresManualReview = false;
+
+      duplicate = await BaseTransactions.findDuplicate({
+        userId: req.user.id,
+        amount: parsed.amount,
+        date: new Date(parsed.date),
+        type: parsed.type,
+        currency: parsed.currency,
+        description: parsed.description
+      });
+
+      beloWithdrawMatch = await findMatchingBeloWithdraw(req.user.id, {
+        amount: parsed.amount,
+        date: parsed.date,
+        currency: parsed.currency,
+      });
+    } catch (parseError) {
+      parseWarning = parseError instanceof Error ? parseError.message : 'Could not parse receipt fields automatically';
+      logger.warn('Receipt OCR extracted text but automatic parsing needs manual review', {
+        userId: req.user.id,
+        warning: parseWarning,
+      });
+    }
 
     res.status(200).json({
-      ...parsed,
+      ...(parsed ?? {}),
       isDuplicate: !!duplicate,
       duplicateId: duplicate?.id,
       beloWithdrawMatch,
+      rawText: extractedReceipt.text,
+      textLines,
+      requiresManualReview,
+      parseWarning,
+      imageMetadata: extractedReceipt.metadata,
+      metadataDateTimeSuggestion: formatMetadataDateTime(extractedReceipt.metadata?.capturedAt),
     });
   } catch (error) {
     logger.error('Receipt scanning failed', { 
@@ -116,11 +156,6 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       error: error instanceof Error ? error.message : 'Unknown error' 
     });
     
-    if (error instanceof Error && error.message === 'Amount not found') {
-      res.status(422).json({ message: 'Could not find a valid amount in the receipt' });
-      return;
-    }
-
     res.status(500).json({ message: 'Failed to process receipt' });
   }
 }

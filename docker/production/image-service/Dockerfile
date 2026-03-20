@@ -1,14 +1,24 @@
-FROM python:3.11
+FROM python:3.12-slim
 
-ENV PYHTONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    EASYOCR_MODULE_PATH=/root/.EasyOCR
+
 RUN apt-get update \
-  && apt-get -y install tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa -y \
-  && apt-get -y install ffmpeg libsm6 libxext6 -y
+  && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libgl1 \
+    libgomp1 \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY . .
 
-RUN pip install -r requirements.txt
+RUN pip install --upgrade pip \
+  && pip install -r requirements.txt \
+  && mkdir -p "$EASYOCR_MODULE_PATH/model" \
+  && python -c "import easyocr; easyocr.Reader(['en','es'], gpu=False, model_storage_directory='$EASYOCR_MODULE_PATH')"
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4000", "--reload"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4000"]

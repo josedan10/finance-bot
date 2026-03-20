@@ -86,6 +86,8 @@ POST ${your_ngrok_url}/telegram/setWebhook
 | `npm run docker:start-db` | Start only the database |
 | `npm run docker:image-service` | Start only the image service |
 
+> The image service now uses **EasyOCR**. After OCR dependency changes, rebuild the image service container so the new model/runtime is used. The first startup can take longer while model assets are prepared.
+
 ### Production
 
 | Command | Description |
@@ -130,7 +132,7 @@ The API starts on the port defined in your `.env` file (default `5000`).
 | `IG_PASSWORD` | `pass` | Instagram password for puppeteer scraper |
 | `APP_MODE` | `production` | Enables headless mode for puppeteer |
 | `SAVE_SCREENSHOTS` | `1` | Save puppeteer screenshots |
-| `IMAGE_2_TEXT_SERVICE_URL` | `http://local-image-text-extractor-1:4000/` | OCR service URL |
+| `IMAGE_2_TEXT_SERVICE_URL` | `http://zentra-image-extractor:4000/` | OCR service URL |
 | `GOOGLE_AI_API_KEY` | `AIzaSy...` | API Key for Google Gemini |
 | `OPENAI_API_KEY` | `sk-...` | API Key for OpenAI (ChatGPT) |
 

@@ -13,6 +13,7 @@ services:
       - REDIS_URL=redis://zentra-redis-production:6379
       - PORT=5000
       - NODE_ENV=production
+      - IMAGE_2_TEXT_SERVICE_URL=http://zentra-image-extractor-production:4000
     networks:
       - zentra-production-network
     depends_on:
