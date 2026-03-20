@@ -50,6 +50,23 @@ type DuplicateLookupInput = {
 	referenceId?: string;
 };
 
+export function mapTransactionType(type: unknown): 'credit' | 'debit' | null {
+	if (typeof type !== 'string') {
+		return null;
+	}
+
+	switch (type.trim()) {
+		case 'income':
+		case 'credit':
+			return 'credit';
+		case 'expense':
+		case 'debit':
+			return 'debit';
+		default:
+			return null;
+	}
+}
+
 class BaseTransactionsModule {
 	private _db: PrismaClient;
 	constructor() {
@@ -98,6 +115,11 @@ class BaseTransactionsModule {
 			const sampleData =
 				'amount=100; desc=My description; method=Mercantil Venezuela; type=debit; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
 			throw new Error(`Invalid data: ${data}... Try with ${sampleData}`);
+		}
+
+		const normalizedType = mapTransactionType(type);
+		if (!normalizedType) {
+			throw new Error(`Invalid transaction type: ${type}`);
 		}
 
 		if (currency && currency === 'VES') {
@@ -156,7 +178,7 @@ class BaseTransactionsModule {
 			userId,
 			amount: amountInUSD ?? Number(amount),
 			description,
-			type,
+			type: normalizedType,
 			date: date ? dayjs(date).toDate() : dayjs().toDate(),
 			currency: currency || 'USD',
 			originalCurrencyAmount: currency !== 'USD' ? Number(amount) : null,

@@ -1,4 +1,4 @@
-import { BaseTransactions } from './base-transactions.module';
+import { BaseTransactions, mapTransactionType } from './base-transactions.module';
 import Sinon from 'sinon';
 import { expect, jest } from '@jest/globals';
 import {
@@ -190,6 +190,24 @@ describe('BaseTransactions', () => {
 				})
 			}));
 		});
+	});
+});
+
+describe('mapTransactionType', () => {
+	it('should map api and internal income types to credit', () => {
+		expect(mapTransactionType('income')).toBe('credit');
+		expect(mapTransactionType('credit')).toBe('credit');
+	});
+
+	it('should map api and internal expense types to debit', () => {
+		expect(mapTransactionType('expense')).toBe('debit');
+		expect(mapTransactionType('debit')).toBe('debit');
+	});
+
+	it('should reject invalid or differently-cased values', () => {
+		expect(mapTransactionType('garbage')).toBeNull();
+		expect(mapTransactionType('Income')).toBeNull();
+		expect(mapTransactionType(undefined)).toBeNull();
 	});
 });
 
