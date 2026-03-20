@@ -10,6 +10,7 @@ import {
 import { prismaMock } from '../database/database.module.mock';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ExchangeCurrencyCronServices } from '../crons/exchange-currency/exchange-currency.service';
+import { mockRedisClient } from '../database/redis.module.mock';
 
 const sandbox = Sinon.createSandbox();
 
@@ -23,6 +24,7 @@ describe('BaseTransactions', () => {
 		sandbox.reset();
 		sandbox.restore();
 		sandbox.resetHistory();
+		jest.clearAllMocks();
 	});
 	// Tests that registerManualTransactions successfully registers a manual transaction with valid data
 	it('should successfully register a manual transaction with valid data', async () => {
@@ -49,6 +51,12 @@ describe('BaseTransactions', () => {
 		expect(spyPaymentMethodFindFirst).toHaveBeenCalledTimes(1);
 		expect(spyTransactionCreate).toHaveBeenCalledTimes(1);
 		expect(spyCategoryFindFirst).toHaveBeenCalledTimes(1);
+		expect(mockRedisClient.set).toHaveBeenCalledWith(
+			'payment_method:1:Mercantil Venezuela',
+			JSON.stringify(paymentMethod),
+			{ EX: 3600 }
+		);
+		expect(mockRedisClient.set).toHaveBeenCalledWith('category:1:Entertaiment', JSON.stringify(category), { EX: 3600 });
 	});
 
 	// New tests for findDuplicate
@@ -132,6 +140,28 @@ describe('BaseTransactions', () => {
 			});
 
 			expect(result).toBeNull();
+		});
+	});
+
+	describe('findCategoryByWords', () => {
+		it('should cache keyword-category matches using node-redis v5 options syntax', async () => {
+			mockRedisClient.get.mockResolvedValueOnce(null);
+			const category = await createCategory({ id: 2, name: 'Food' });
+			prismaMock.keyword.findMany.mockResolvedValue([
+				{
+					name: 'pizza',
+					categoryKeyword: [{ category }],
+				},
+			] as any);
+
+			const result = await (BaseTransactions as any).findCategoryByWords(['Pizza'], 1);
+
+			expect(result).toEqual(category);
+			expect(mockRedisClient.set).toHaveBeenCalledWith(
+				expect.stringMatching(/^category_keywords:1:/),
+				JSON.stringify(category),
+				{ EX: 3600 * 24 }
+			);
 		});
 	});
 

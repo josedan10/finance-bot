@@ -152,7 +152,7 @@ if (cached) {
 }
 
 const result = await databaseCall();
-await redisClient.set(cacheKey, JSON.stringify(result), 3600); // 1 hour TTL
+await redisClient.set(cacheKey, JSON.stringify(result), { EX: 3600 }); // 1 hour TTL
 
 return result;
 ```
@@ -219,7 +219,7 @@ cron.schedule('0 9 * * *', async () => {
   const lockKey = 'cron:daily-task';
   
   // Acquire lock
-  const locked = await redisClient.set(lockKey, '1', 'NX', 'EX', 3600);
+  const locked = await redisClient.set(lockKey, '1', { NX: true, EX: 3600 });
   if (!locked) {
     logger.info('Daily task already running, skipping');
     return;
