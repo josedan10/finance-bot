@@ -108,6 +108,21 @@ npm run dev
 
 The API starts on the port defined in your `.env` file (default `5000`).
 
+## Maintenance Scripts
+
+### List Firebase users
+
+Use the script below to inspect Firebase users with minimal logging:
+
+```bash
+npx ts-node scripts/list-firebase-users.ts
+```
+
+Notes:
+- the script reuses the shared Firebase Admin bootstrap from `src/lib/firebase.ts`
+- it logs only `uid`, `email`, and `disabled`
+- it exits with code `1` if Firebase initialization or user listing fails
+
 ## API Endpoints
 
 | Method | Path | Description |
