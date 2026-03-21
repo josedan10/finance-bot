@@ -1,0 +1,201 @@
+services:
+  traefik:
+    image: traefik:v3.5
+    container_name: zentra-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL:-admin@zentra-app.pro}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --ping=true
+      - --accesslog=true
+      - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    healthcheck:
+      test: ['CMD', 'traefik', 'healthcheck', '--ping']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - zentra-production-network
+
+  mysql-zentra-production:
+    image: mysql:8.0
+    container_name: zentra-mysql-production
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-zentra}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent',
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - zentra-production-network
+
+  redis-zentra-production:
+    image: redis:7-alpine
+    container_name: zentra-redis-production
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - zentra-production-network
+
+  zentra-image-extractor-production:
+    image: zentra-image-extractor-production
+    container_name: zentra-image-extractor-production
+    build:
+      context: ./services/image_recognition_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      OCR_MAX_IMAGE_DIMENSION: ${OCR_MAX_IMAGE_DIMENSION:-1600}
+      EASYOCR_MODULE_PATH: /root/.EasyOCR
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health', timeout=5).status == 200 else 1)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - zentra-production-network
+
+  zentra-api-production:
+    image: zentra-api-production
+    container_name: zentra-api-production
+    build:
+      context: .
+      dockerfile: docker/production/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql-zentra-production:
+        condition: service_healthy
+      redis-zentra-production:
+        condition: service_healthy
+      zentra-image-extractor-production:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-change-me}@zentra-mysql-production:3306/${MYSQL_DATABASE:-zentra}
+      REDIS_URL: redis://zentra-redis-production:6379
+      PORT: 5000
+      NODE_ENV: production
+      APP_MODE: production
+      IMAGE_2_TEXT_SERVICE_URL: http://zentra-image-extractor-production:4000
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TEST_CHAT_ID: ${TEST_CHAT_ID:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@zentra-app.pro}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.zentra-api.rule=Host(`${API_DOMAIN:-api.zentra-app.pro}`)
+      - traefik.http.routers.zentra-api.entrypoints=websecure
+      - traefik.http.routers.zentra-api.tls=true
+      - traefik.http.routers.zentra-api.tls.certresolver=letsencrypt
+      - traefik.http.services.zentra-api.loadbalancer.server.port=5000
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:5000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - zentra-production-network
+
+  zentra-ui-production:
+    image: zentra-ui-production
+    container_name: zentra-ui-production
+    build:
+      context: ../finance-bot-ui
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.zentra-app.pro}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.zentra-app.pro}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.zentra-ui.rule=Host(`${APP_DOMAIN:-zentra-app.pro}`)
+      - traefik.http.routers.zentra-ui.entrypoints=websecure
+      - traefik.http.routers.zentra-ui.tls=true
+      - traefik.http.routers.zentra-ui.tls.certresolver=letsencrypt
+      - traefik.http.services.zentra-ui.loadbalancer.server.port=8080
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:8080', (res) => process.exit(res.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - zentra-production-network
+
+networks:
+  zentra-production-network:
+    name: zentra-production-network
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  traefik_letsencrypt:

@@ -35,6 +35,12 @@ async def preload_easyocr_models():
     get_reader()
 
 
+@app.get("/health")
+async def health():
+    get_reader()
+    return {"status": "ok"}
+
+
 def extract_image_metadata(img: Image.Image) -> dict:
     metadata: dict[str, str | None] = {
         "capturedAt": None,
