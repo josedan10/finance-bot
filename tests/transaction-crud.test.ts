@@ -205,6 +205,41 @@ describe('Transaction API (CRUD)', () => {
 		expect(prismaMock.categoryKeyword.upsert).not.toHaveBeenCalled();
 	});
 
+	it('should return 404 when categorizing a non-existent transaction id', async () => {
+		prismaMock.transaction.findFirst.mockResolvedValue(null);
+
+		const response = await request(app)
+			.patch('/api/transactions/99999/categorize')
+			.send({ category: 'Travel' });
+
+		expect(response.status).toBe(404);
+		expect(response.body).toEqual({ message: 'Transaction not found' });
+		expect(prismaMock.category.findFirst).not.toHaveBeenCalled();
+		expect(prismaMock.category.create).not.toHaveBeenCalled();
+		expect(prismaMock.transaction.update).not.toHaveBeenCalled();
+	});
+
+	it('should return 404 when categorizing a transaction owned by another user', async () => {
+		prismaMock.transaction.findFirst.mockResolvedValue(null);
+
+		const response = await request(app)
+			.patch('/api/transactions/77/categorize')
+			.send({ category: 'Bills & Utilities' });
+
+		expect(response.status).toBe(404);
+		expect(response.body).toEqual({ message: 'Transaction not found' });
+		expect(prismaMock.transaction.findFirst).toHaveBeenCalledWith({
+			where: { id: 77, userId: 1 },
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+		expect(prismaMock.category.findFirst).not.toHaveBeenCalled();
+		expect(prismaMock.category.create).not.toHaveBeenCalled();
+		expect(prismaMock.transaction.update).not.toHaveBeenCalled();
+	});
+
 	it('should propagate categorization to matching transactions when requested', async () => {
 		const category = createCategory({ id: 4, userId: 1, name: 'Entertainment' } as never);
 		const paymentMethod = createPaymentMethod({ id: 6, userId: 1, name: 'Cash' } as never);
