@@ -97,6 +97,42 @@ POST ${your_ngrok_url}/telegram/setWebhook
 | `npm run docker:migrations` | Run Prisma migrations in the production container |
 | `./deploy.sh production` | Full production deploy script |
 
+### DigitalOcean + Traefik production setup
+
+The production deployment now supports a single `docker-compose.prod.yml` stack with:
+
+- `traefik` as the public reverse proxy
+- automatic Let's Encrypt certificates via HTTP-01 challenge
+- `api.zentra-app.pro` routed to the backend API
+- `zentra-app.pro` routed to the Next.js frontend
+- health checks and `unless-stopped` restart policies for API, UI, OCR, MySQL, Redis, and Traefik
+
+Files involved:
+
+- `docker-compose.prod.yml`
+- `.github/workflows/deploy.yml`
+- `scripts/deploy-production.sh`
+- `.env.production.example`
+
+Typical server flow:
+
+```bash
+cp .env.production.example .env.production
+chmod +x scripts/deploy-production.sh
+./scripts/deploy-production.sh
+```
+
+Required production environment values include:
+
+- `MYSQL_ROOT_PASSWORD`
+- `TELEGRAM_BOT_TOKEN`
+- Firebase Admin credentials for the backend
+- `NEXT_PUBLIC_FIREBASE_*` values for the frontend build
+- `LETSENCRYPT_EMAIL`
+
+The deploy workflow expects the backend repo at `/opt/zentra/finance-bot` and the frontend repo at
+`/opt/zentra/finance-bot-ui` by default. Override this with the GitHub Actions secret `DO_APP_ROOT` if needed.
+
 ## Running Without Docker
 
 Start the database separately, then run the API locally:
