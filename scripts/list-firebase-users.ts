@@ -1,6 +1,7 @@
 import type { auth } from 'firebase-admin';
 
 import { firebaseAdmin } from '../src/lib/firebase';
+import logger from '../src/lib/logger';
 
 export interface SafeFirebaseUserLog {
 	uid: string;
@@ -20,7 +21,7 @@ export function toSafeFirebaseUserLog(userRecord: SafeUserRecordInput): SafeFire
 
 export async function listAllUsers(
 	authClient: Pick<auth.Auth, 'listUsers'>,
-	log: (message: string, payload?: unknown) => void = console.log,
+	log: (message: string, payload?: unknown) => void = (message, payload) => logger.info(message, payload),
 	nextPageToken?: string
 ): Promise<void> {
 	const result = await authClient.listUsers(100, nextPageToken);
@@ -41,11 +42,12 @@ export async function main(
 		errorLog?: (message: string, error?: unknown) => void;
 	} = {}
 ): Promise<number> {
-	const authClient = dependencies.authClient ?? firebaseAdmin.auth();
-	const log = dependencies.log ?? console.log;
-	const errorLog = dependencies.errorLog ?? console.error;
+	const log = dependencies.log ?? ((message: string, payload?: unknown) => logger.info(message, payload));
+	const errorLog =
+		dependencies.errorLog ?? ((message: string, error?: unknown) => logger.error(message, { error }));
 
 	try {
+		const authClient = dependencies.authClient ?? firebaseAdmin.auth();
 		await listAllUsers(authClient, log);
 		log('Finished listing users.');
 		return 0;
@@ -56,7 +58,12 @@ export async function main(
 }
 
 if (require.main === module) {
-	main().then((exitCode) => {
-		process.exit(exitCode);
-	});
+	main()
+		.then((exitCode) => {
+			process.exit(exitCode);
+		})
+		.catch((error) => {
+			logger.error('Error listing users:', { error: error instanceof Error ? error.message : error });
+			process.exit(1);
+		});
 }
