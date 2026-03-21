@@ -25,5 +25,6 @@
 ## Important Notes/Gotchas
 - **Implicit Currency Conversion:** POST `/api/transactions` automatically converts VES amounts to USD using the latest available exchange rate if not already provided.
 - **Strict Type Validation:** Transaction creation endpoints reject invalid `type` values with `400 Bad Request` instead of coercing unknown values into expenses. Accepted external values are `income` and `expense`.
+- **Categorize Missing Transactions:** `PATCH /api/transactions/:id/categorize` now returns `404 Not Found` when the transaction does not exist or does not belong to the authenticated user, instead of failing with a generic `500`.
 - **Backward Compatibility:** Some endpoints (like `/api/categories/keywords`) are kept for compatibility with older frontend versions.
 - **Global Error Handling:** While most routes have local error handling, unhandled exceptions are generally caught by the main Express app wrapper.

@@ -457,17 +457,6 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			return res.status(400).json({ message: 'Keyword is required to apply categorization to matching transactions' });
 		}
 
-		// Find or create the category for this user
-		let matchedCategory = await prisma.category.findFirst({
-			where: { name: category, userId: req.user.id },
-		});
-
-		if (!matchedCategory) {
-			matchedCategory = await prisma.category.create({
-				data: { name: category, userId: req.user.id },
-			});
-		}
-
 		const existingTransaction = await prisma.transaction.findFirst({
 			where: { id, userId: req.user.id },
 			include: {
@@ -478,6 +467,17 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 
 		if (!existingTransaction) {
 			return res.status(404).json({ message: 'Transaction not found' });
+		}
+
+		// Find or create the category for this user
+		let matchedCategory = await prisma.category.findFirst({
+			where: { name: category, userId: req.user.id },
+		});
+
+		if (!matchedCategory) {
+			matchedCategory = await prisma.category.create({
+				data: { name: category, userId: req.user.id },
+			});
 		}
 
 		// Update the transaction
