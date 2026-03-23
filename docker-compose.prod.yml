@@ -149,47 +149,6 @@ services:
     networks:
       - zentra-production-network
 
-  zentra-ui-production:
-    image: zentra-ui-production
-    container_name: zentra-ui-production
-    build:
-      context: ../finance-bot-ui
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.zentra-app.pro}
-        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
-        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
-        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
-        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
-        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
-        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      PORT: 8080
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.zentra-app.pro}
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.zentra-ui.rule=Host(`${APP_DOMAIN:-zentra-app.pro}`)
-      - traefik.http.routers.zentra-ui.entrypoints=websecure
-      - traefik.http.routers.zentra-ui.tls=true
-      - traefik.http.routers.zentra-ui.tls.certresolver=letsencrypt
-      - traefik.http.services.zentra-ui.loadbalancer.server.port=8080
-    healthcheck:
-      test:
-        [
-          'CMD',
-          'node',
-          '-e',
-          "require('http').get('http://127.0.0.1:8080', (res) => process.exit(res.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    networks:
-      - zentra-production-network
-
 networks:
   zentra-production-network:
     name: zentra-production-network

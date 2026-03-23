@@ -13,11 +13,14 @@ jobs:
     steps:
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USERNAME }}
           key: ${{ secrets.DO_SSH_KEY }}
           script_stop: true
+          envs: OP_SERVICE_ACCOUNT_TOKEN
           script: |
             set -euo pipefail
 
@@ -27,7 +30,6 @@ jobs:
             fi
 
             BACKEND_DIR="$APP_ROOT/finance-bot"
-            FRONTEND_DIR="$APP_ROOT/finance-bot-ui"
 
             mkdir -p "$APP_ROOT"
 
@@ -35,16 +37,7 @@ jobs:
               git clone https://github.com/josedan10/finance-bot.git "$BACKEND_DIR"
             fi
 
-            if [ ! -d "$FRONTEND_DIR/.git" ]; then
-              git clone https://github.com/josedan10/finance-bot-ui.git "$FRONTEND_DIR"
-            fi
-
             cd "$BACKEND_DIR"
-            git fetch origin master
-            git checkout master
-            git pull --ff-only origin master
-
-            cd "$FRONTEND_DIR"
             git fetch origin master
             git checkout master
             git pull --ff-only origin master

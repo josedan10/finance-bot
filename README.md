@@ -104,8 +104,9 @@ The production deployment now supports a single `docker-compose.prod.yml` stack 
 - `traefik` as the public reverse proxy
 - automatic Let's Encrypt certificates via HTTP-01 challenge
 - `api.zentra-app.pro` routed to the backend API
-- `zentra-app.pro` routed to the Next.js frontend
-- health checks and `unless-stopped` restart policies for API, UI, OCR, MySQL, Redis, and Traefik
+- health checks and `unless-stopped` restart policies for API, OCR, MySQL, Redis, and Traefik
+
+The frontend is no longer deployed from this stack. At this stage it is deployed separately on **Vercel**.
 
 Files involved:
 
@@ -122,16 +123,34 @@ chmod +x scripts/deploy-production.sh
 ./scripts/deploy-production.sh
 ```
 
+### Using 1Password as the production secrets manager
+
+This deployment flow supports `op://` secret references inside `finance-bot/.env.production`.
+
+Recommended setup:
+
+1. Install the 1Password CLI (`op`) on the droplet.
+2. Create a 1Password Service Account with access to the production vault(s).
+3. Add the service account token as the GitHub Actions secret `OP_SERVICE_ACCOUNT_TOKEN`.
+4. Replace plaintext secrets in `finance-bot/.env.production` with 1Password references like:
+
+```env
+MYSQL_ROOT_PASSWORD=op://zentra-prod/mysql/root_password
+TELEGRAM_BOT_TOKEN=op://zentra-prod/backend/telegram_bot_token
+```
+
+At deploy time, `scripts/deploy-production.sh` detects `op://` references and resolves them with
+`op inject` into a temporary env file before Docker Compose runs.
+
 Required production environment values include:
 
 - `MYSQL_ROOT_PASSWORD`
 - `TELEGRAM_BOT_TOKEN`
 - Firebase Admin credentials for the backend
-- `NEXT_PUBLIC_FIREBASE_*` values for the frontend build
 - `LETSENCRYPT_EMAIL`
 
-The deploy workflow expects the backend repo at `/opt/zentra/finance-bot` and the frontend repo at
-`/opt/zentra/finance-bot-ui` by default. Override this with the GitHub Actions secret `DO_APP_ROOT` if needed.
+The deploy workflow expects the backend repo at `/opt/zentra/finance-bot` by default.
+Override this with the GitHub Actions secret `DO_APP_ROOT` if needed.
 
 ## Running Without Docker
 
