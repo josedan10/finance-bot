@@ -59,11 +59,14 @@ jobs:
               print(f"{key}={shlex.quote(os.environ[key])}")
           PYENV
 
-          {
-            printf 'APP_ENV_FILE_B64<<__ENV__\n'
-            base64 < /tmp/zentra.env.production | tr -d '\n'
-            printf '\n__ENV__\n'
-          } >> "$GITHUB_ENV"
+      - name: Upload production environment file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.DO_HOST }}
+          username: ${{ env.DO_USERNAME }}
+          key_path: /tmp/do_deploy_key
+          source: /tmp/zentra.env.production
+          target: /tmp/
 
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
@@ -71,7 +74,6 @@ jobs:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
           key_path: /tmp/do_deploy_key
-          envs: APP_ENV_FILE_B64
           script: |
             set -euo pipefail
 
@@ -95,7 +97,7 @@ jobs:
 
             cd "$BACKEND_DIR"
 
-            printf "%s" "$APP_ENV_FILE_B64" | base64 --decode > "$BACKEND_DIR/.env.production"
+            cp /tmp/zentra.env.production "$BACKEND_DIR/.env.production"
             chmod 600 "$BACKEND_DIR/.env.production"
 
             bash scripts/deploy-production.sh
