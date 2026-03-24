@@ -18,6 +18,9 @@ jobs:
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Install 1Password CLI beta
         uses: 1password/install-cli-action@v2
         with:
