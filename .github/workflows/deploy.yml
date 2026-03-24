@@ -36,8 +36,8 @@ jobs:
 
       - name: Write SSH private key
         run: |
-          printf "%s" "$DO_SSH_KEY_B64" | tr -d "[:space:]" | base64 --decode > /tmp/do_deploy_key
-          chmod 600 /tmp/do_deploy_key
+          printf "%s" "$DO_SSH_KEY_B64" | tr -d "[:space:]" | base64 --decode > .github/do_deploy_key
+          chmod 600 .github/do_deploy_key
 
       - name: Render production environment file from 1Password Environment
         run: |
@@ -64,7 +64,7 @@ jobs:
         with:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
-          key_path: /tmp/do_deploy_key
+          key_path: .github/do_deploy_key
           source: .github/zentra.env.production
           target: /tmp/
 
@@ -73,7 +73,7 @@ jobs:
         with:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
-          key_path: /tmp/do_deploy_key
+          key_path: .github/do_deploy_key
           script: |
             set -euo pipefail
 
