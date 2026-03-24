@@ -33,7 +33,7 @@ jobs:
 
       - name: Write SSH private key
         run: |
-          printf "%s" "$DO_SSH_KEY_B64" | base64 --decode > /tmp/do_deploy_key
+          printf "%s" "$DO_SSH_KEY_B64" | tr -d "[:space:]" | base64 --decode > /tmp/do_deploy_key
           chmod 600 /tmp/do_deploy_key
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
