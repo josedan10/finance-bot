@@ -27,6 +27,7 @@ jobs:
         run: |
           op run --environment "$OP_ENVIRONMENT_ID" -- /bin/sh -c '
             printf "DO_HOST=%s\n" "$DO_HOST" >> "$GITHUB_ENV"
+            printf "DO_USERNAME=%s\n" "$DO_USERNAME" >> "$GITHUB_ENV"
             {
               printf "DO_SSH_KEY<<__OP_KEY__\n"
               printf "%s\n" "$DO_SSH_KEY"
@@ -38,7 +39,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.DO_HOST }}
-          username: ${{ secrets.DO_USERNAME }}
+          username: ${{ env.DO_USERNAME }}
           key: ${{ env.DO_SSH_KEY }}
           script: |
             set -euo pipefail
