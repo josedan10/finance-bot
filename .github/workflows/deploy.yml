@@ -68,13 +68,9 @@ jobs:
           PYENV
 
           {
-            printf 'APP_ENV_FILE_B64<<__ENV__
-'
-            base64 < /tmp/zentra.env.production | tr -d '
-'
-            printf '
-__ENV__
-'
+            printf 'APP_ENV_FILE_B64<<__ENV__\n'
+            base64 < /tmp/zentra.env.production | tr -d '\n'
+            printf '\n__ENV__\n'
           } >> "$GITHUB_ENV"
 
       - name: Deploy on DigitalOcean Droplet
