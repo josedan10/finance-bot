@@ -44,7 +44,7 @@ jobs:
           PYENV
 
           op run --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > /tmp/zentra.env.production
-          import json, os
+          import json, os, shlex
           from pathlib import Path
 
           base = json.loads(Path('/tmp/base-env.json').read_text())
@@ -57,7 +57,7 @@ jobs:
           }
 
           def quote(value: str) -> str:
-              return "'" + value.replace("'", "'"'"'") + "'"
+              return shlex.quote(value)
 
           for key in sorted(os.environ):
               value = os.environ[key]
