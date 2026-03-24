@@ -92,7 +92,7 @@ __ENV__
               APP_ROOT="/home/${{ env.DO_USERNAME }}/apps/zentra"
             fi
 
-            BACKEND_DIR="$APP_ROOT/finance-bot"
+            BACKEND_DIR="$APP_ROOT/zentra-backend"
 
             mkdir -p "$APP_ROOT"
 
