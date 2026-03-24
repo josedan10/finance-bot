@@ -1,9 +1,6 @@
 name: Deploy to DigitalOcean
 
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
 
 jobs:
@@ -17,6 +14,9 @@ jobs:
         uses: 1password/load-secrets-action/configure@v2
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install 1Password CLI beta
         uses: 1password/install-cli-action@v2
