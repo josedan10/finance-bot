@@ -46,7 +46,7 @@ jobs:
 
             APP_ROOT="${{ secrets.DO_APP_ROOT }}"
             if [ -z "$APP_ROOT" ]; then
-              APP_ROOT="/opt/zentra"
+              APP_ROOT="/home/${{ env.DO_USERNAME }}/apps/zentra"
             fi
 
             BACKEND_DIR="$APP_ROOT/finance-bot"
