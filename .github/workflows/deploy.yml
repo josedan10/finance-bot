@@ -1,0 +1,47 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy on DigitalOcean Droplet
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script_stop: true
+          envs: OP_SERVICE_ACCOUNT_TOKEN
+          script: |
+            set -euo pipefail
+
+            APP_ROOT="${{ secrets.DO_APP_ROOT }}"
+            if [ -z "$APP_ROOT" ]; then
+              APP_ROOT="/opt/zentra"
+            fi
+
+            BACKEND_DIR="$APP_ROOT/finance-bot"
+
+            mkdir -p "$APP_ROOT"
+
+            if [ ! -d "$BACKEND_DIR/.git" ]; then
+              git clone https://github.com/josedan10/finance-bot.git "$BACKEND_DIR"
+            fi
+
+            cd "$BACKEND_DIR"
+            git fetch origin master
+            git checkout master
+            git pull --ff-only origin master
+
+            cd "$BACKEND_DIR"
+            chmod +x scripts/deploy-production.sh
+            ./scripts/deploy-production.sh

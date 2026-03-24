@@ -1,33 +1,32 @@
-# Use a lighter base image
-FROM node:18 as deps
+FROM node:18 AS deps
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy package.json and package-lock.json for npm install
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies, skipping dev dependencies and scripts
-RUN npm install
-
-# Copy the rest of the application code
-FROM node:18 as builder
+FROM node:18 AS builder
 WORKDIR /app
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . ./
+
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:18 as runner
+FROM node:18 AS runner
 WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=5000
+
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.env ./
-RUN npm install --omit=dev --ignore-scripts
-RUN npm install @prisma/client
-# Expose the port
+
+RUN npm ci --omit=dev --ignore-scripts \
+	&& npm cache clean --force
+
 EXPOSE 5000
 
-# Command to run the application
 CMD ["npm", "run", "start"]

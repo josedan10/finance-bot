@@ -97,6 +97,61 @@ POST ${your_ngrok_url}/telegram/setWebhook
 | `npm run docker:migrations` | Run Prisma migrations in the production container |
 | `./deploy.sh production` | Full production deploy script |
 
+### DigitalOcean + Traefik production setup
+
+The production deployment now supports a single `docker-compose.prod.yml` stack with:
+
+- `traefik` as the public reverse proxy
+- automatic Let's Encrypt certificates via HTTP-01 challenge
+- `api.zentra-app.pro` routed to the backend API
+- health checks and `unless-stopped` restart policies for API, OCR, MySQL, Redis, and Traefik
+
+The frontend is no longer deployed from this stack. At this stage it is deployed separately on **Vercel**.
+
+Files involved:
+
+- `docker-compose.prod.yml`
+- `.github/workflows/deploy.yml`
+- `scripts/deploy-production.sh`
+- `.env.production.example`
+
+Typical server flow:
+
+```bash
+cp .env.production.example .env.production
+chmod +x scripts/deploy-production.sh
+./scripts/deploy-production.sh
+```
+
+### Using 1Password as the production secrets manager
+
+This deployment flow supports `op://` secret references inside `finance-bot/.env.production`.
+
+Recommended setup:
+
+1. Install the 1Password CLI (`op`) on the droplet.
+2. Create a 1Password Service Account with access to the production vault(s).
+3. Add the service account token as the GitHub Actions secret `OP_SERVICE_ACCOUNT_TOKEN`.
+4. Replace plaintext secrets in `finance-bot/.env.production` with 1Password references like:
+
+```env
+MYSQL_ROOT_PASSWORD=op://zentra-prod/mysql/root_password
+TELEGRAM_BOT_TOKEN=op://zentra-prod/backend/telegram_bot_token
+```
+
+At deploy time, `scripts/deploy-production.sh` detects `op://` references and resolves them with
+`op inject` into a temporary env file before Docker Compose runs.
+
+Required production environment values include:
+
+- `MYSQL_ROOT_PASSWORD`
+- `TELEGRAM_BOT_TOKEN`
+- Firebase Admin credentials for the backend
+- `LETSENCRYPT_EMAIL`
+
+The deploy workflow expects the backend repo at `/opt/zentra/finance-bot` by default.
+Override this with the GitHub Actions secret `DO_APP_ROOT` if needed.
+
 ## Running Without Docker
 
 Start the database separately, then run the API locally:
@@ -122,6 +177,24 @@ Notes:
 - the script reuses the shared Firebase Admin bootstrap from `src/lib/firebase.ts`
 - it logs only `uid`, `email`, and `disabled`
 - it exits with code `1` if Firebase initialization or user listing fails
+
+### Test DigitalOcean SSH connectivity
+
+To verify that your local machine can connect to the production droplet over SSH:
+
+1. Add the droplet IP to `.env`:
+   - `DO_HOST=<droplet-ip>`
+2. Optionally configure:
+   - `DO_USERNAME` (default: `root`)
+   - `DO_SSH_PORT` (default: `22`)
+   - `DO_SSH_KEY_PATH` (if you want to force a specific key file)
+3. Run:
+
+```bash
+npm run deploy:test-ssh
+```
+
+This runs a non-interactive SSH connectivity check and logs the remote hostname/user if the connection succeeds.
 
 ## API Endpoints
 
