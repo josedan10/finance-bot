@@ -25,7 +25,7 @@ jobs:
 
       - name: Load deployment secrets from 1Password Environment
         run: |
-          op run --environments "$OP_ENVIRONMENT_ID" -- /bin/sh -c '
+          op run --environment "$OP_ENVIRONMENT_ID" -- /bin/sh -c '
             printf "DO_HOST=%s\n" "$DO_HOST" >> "$GITHUB_ENV"
             {
               printf "DO_SSH_KEY<<__OP_KEY__\n"
