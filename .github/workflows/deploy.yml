@@ -35,12 +35,55 @@ jobs:
         run: |
           printf "%s" "$DO_SSH_KEY_B64" | tr -d "[:space:]" | base64 --decode > /tmp/do_deploy_key
           chmod 600 /tmp/do_deploy_key
+
+      - name: Render production environment file from 1Password Environment
+        run: |
+          python3 - <<'PYENV' > /tmp/base-env.json
+          import json, os
+          print(json.dumps(dict(os.environ)))
+          PYENV
+
+          op run --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > /tmp/zentra.env.production
+          import json, os
+          from pathlib import Path
+
+          base = json.loads(Path('/tmp/base-env.json').read_text())
+          exclude = {
+              'OP_SERVICE_ACCOUNT_TOKEN',
+              'OP_ENVIRONMENT_ID',
+              'DO_HOST',
+              'DO_USERNAME',
+              'DO_SSH_KEY_B64',
+          }
+
+          def quote(value: str) -> str:
+              return "'" + value.replace("'", "'"'"'") + "'"
+
+          for key in sorted(os.environ):
+              value = os.environ[key]
+              if key in exclude or key.startswith('GITHUB_'):
+                  continue
+              if base.get(key) != value:
+                  print(f"{key}={quote(value)}")
+          PYENV
+
+          {
+            printf 'APP_ENV_FILE_B64<<__ENV__
+'
+            base64 < /tmp/zentra.env.production | tr -d '
+'
+            printf '
+__ENV__
+'
+          } >> "$GITHUB_ENV"
+
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
           key_path: /tmp/do_deploy_key
+          envs: APP_ENV_FILE_B64
           script: |
             set -euo pipefail
 
@@ -49,7 +92,7 @@ jobs:
               APP_ROOT="/home/${{ env.DO_USERNAME }}/apps/zentra"
             fi
 
-            BACKEND_DIR="$APP_ROOT/finance-bot"
+            BACKEND_DIR="$APP_ROOT/zentra-backend"
 
             mkdir -p "$APP_ROOT"
 
@@ -63,5 +106,11 @@ jobs:
             git pull --ff-only origin master
 
             cd "$BACKEND_DIR"
+
+            if [ ! -f "$BACKEND_DIR/.env.production" ]; then
+              printf "%s" "$APP_ENV_FILE_B64" | base64 --decode > "$BACKEND_DIR/.env.production"
+              chmod 600 "$BACKEND_DIR/.env.production"
+            fi
+
             chmod +x scripts/deploy-production.sh
             ./scripts/deploy-production.sh
