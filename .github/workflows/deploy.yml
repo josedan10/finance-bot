@@ -9,6 +9,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      OP_ENVIRONMENT_ID: m5yflcyljim7b6fgc6hcjssca4
 
     steps:
       - name: Configure 1Password
@@ -16,13 +18,21 @@ jobs:
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-      - name: Load deployment secrets from 1Password
-        uses: 1password/load-secrets-action@v2
+      - name: Install 1Password CLI beta
+        uses: 1password/install-cli-action@v2
         with:
-          export-env: true
-        env:
-          DO_HOST: op://Zentra Vault/zentra-DO_HOST/password
-          DO_SSH_KEY: op://Zentra Vault/zentra-DO_SSH_KEY/password
+          version: latest-beta
+
+      - name: Load deployment secrets from 1Password Environment
+        run: |
+          op run --environments "$OP_ENVIRONMENT_ID" -- /bin/sh -c '
+            printf "DO_HOST=%s\n" "$DO_HOST" >> "$GITHUB_ENV"
+            {
+              printf "DO_SSH_KEY<<__OP_KEY__\n"
+              printf "%s\n" "$DO_SSH_KEY"
+              printf "__OP_KEY__\n"
+            } >> "$GITHUB_ENV"
+          '
 
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
