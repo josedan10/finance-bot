@@ -178,6 +178,24 @@ Notes:
 - it logs only `uid`, `email`, and `disabled`
 - it exits with code `1` if Firebase initialization or user listing fails
 
+### Test DigitalOcean SSH connectivity
+
+To verify that your local machine can connect to the production droplet over SSH:
+
+1. Add the droplet IP to `.env`:
+   - `DO_HOST=<droplet-ip>`
+2. Optionally configure:
+   - `DO_USERNAME` (default: `root`)
+   - `DO_SSH_PORT` (default: `22`)
+   - `DO_SSH_KEY_PATH` (if you want to force a specific key file)
+3. Run:
+
+```bash
+npm run deploy:test-ssh
+```
+
+This runs a non-interactive SSH connectivity check and logs the remote hostname/user if the connection succeeds.
+
 ## API Endpoints
 
 | Method | Path | Description |

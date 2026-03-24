@@ -30,7 +30,8 @@
 		"seed": "npx prisma db seed",
 		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false",
 		"gmail:auth": "ts-node scripts/gmail-auth.ts",
-		"transactions:delete-all": "ts-node scripts/delete-all-transactions.ts"
+		"transactions:delete-all": "ts-node scripts/delete-all-transactions.ts",
+		"deploy:test-ssh": "ts-node scripts/test-digitalocean-ssh.ts"
 	},
 	"dependencies": {
 		"@babel/core": "^7.24.3",
