@@ -41,7 +41,7 @@ jobs:
 
       - name: Render production environment file from 1Password Environment
         run: |
-          op run --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > /tmp/zentra.env.production
+          op run --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > .github/zentra.env.production
           import os, shlex
           from pathlib import Path
 
@@ -65,7 +65,7 @@ jobs:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
           key_path: /tmp/do_deploy_key
-          source: /tmp/zentra.env.production
+          source: .github/zentra.env.production
           target: /tmp/
 
       - name: Deploy on DigitalOcean Droplet
@@ -97,7 +97,7 @@ jobs:
 
             cd "$BACKEND_DIR"
 
-            cp /tmp/zentra.env.production "$BACKEND_DIR/.env.production"
+            cp /tmp/.github/zentra.env.production "$BACKEND_DIR/.env.production"
             chmod 600 "$BACKEND_DIR/.env.production"
 
             bash scripts/deploy-production.sh
