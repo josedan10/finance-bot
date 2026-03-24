@@ -21,8 +21,8 @@ jobs:
         with:
           export-env: true
         env:
-          DO_HOST: op://zentra-prod/github-actions/do-host/value
-          DO_SSH_KEY: op://zentra-prod/github-actions/do-ssh-key/private_key
+          DO_HOST: op://Zentra Vault/zentra-DO_HOST/password
+          DO_SSH_KEY: op://Zentra Vault/zentra-DO_SSH_KEY/password
 
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
