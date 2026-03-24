@@ -95,10 +95,7 @@ jobs:
 
             cd "$BACKEND_DIR"
 
-            if [ ! -f "$BACKEND_DIR/.env.production" ]; then
-              printf "%s" "$APP_ENV_FILE_B64" | base64 --decode > "$BACKEND_DIR/.env.production"
-              chmod 600 "$BACKEND_DIR/.env.production"
-            fi
+            printf "%s" "$APP_ENV_FILE_B64" | base64 --decode > "$BACKEND_DIR/.env.production"
+            chmod 600 "$BACKEND_DIR/.env.production"
 
-            chmod +x scripts/deploy-production.sh
-            ./scripts/deploy-production.sh
+            bash scripts/deploy-production.sh
