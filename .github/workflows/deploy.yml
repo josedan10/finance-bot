@@ -38,33 +38,22 @@ jobs:
 
       - name: Render production environment file from 1Password Environment
         run: |
-          python3 - <<'PYENV' > /tmp/base-env.json
-          import json, os
-          print(json.dumps(dict(os.environ)))
-          PYENV
-
           op run --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > /tmp/zentra.env.production
-          import json, os, shlex
+          import os, shlex
           from pathlib import Path
 
-          base = json.loads(Path('/tmp/base-env.json').read_text())
-          exclude = {
-              'OP_SERVICE_ACCOUNT_TOKEN',
-              'OP_ENVIRONMENT_ID',
-              'DO_HOST',
-              'DO_USERNAME',
-              'DO_SSH_KEY_B64',
-          }
+          template_path = Path('.env.production.example')
 
-          def quote(value: str) -> str:
-              return shlex.quote(value)
-
-          for key in sorted(os.environ):
-              value = os.environ[key]
-              if key in exclude or key.startswith('GITHUB_'):
+          for raw_line in template_path.read_text().splitlines():
+              line = raw_line.strip()
+              if not line or line.startswith('#') or '=' not in line:
                   continue
-              if base.get(key) != value:
-                  print(f"{key}={quote(value)}")
+
+              key = line.split('=', 1)[0].strip()
+              if key not in os.environ:
+                  continue
+
+              print(f"{key}={shlex.quote(os.environ[key])}")
           PYENV
 
           {
