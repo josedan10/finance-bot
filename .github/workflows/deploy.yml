@@ -11,16 +11,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Configure 1Password
+        uses: 1password/load-secrets-action/configure@v2
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Load deployment secrets from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          DO_HOST: op://zentra-prod/github-actions/do-host/value
+          DO_SSH_KEY: op://zentra-prod/github-actions/do-ssh-key/private_key
+
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         with:
-          host: ${{ secrets.DO_HOST }}
+          host: ${{ env.DO_HOST }}
           username: ${{ secrets.DO_USERNAME }}
-          key: ${{ secrets.DO_SSH_KEY }}
-          script_stop: true
-          envs: OP_SERVICE_ACCOUNT_TOKEN
+          key: ${{ env.DO_SSH_KEY }}
           script: |
             set -euo pipefail
 
