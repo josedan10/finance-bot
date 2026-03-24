@@ -28,19 +28,19 @@ jobs:
           op run --environment "$OP_ENVIRONMENT_ID" -- /bin/sh -c '
             printf "DO_HOST=%s\n" "$DO_HOST" >> "$GITHUB_ENV"
             printf "DO_USERNAME=%s\n" "$DO_USERNAME" >> "$GITHUB_ENV"
-            {
-              printf "DO_SSH_KEY<<__OP_KEY__\n"
-              printf "%s\n" "$DO_SSH_KEY"
-              printf "__OP_KEY__\n"
-            } >> "$GITHUB_ENV"
+            printf "DO_SSH_KEY_B64=%s\n" "$DO_SSH_KEY_B64" >> "$GITHUB_ENV"
           '
 
+      - name: Write SSH private key
+        run: |
+          printf "%s" "$DO_SSH_KEY_B64" | base64 --decode > /tmp/do_deploy_key
+          chmod 600 /tmp/do_deploy_key
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
-          key: ${{ env.DO_SSH_KEY }}
+          key_path: /tmp/do_deploy_key
           script: |
             set -euo pipefail
 
