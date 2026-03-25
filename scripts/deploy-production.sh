@@ -58,12 +58,20 @@ required_env_vars=(
 	TELEGRAM_BOT_TOKEN
 )
 
-set -a
-source "$ENV_FILE"
-set +a
+get_env_value() {
+	local key="$1"
+	awk -F= -v search_key="$key" '
+		$0 !~ /^[[:space:]]*#/ && $1 == search_key {
+			sub(/^[^=]*=/, "", $0)
+			print $0
+			exit
+		}
+	' "$ENV_FILE"
+}
 
 for required_env_var in "${required_env_vars[@]}"; do
-	if [[ -z "${!required_env_var:-}" ]]; then
+	required_env_value="$(get_env_value "$required_env_var")"
+	if [[ -z "$required_env_value" ]]; then
 		echo "Missing required environment variable in $ENV_FILE: $required_env_var"
 		exit 1
 	fi
