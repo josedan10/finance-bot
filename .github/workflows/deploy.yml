@@ -59,7 +59,8 @@ jobs:
               if key not in os.environ:
                   continue
 
-              print(f"{key}={shlex.quote(os.environ[key])}")
+              value = os.environ[key].replace("\r\n", "\n").replace("\n", "\\n")
+              print(f"{key}={shlex.quote(value)}")
           PYENV
 
       - name: Upload production environment file
