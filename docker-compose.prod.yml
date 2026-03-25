@@ -110,7 +110,7 @@ services:
       zentra-image-extractor-production:
         condition: service_healthy
     environment:
-      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-change-me}@zentra-mysql-production:3306/${MYSQL_DATABASE:-zentra}
+      DATABASE_URL: ${DATABASE_URL:-mysql://root:${MYSQL_ROOT_PASSWORD:-change-me}@zentra-mysql-production:3306/${MYSQL_DATABASE:-zentra}}
       REDIS_URL: redis://zentra-redis-production:6379
       PORT: 5000
       NODE_ENV: production

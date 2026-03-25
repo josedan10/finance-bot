@@ -54,7 +54,6 @@ resolve_env_file() {
 ENV_FILE="$(resolve_env_file "$ENV_FILE")"
 
 required_env_vars=(
-	MYSQL_ROOT_PASSWORD
 	TELEGRAM_BOT_TOKEN
 )
 
@@ -76,6 +75,11 @@ for required_env_var in "${required_env_vars[@]}"; do
 		exit 1
 	fi
 done
+
+if [[ -z "$(get_env_value "DATABASE_URL")" && -z "$(get_env_value "MYSQL_ROOT_PASSWORD")" ]]; then
+	echo "Missing database configuration in $ENV_FILE: set DATABASE_URL or MYSQL_ROOT_PASSWORD"
+	exit 1
+fi
 
 mkdir -p "$ROOT_DIR/traefik"
 touch "$ROOT_DIR/traefik/acme.json"
