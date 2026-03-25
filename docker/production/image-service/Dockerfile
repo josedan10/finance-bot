@@ -18,7 +18,6 @@ COPY . .
 
 RUN pip install --upgrade pip \
   && pip install -r requirements.txt \
-  && mkdir -p "$EASYOCR_MODULE_PATH/model" \
-  && python -c "import easyocr; easyocr.Reader(['en','es'], gpu=False, model_storage_directory='$EASYOCR_MODULE_PATH')"
+  && mkdir -p "$EASYOCR_MODULE_PATH/model"
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4000"]
