@@ -76,8 +76,8 @@ for required_env_var in "${required_env_vars[@]}"; do
 	fi
 done
 
-if [[ -z "$(get_env_value "DATABASE_URL")" && -z "$(get_env_value "MYSQL_ROOT_PASSWORD")" ]]; then
-	echo "Missing database configuration in $ENV_FILE: set DATABASE_URL or MYSQL_ROOT_PASSWORD"
+if [[ -z "$(get_env_value "DATABASE_URL")" ]]; then
+	echo "Missing required environment variable in $ENV_FILE: DATABASE_URL"
 	exit 1
 fi
 
