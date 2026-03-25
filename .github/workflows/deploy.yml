@@ -69,6 +69,7 @@ jobs:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
           key: ${{ env.DO_SSH_KEY }}
+          command_timeout: 45m
           source: .github/zentra.env.production
           target: /tmp/
 
@@ -78,6 +79,7 @@ jobs:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
           key: ${{ env.DO_SSH_KEY }}
+          command_timeout: 45m
           script: |
             set -euo pipefail
 
