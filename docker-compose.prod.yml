@@ -32,27 +32,6 @@ services:
     networks:
       - zentra-production-network
 
-  mysql-zentra-production:
-    image: mysql:8.0
-    container_name: zentra-mysql-production
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-zentra}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent',
-        ]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-    networks:
-      - zentra-production-network
 
   redis-zentra-production:
     image: redis:7-alpine
@@ -103,14 +82,12 @@ services:
       dockerfile: docker/production/Dockerfile
     restart: unless-stopped
     depends_on:
-      mysql-zentra-production:
-        condition: service_healthy
       redis-zentra-production:
         condition: service_healthy
       zentra-image-extractor-production:
         condition: service_healthy
     environment:
-      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-change-me}@zentra-mysql-production:3306/${MYSQL_DATABASE:-zentra}
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://zentra-redis-production:6379
       PORT: 5000
       NODE_ENV: production
@@ -155,6 +132,5 @@ networks:
     driver: bridge
 
 volumes:
-  mysql_data:
   redis_data:
   traefik_letsencrypt:
