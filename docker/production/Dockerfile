@@ -1,11 +1,11 @@
-FROM node:18 AS deps
+FROM node:22 AS deps
 
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci
 
-FROM node:18 AS builder
+FROM node:22 AS builder
 WORKDIR /app
 
 ENV NODE_OPTIONS=--max-old-space-size=1536
@@ -16,7 +16,7 @@ COPY . ./
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:18 AS runner
+FROM node:22 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
