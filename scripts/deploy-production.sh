@@ -85,15 +85,21 @@ mkdir -p "$ROOT_DIR/traefik"
 touch "$ROOT_DIR/traefik/acme.json"
 chmod 600 "$ROOT_DIR/traefik/acme.json"
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pulling API and OCR images..."
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull \
+	zentra-image-extractor-production \
+	zentra-api-production
 
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Traefik, Redis, and OCR services..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans \
 	traefik \
 	redis-zentra-production \
 	zentra-image-extractor-production
 
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running Prisma migrations in one-off API container..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --no-deps zentra-api-production npx prisma migrate deploy
 
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting API service..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans zentra-api-production
 
 echo "Production deployment completed successfully."

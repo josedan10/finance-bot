@@ -50,11 +50,8 @@ services:
       - zentra-production-network
 
   zentra-image-extractor-production:
-    image: zentra-image-extractor-production
+    image: ${OCR_IMAGE:-zentra-image-extractor-production}
     container_name: zentra-image-extractor-production
-    build:
-      context: ./services/image_recognition_service
-      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       OCR_MAX_IMAGE_DIMENSION: ${OCR_MAX_IMAGE_DIMENSION:-1600}
@@ -77,11 +74,8 @@ services:
       - zentra-production-network
 
   zentra-api-production:
-    image: zentra-api-production
+    image: ${API_IMAGE:-zentra-api-production}
     container_name: zentra-api-production
-    build:
-      context: .
-      dockerfile: docker/production/Dockerfile
     restart: unless-stopped
     depends_on:
       redis-zentra-production:
