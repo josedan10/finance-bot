@@ -1,5 +1,7 @@
 Dockerfile
 .dockerignore
+.git
+.github
 .vscode
 node_modules
 npm-debug.log
@@ -8,5 +10,10 @@ docker-compose.*
 mocks
 coverage
 .husky
+dist
+docker/local
+digitalocean_*.md
+IMPROVEMENTS.md
 sample-excels
 screenshots
+modules/image-2-text/*.jpeg
