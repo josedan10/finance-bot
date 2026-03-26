@@ -118,7 +118,7 @@ jobs:
       - name: Render production environment file from 1Password Environment
         run: |
           op run --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > .github/zentra.env.production
-          import os, shlex
+          import os
           from pathlib import Path
 
           template_path = Path('.env.production.example')
@@ -133,7 +133,7 @@ jobs:
                   continue
 
               value = os.environ[key].replace("\r\n", "\n").replace("\n", "\\n")
-              print(f"{key}={shlex.quote(value)}")
+              print(f"{key}={value}")
           PYENV
 
       - name: Upload production environment file
