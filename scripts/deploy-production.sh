@@ -85,8 +85,15 @@ mkdir -p "$ROOT_DIR/traefik"
 touch "$ROOT_DIR/traefik/acme.json"
 chmod 600 "$ROOT_DIR/traefik/acme.json"
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T zentra-api-production npx prisma migrate deploy
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans \
+	traefik \
+	redis-zentra-production \
+	zentra-image-extractor-production
+
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --no-deps zentra-api-production npx prisma migrate deploy
+
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans zentra-api-production
 
 echo "Production deployment completed successfully."
