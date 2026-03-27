@@ -91,6 +91,12 @@ mkdir -p "$ROOT_DIR/traefik"
 touch "$ROOT_DIR/traefik/acme.json"
 chmod 600 "$ROOT_DIR/traefik/acme.json"
 
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning unused Docker resources..."
+docker container prune -f || true
+docker image prune -af || true
+docker volume prune -f || true
+docker network prune -f || true
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pulling API and OCR images..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull \
 	zentra-image-extractor-production \
