@@ -76,8 +76,14 @@ for required_env_var in "${required_env_vars[@]}"; do
 	fi
 done
 
-if [[ -z "$(get_env_value "DATABASE_URL")" ]]; then
+database_url="$(get_env_value "DATABASE_URL")"
+if [[ -z "$database_url" ]]; then
 	echo "Missing required environment variable in $ENV_FILE: DATABASE_URL"
+	exit 1
+fi
+
+if [[ "$database_url" != mysql://* ]]; then
+	echo "Invalid DATABASE_URL in $ENV_FILE: must start with mysql://"
 	exit 1
 fi
 
