@@ -132,7 +132,10 @@ jobs:
               if key not in os.environ:
                   continue
 
-              value = os.environ[key].replace("\r\n", "\n").replace("\n", "\\n")
+              value = os.environ[key].strip()
+              if len(value) >= 2 and ((value[0] == value[-1]) and value[0] in {'"', "'"}):
+                  value = value[1:-1]
+              value = value.replace("\r\n", "\n").replace("\n", "\\n")
               print(f"{key}={value}")
           PYENV
 
