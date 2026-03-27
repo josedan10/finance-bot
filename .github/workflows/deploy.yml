@@ -117,7 +117,7 @@ jobs:
 
       - name: Render production environment file from 1Password Environment
         run: |
-          op run --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > .github/zentra.env.production
+          op run --no-masking --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYENV' > .github/zentra.env.production
           import os
           from pathlib import Path
 
