@@ -79,6 +79,38 @@ jobs:
           source: .github/zentra.env.production
           target: /tmp/
 
+      - name: Render Firebase service account file from 1Password Environment
+        run: |
+          op run --no-masking --environment "$OP_ENVIRONMENT_ID" -- python3 - <<'PYJSON' > .github/firebase-service-account.json
+          import json, os
+          from pathlib import Path
+
+          template = Path('firebase-service-account.template.json').read_text()
+          fields = {
+              'FIREBASE_PROJECT_ID': os.environ['FIREBASE_PROJECT_ID'].strip(),
+              'FIREBASE_PRIVATE_KEY_ID': os.environ['FIREBASE_PRIVATE_KEY_ID'].strip(),
+              'FIREBASE_PRIVATE_KEY': os.environ['FIREBASE_PRIVATE_KEY'].strip().replace('\r\n', '\n').replace('\n', '\\n'),
+              'FIREBASE_CLIENT_EMAIL': os.environ['FIREBASE_CLIENT_EMAIL'].strip(),
+              'FIREBASE_CLIENT_ID': os.environ['FIREBASE_CLIENT_ID'].strip(),
+              'FIREBASE_CLIENT_X509_CERT_URL': os.environ['FIREBASE_CLIENT_X509_CERT_URL'].strip(),
+          }
+          content = template
+          for key, value in fields.items():
+              content = content.replace('${' + key + '}', value)
+          print(json.dumps(json.loads(content), indent=2))
+          PYJSON
+
+      - name: Upload Firebase service account file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.DO_HOST }}
+          username: ${{ env.DO_USERNAME }}
+          key: ${{ env.DO_SSH_KEY }}
+          command_timeout: 90m
+          source: .github/firebase-service-account.json
+          target: /tmp/
+
+
       - name: Deploy on DigitalOcean Droplet
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -107,9 +139,12 @@ jobs:
             git checkout master
             git pull --ff-only origin master
 
+            mkdir -p "$BACKEND_DIR/secrets"
             cp /tmp/.github/zentra.env.production "$BACKEND_DIR/.env.production"
+            cp /tmp/.github/firebase-service-account.json "$BACKEND_DIR/secrets/firebase-service-account.json"
             printf '\nAPI_IMAGE=%s\n' 'ghcr.io/${{ github.repository_owner }}/zentra-api-production:latest' >> "$BACKEND_DIR/.env.production"
             printf 'OCR_IMAGE=%s\n' 'ghcr.io/${{ github.repository_owner }}/zentra-image-extractor-production:latest' >> "$BACKEND_DIR/.env.production"
             chmod 600 "$BACKEND_DIR/.env.production"
+            chmod 600 "$BACKEND_DIR/secrets/firebase-service-account.json"
 
             bash scripts/deploy-production.sh
