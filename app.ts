@@ -6,6 +6,7 @@ import { RouterApp as indexRouter } from './routes';
 import { TaskQueueModuleService } from './modules/crons/task-queue.cron';
 import logger from './src/lib/logger';
 import { AppError } from './src/lib/appError';
+import { captureRequestException } from './src/lib/sentry';
 
 const app = express();
 
@@ -35,6 +36,17 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 	normalizedError.status = normalizedError.status || 'error';
 
 	logger.error('Unhandled error', { error: normalizedError.message, stack: normalizedError.stack });
+	captureRequestException(normalizedError, {
+		method: req.method,
+		url: req.originalUrl,
+		user: req.user
+			? {
+				id: req.user.id,
+				email: req.user.email,
+				role: req.user.role ?? null,
+			}
+			: undefined,
+	});
 
 	res.status(normalizedError.statusCode).json({
 		status: normalizedError.status,
