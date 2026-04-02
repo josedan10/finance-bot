@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AISettingsService, AIAssistantFactory } from '../../modules/ai-assistant/ai-assistant.module';
 import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from '../../src/lib/logger';
+import { captureException } from '../../src/lib/sentry';
 import { Image2TextService } from '../../modules/image-2-text/image-2-text.module';
 import { BaseTransactions } from '../../modules/base-transactions/base-transactions.module';
 import {
@@ -151,6 +152,15 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       metadataDateTimeSuggestion: formatMetadataDateTime(extractedReceipt.metadata?.capturedAt),
     });
   } catch (error) {
+    captureException(error, {
+      controller: 'scanReceipt',
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      userId: req.user.id,
+      hasImage: Boolean(req.body?.image),
+      imagePayloadLength: typeof req.body?.image === 'string' ? req.body.image.length : null,
+      userAgent: req.get('user-agent') ?? null,
+      contentLength: req.get('content-length') ?? null,
+    });
     logger.error('Receipt scanning failed', { 
       userId: req.user.id, 
       error: error instanceof Error ? error.message : 'Unknown error' 
@@ -165,6 +175,11 @@ export async function getAISettings(req: Request, res: Response): Promise<void> 
     const settings = await AISettingsService.getSettings(req.user.id);
     res.status(200).json(settings);
   } catch (error) {
+    captureException(error, {
+      controller: 'getAISettings',
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      userId: req.user.id,
+    });
     logger.error('Failed to get AI settings', { userId: req.user.id, error });
     res.status(500).json({ message: 'Failed to fetch AI settings' });
   }
@@ -179,6 +194,13 @@ export async function updateAISettings(req: Request, res: Response): Promise<voi
     });
     res.status(200).json(settings);
   } catch (error) {
+    captureException(error, {
+      controller: 'updateAISettings',
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      userId: req.user.id,
+      aiEnabled: req.body?.aiEnabled,
+      aiProvider: req.body?.aiProvider,
+    });
     logger.error('Failed to update AI settings', { userId: req.user.id, error });
     res.status(500).json({ message: 'Failed to update AI settings' });
   }
@@ -228,6 +250,11 @@ export async function analyzeTransactions(req: Request, res: Response): Promise<
     const analysis = await provider.analyzeExpenses(simplifiedData);
     res.status(200).json(analysis);
   } catch (error) {
+    captureException(error, {
+      controller: 'analyzeTransactions',
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      userId: req.user.id,
+    });
     logger.error('AI Analysis failed', { userId: req.user.id, error });
     res.status(500).json({ message: 'AI Analysis failed' });
   }
