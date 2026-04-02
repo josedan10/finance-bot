@@ -7,6 +7,7 @@ import { RouterApp as indexRouter } from './routes';
 import { TaskQueueModuleService } from './modules/crons/task-queue.cron';
 import logger from './src/lib/logger';
 import { AppError } from './src/lib/appError';
+import { config } from './src/config';
 import { captureRequestException } from './src/lib/sentry';
 import { config } from './src/config';
 
