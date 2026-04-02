@@ -15,12 +15,41 @@ if (isSentryEnabled) {
 		dsn,
 		environment,
 		release,
-		integrations: [nodeProfilingIntegration()],
+		enableLogs: true,
+		integrations: [nodeProfilingIntegration(), Sentry.consoleLoggingIntegration({ levels: ['log', 'info', 'warn', 'error'] })],
 		tracesSampleRate: Number.isFinite(traceSampleRate) ? traceSampleRate : 0,
 		profilesSampleRate: Number.isFinite(profileSampleRate) ? profileSampleRate : 0,
 		sendDefaultPii: false,
 	});
 }
+
+export type SentryLogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+
+export const captureLog = (level: SentryLogLevel, message: string, attributes?: Record<string, unknown>) => {
+	if (!isSentryEnabled) {
+		return;
+	}
+
+	const normalizedAttributes = attributes ?? {};
+
+	switch (level) {
+		case 'debug':
+			Sentry.logger.debug(message, normalizedAttributes);
+			break;
+		case 'info':
+			Sentry.logger.info(message, normalizedAttributes);
+			break;
+		case 'warn':
+			Sentry.logger.warn(message, normalizedAttributes);
+			break;
+		case 'error':
+			Sentry.logger.error(message, normalizedAttributes);
+			break;
+		case 'fatal':
+			Sentry.logger.fatal(message, normalizedAttributes);
+			break;
+	}
+};
 
 export const captureException = (error: unknown, context?: Record<string, unknown>) => {
 	if (!isSentryEnabled) {
