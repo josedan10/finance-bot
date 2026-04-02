@@ -9,7 +9,6 @@ import logger from './src/lib/logger';
 import { AppError } from './src/lib/appError';
 import { config } from './src/config';
 import { captureRequestException } from './src/lib/sentry';
-import { config } from './src/config';
 
 const app = express();
 
