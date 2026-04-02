@@ -66,6 +66,46 @@ export const captureException = (error: unknown, context?: Record<string, unknow
 	});
 };
 
+const redactKeys = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-key', 'password', 'token', 'idToken', 'image']);
+
+function sanitizeValue(value: unknown, depth = 0): unknown {
+	if (depth > 2) {
+		return '[Truncated]';
+	}
+
+	if (typeof value === 'string') {
+		return value.length > 500 ? `${value.slice(0, 500)}…` : value;
+	}
+
+	if (Array.isArray(value)) {
+		return value.slice(0, 20).map((item) => sanitizeValue(item, depth + 1));
+	}
+
+	if (value && typeof value === 'object') {
+		return Object.fromEntries(
+			Object.entries(value as Record<string, unknown>).slice(0, 20).map(([key, item]) => [
+				key,
+				redactKeys.has(key) ? '[Redacted]' : sanitizeValue(item, depth + 1),
+			])
+		);
+	}
+
+	return value;
+}
+
+function sanitizeHeaders(headers: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+	if (!headers) {
+		return undefined;
+	}
+
+	return Object.fromEntries(
+		Object.entries(headers).map(([key, value]) => [
+			key,
+			redactKeys.has(key.toLowerCase()) ? '[Redacted]' : sanitizeValue(value),
+		])
+	);
+}
+
 type SentryUser = {
 	id?: string | number;
 	email?: string | null;
@@ -77,6 +117,12 @@ export const captureRequestException = (
 	requestContext: {
 		method: string;
 		url: string;
+		requestId?: string;
+		statusCode?: number;
+		query?: Record<string, unknown>;
+		body?: Record<string, unknown>;
+		headers?: Record<string, unknown>;
+		tags?: Record<string, string>;
 		user?: SentryUser;
 	}
 ) => {
@@ -86,7 +132,26 @@ export const captureRequestException = (
 
 	Sentry.withScope((scope) => {
 		scope.setTag('http.method', requestContext.method);
+		scope.setTag('http.route', requestContext.url);
+		if (requestContext.requestId) {
+			scope.setTag('request_id', requestContext.requestId);
+			scope.setExtra('requestId', requestContext.requestId);
+		}
 		scope.setExtra('url', requestContext.url);
+		scope.setContext('request', {
+			method: requestContext.method,
+			url: requestContext.url,
+			statusCode: requestContext.statusCode,
+			query: sanitizeValue(requestContext.query),
+			body: sanitizeValue(requestContext.body),
+			headers: sanitizeHeaders(requestContext.headers),
+		});
+
+		if (requestContext.tags) {
+			Object.entries(requestContext.tags).forEach(([key, value]) => {
+				scope.setTag(key, value);
+			});
+		}
 
 		if (requestContext.user) {
 			scope.setUser({
