@@ -6,13 +6,14 @@ import { RouterApp as indexRouter } from './routes';
 import { TaskQueueModuleService } from './modules/crons/task-queue.cron';
 import logger from './src/lib/logger';
 import { AppError } from './src/lib/appError';
+import { config } from './src/config';
 
 const app = express();
 
 const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
 app.use(morgan(morganFormat));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: config.REQUEST_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: false, limit: config.REQUEST_BODY_LIMIT }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 

@@ -9,6 +9,7 @@ export const config = {
 	CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'America/Caracas',
 	PYDOLAR_API_URL: process.env.PYDOLAR_API_URL || 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar',
 	IMAGE_2_TEXT_SERVICE_URL: process.env.IMAGE_2_TEXT_SERVICE_URL || 'http://localhost:4000',
+	REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT || '15mb',
 	RATE_AVAILABLE_START_HOUR: 9,
 	RATE_AVAILABLE_END_HOUR: 11,
 	MAX_DESCRIPTION_LENGTH: 100,
