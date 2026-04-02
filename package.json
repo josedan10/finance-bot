@@ -39,6 +39,8 @@
 		"@google-cloud/local-auth": "^2.1.0",
 		"@google/generative-ai": "^0.24.1",
 		"@prisma/client": "^5.3.1",
+		"@sentry/node": "10.47.0",
+		"@sentry/profiling-node": "10.47.0",
 		"axios": "^1.2.2",
 		"cookie-parser": "~1.4.4",
 		"dayjs": "^1.11.7",

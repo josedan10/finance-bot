@@ -12,6 +12,8 @@ import { NotificationPreferenceInput } from '../src/enums/notifications';
 import { config } from '../src/config';
 import logger from '../src/lib/logger';
 import { BaseTransactions, mapTransactionType } from '../modules/base-transactions/base-transactions.module';
+import { areSentryTestEndpointsEnabled } from '../src/lib/sentry-test';
+import { captureException, flushSentry, isSentryEnabled } from '../src/lib/sentry';
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
@@ -42,6 +44,59 @@ router.get('/', (req: Request, res: Response) => {
 
 router.get('/health', (req: Request, res: Response) => {
 	res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+router.post('/api/debug/sentry/log', async (req: Request, res: Response) => {
+	if (!areSentryTestEndpointsEnabled()) {
+		return res.status(404).json({ message: 'Not found' });
+	}
+
+	const message = typeof req.body?.message === 'string' && req.body.message.trim()
+		? req.body.message.trim()
+		: 'Backend Sentry log test';
+
+	const context = {
+		service: 'backend',
+		testEndpoint: '/api/debug/sentry/log',
+		timestamp: new Date().toISOString(),
+	};
+
+	logger.info(message, context);
+	await flushSentry();
+
+	res.status(202).json({
+		ok: true,
+		type: 'log',
+		sentryEnabled: isSentryEnabled,
+		message,
+	});
+});
+
+router.post('/api/debug/sentry/error', async (req: Request, res: Response) => {
+	if (!areSentryTestEndpointsEnabled()) {
+		return res.status(404).json({ message: 'Not found' });
+	}
+
+	const message = typeof req.body?.message === 'string' && req.body.message.trim()
+		? req.body.message.trim()
+		: 'Backend Sentry error test';
+	const error = new Error(message);
+	const context = {
+		service: 'backend',
+		testEndpoint: '/api/debug/sentry/error',
+		timestamp: new Date().toISOString(),
+	};
+
+	logger.error(message, { ...context, stack: error.stack });
+	captureException(error, context);
+	await flushSentry();
+
+	res.status(202).json({
+		ok: true,
+		type: 'error',
+		sentryEnabled: isSentryEnabled,
+		message,
+	});
 });
 
 // ============================================
