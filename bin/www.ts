@@ -4,6 +4,7 @@ import app from '../app';
 import debugApp from 'debug';
 import http from 'http';
 import logger from '../src/lib/logger';
+import { captureException, flushSentry } from '../src/lib/sentry';
 
 const debug = debugApp('finance-bot:server');
 
@@ -57,12 +58,14 @@ function onListening() {
 	debug('Listening on ' + bind);
 }
 
-function gracefulShutdown(signal: string) {
+async function gracefulShutdown(signal: string) {
 	logger.info(`Received ${signal}. Shutting down gracefully...`);
 	server.close(() => {
 		logger.info('HTTP server closed');
 		process.exit(0);
 	});
+
+	await flushSentry();
 
 	setTimeout(() => {
 		logger.error('Forced shutdown after timeout');
@@ -75,9 +78,11 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason: unknown) => {
 	logger.error('Unhandled Rejection', { reason });
+	captureException(reason, { type: 'unhandledRejection' });
 });
 
 process.on('uncaughtException', (error: Error) => {
 	logger.error('Uncaught Exception', { error: error.message, stack: error.stack });
+	captureException(error, { type: 'uncaughtException' });
 	process.exit(1);
 });

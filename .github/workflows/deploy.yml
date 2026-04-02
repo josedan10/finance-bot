@@ -100,7 +100,7 @@ jobs:
 
     steps:
       - name: Configure 1Password
-        uses: 1password/load-secrets-action/configure@c1b138d5779f64eda6936d5caa8e754b9f3996c0
+        uses: 1password/load-secrets-action/configure@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
