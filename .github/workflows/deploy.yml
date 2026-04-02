@@ -120,6 +120,9 @@ jobs:
             printf "DO_HOST=%s\n" "$DO_HOST" >> "$GITHUB_ENV"
             printf "DO_USERNAME=%s\n" "$DO_USERNAME" >> "$GITHUB_ENV"
             printf "DO_SSH_KEY_B64=%s\n" "$DO_SSH_KEY_B64" >> "$GITHUB_ENV"
+            printf "SENTRY_AUTH_TOKEN=%s\n" "$SENTRY_AUTH_TOKEN" >> "$GITHUB_ENV"
+            printf "SENTRY_ORG=%s\n" "$SENTRY_ORG" >> "$GITHUB_ENV"
+            printf "SENTRY_PROJECT=%s\n" "$SENTRY_PROJECT" >> "$GITHUB_ENV"
           '
 
       - name: Decode SSH private key
@@ -233,3 +236,9 @@ jobs:
             chmod 600 "$BACKEND_DIR/secrets/firebase-service-account.json"
 
             bash scripts/deploy-production.sh
+
+      - name: Create Sentry release
+        run: |
+          npx @sentry/cli releases new "$GITHUB_SHA"
+          npx @sentry/cli releases set-commits "$GITHUB_SHA" --auto
+          npx @sentry/cli releases finalize "$GITHUB_SHA"
