@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import '../src/lib/sentry';
 import app from '../app';
 import debugApp from 'debug';
 import http from 'http';
