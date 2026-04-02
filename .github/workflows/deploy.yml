@@ -6,26 +6,111 @@ on:
       - master
   workflow_dispatch:
 
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 permissions:
   contents: read
+  packages: read
 
 jobs:
-  deploy:
+  build-api:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Define API image metadata
+        id: meta
+        run: |
+          echo "image=ghcr.io/${{ github.repository_owner }}/zentra-api-production:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: docker/production/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ghcr.io/${{ github.repository_owner }}/zentra-api-production:latest
+
+  build-ocr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Define OCR image metadata
+        id: meta
+        run: |
+          echo "image=ghcr.io/${{ github.repository_owner }}/zentra-image-extractor-production:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push OCR image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ./services/image_recognition_service
+          file: ./services/image_recognition_service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ghcr.io/${{ github.repository_owner }}/zentra-image-extractor-production:latest
+
+  deploy:
+    needs:
+      - build-api
+      - build-ocr
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     env:
       OP_ENVIRONMENT_ID: m5yflcyljim7b6fgc6hcjssca4
 
     steps:
       - name: Configure 1Password
-        uses: 1password/load-secrets-action/configure@v2
+        uses: 1password/load-secrets-action/configure@c1b138d5779f64eda6936d5caa8e754b9f3996c0
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
 
       - name: Install 1Password CLI beta
-        uses: 1password/install-cli-action@v2
+        uses: 1password/install-cli-action@c1b138d5779f64eda6936d5caa8e754b9f3996c0
         with:
           version: latest-beta
 
@@ -70,7 +155,7 @@ jobs:
           PYENV
 
       - name: Upload production environment file
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
         with:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
@@ -101,7 +186,7 @@ jobs:
           PYJSON
 
       - name: Upload Firebase service account file
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
         with:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
@@ -112,7 +197,7 @@ jobs:
 
 
       - name: Deploy on DigitalOcean Droplet
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f
         with:
           host: ${{ env.DO_HOST }}
           username: ${{ env.DO_USERNAME }}
@@ -135,15 +220,15 @@ jobs:
             fi
 
             cd "$BACKEND_DIR"
-            git fetch origin master
-            git checkout master
-            git pull --ff-only origin master
+            git fetch --prune origin
+            git checkout --detach "${{ github.sha }}"
 
             mkdir -p "$BACKEND_DIR/secrets"
             cp /tmp/.github/zentra.env.production "$BACKEND_DIR/.env.production"
             cp /tmp/.github/firebase-service-account.json "$BACKEND_DIR/secrets/firebase-service-account.json"
-            printf '\nAPI_IMAGE=%s\n' 'ghcr.io/${{ github.repository_owner }}/zentra-api-production:latest' >> "$BACKEND_DIR/.env.production"
-            printf 'OCR_IMAGE=%s\n' 'ghcr.io/${{ github.repository_owner }}/zentra-image-extractor-production:latest' >> "$BACKEND_DIR/.env.production"
+            printf '\nSENTRY_RELEASE=%s\n' '${{ github.sha }}' >> "$BACKEND_DIR/.env.production"
+            printf '\nAPI_IMAGE=%s\n' '${{ needs.build-api.outputs.image }}' >> "$BACKEND_DIR/.env.production"
+            printf 'OCR_IMAGE=%s\n' '${{ needs.build-ocr.outputs.image }}' >> "$BACKEND_DIR/.env.production"
             chmod 600 "$BACKEND_DIR/.env.production"
             chmod 600 "$BACKEND_DIR/secrets/firebase-service-account.json"
 
