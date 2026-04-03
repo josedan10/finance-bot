@@ -105,10 +105,6 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (uploadedFile && !uploadedFile.mimetype?.startsWith('image/')) {
-      throw new AppError('Unsupported receipt image format', 415);
-    }
-
     const imageInput = uploadedFile
       ? {
           type: 'file' as const,
@@ -183,6 +179,16 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       metadataDateTimeSuggestion: formatMetadataDateTime(extractedReceipt.metadata?.capturedAt),
     });
   } catch (error) {
+    if (error instanceof AppError) {
+      logger.warn('Receipt scanning rejected', {
+        userId: req.user.id,
+        statusCode: error.statusCode,
+        error: error.message,
+      });
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+
     captureException(error, {
       controller: 'scanReceipt',
       userId: req.user.id,
@@ -194,9 +200,9 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       userAgent: req.get('user-agent') ?? null,
       contentLength: req.get('content-length') ?? null,
     });
-    logger.error('Receipt scanning failed', { 
-      userId: req.user.id, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    logger.error('Receipt scanning failed', {
+      userId: req.user.id,
+      error,
     });
     
     res.status(500).json({ message: 'Failed to process receipt' });

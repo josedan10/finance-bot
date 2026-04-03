@@ -258,10 +258,7 @@ async def extract_text(request: Request):
             },
         )
         if exc.status_code >= 500 and OCR_SENTRY_DSN:
-            sentry_sdk.capture_message(
-                "OCR request failed with HTTPException",
-                level="error",
-            )
+            sentry_sdk.capture_exception(exc)
         raise
     except UnidentifiedImageError as exc:
         logger.warning(

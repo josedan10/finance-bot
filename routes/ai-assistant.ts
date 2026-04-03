@@ -9,6 +9,14 @@ const router = express.Router();
 const receiptUpload = multer({
 	storage: multer.memoryStorage(),
 	limits: { fileSize: config.RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES },
+	fileFilter: (_req, file, cb) => {
+		if (file.mimetype?.startsWith('image/')) {
+			cb(null, true);
+			return;
+		}
+
+		cb(new AppError('Unsupported receipt image format', 415));
+	},
 });
 
 const receiptUploadMiddleware: express.RequestHandler = (req, res, next) => {
