@@ -3,7 +3,6 @@ import FormData from 'form-data';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
-import { AppError } from '../../src/lib/appError';
 
 type OCRExtractResult = {
 	text: string;
@@ -129,7 +128,7 @@ class Image2TextModule {
 		throw new Error('No OCR provider configured. Set GOOGLE_AI_API_KEY or IMAGE_2_TEXT_SERVICE_URL.');
 	}
 
-	async extractTextFromImages(images: Array<OCRImageInput | string> = [], requestId?: string): Promise<OCRExtractResult[]> {
+	async extractTextFromImages(images: Array<OCRImageInput | string> = [], _requestId?: string): Promise<OCRExtractResult[]> {
 		if (!images.length) throw new Error('No images provided');
 
 		const texts: OCRExtractResult[] = [];
