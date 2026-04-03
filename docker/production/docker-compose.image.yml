@@ -6,6 +6,12 @@ services:
       context: ../../services/image_recognition_service
       dockerfile: Dockerfile
     restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
     ports:
       - "4000:4000"
     networks:

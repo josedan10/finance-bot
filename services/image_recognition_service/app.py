@@ -22,7 +22,7 @@ logger = logging.getLogger("zentra.ocr")
 logging.basicConfig(level=os.environ.get("OCR_LOG_LEVEL", "INFO"))
 
 EASYOCR_MODEL_STORAGE_DIRECTORY = os.environ.get("EASYOCR_MODULE_PATH", "/root/.EasyOCR")
-MAX_IMAGE_DIMENSION = int(os.environ.get("OCR_MAX_IMAGE_DIMENSION", "1600"))
+MAX_IMAGE_DIMENSION = int(os.environ.get("OCR_MAX_IMAGE_DIMENSION", "1200"))
 OCR_SENTRY_DSN = os.environ.get("OCR_SENTRY_DSN")
 SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
 SENTRY_RELEASE = os.environ.get("SENTRY_RELEASE")
@@ -55,7 +55,7 @@ def _ocr_readtext_worker(image_bytes: bytes, queue: mp.Queue, request_id: str | 
         with Image.open(BytesIO(image_bytes)) as variant:
             variant_array = np.array(variant)
 
-        local_reader = easyocr.Reader(["en", "es"], gpu=False, model_storage_directory=EASYOCR_MODEL_STORAGE_DIRECTORY)
+        local_reader = easyocr.Reader(["en", "es"], gpu=False, model_storage_directory=EASYOCR_MODEL_STORAGE_DIRECTORY, quantize=True)
         results = local_reader.readtext(variant_array, detail=1, paragraph=False)
 
         detections: list[tuple[str, float]] = []
