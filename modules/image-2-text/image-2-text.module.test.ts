@@ -76,7 +76,22 @@ describe('Image2TextModule', () => {
 
 		// Call the extractTextFromImages method with one image URL
 		await expect(image2TextModule.extractTextFromImages(['https://example.com/image.jpg'])).rejects.toThrow(
-			'Error extracting text from images'
+			'OCR request failed'
 		);
+	});
+
+	it('should include x-request-id header when provided', async () => {
+		spyPost.resolves({ data: { text: 'ok' } });
+		await image2TextModule.extractTextFromImages(['https://example.com/image.jpg'], 'req-123');
+		const configArg = spyPost.firstCall.args[2] as { headers?: Record<string, string> };
+		expect(configArg.headers?.['x-request-id']).toBe('req-123');
+	});
+
+	it('should throw generic extraction error when all fallback URLs fail without HTTP response', async () => {
+		spyPost.rejects(new Error('network down'));
+		await expect(image2TextModule.extractTextFromImages(['https://example.com/image.jpg'])).rejects.toMatchObject({
+			message: 'Error extracting text from images',
+			statusCode: 503,
+		});
 	});
 });

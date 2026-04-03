@@ -140,6 +140,18 @@ function buildManualReviewFallback(rawText: string): Pick<
 	};
 }
 
+function mapParsedTypeToApiType(type: string | null | undefined): 'income' | 'expense' {
+	if (!type) {
+		return 'expense';
+	}
+
+	if (type === 'credit' || type === 'income') {
+		return 'income';
+	}
+
+	return 'expense';
+}
+
 export async function analyzeReceiptImageForUser(params: {
 	userId: number;
 	imageInput: OCRImageInput;
@@ -194,7 +206,7 @@ export async function analyzeReceiptImageForUser(params: {
 		description: parsed?.description || fallback.description,
 		amount: parsed?.amount || fallback.amount,
 		category: parsed?.category || fallback.category,
-		type: (parsed?.type || fallback.type) as 'income' | 'expense',
+		type: mapParsedTypeToApiType(parsed?.type || fallback.type),
 		currency: parsed?.currency || fallback.currency,
 		referenceId: fallback.referenceId,
 		isDuplicate: Boolean(duplicate),
