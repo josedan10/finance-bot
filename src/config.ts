@@ -62,5 +62,6 @@ export const config = {
 
 	// AI Assistant
 	GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '',
+	GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
 	OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
 };
