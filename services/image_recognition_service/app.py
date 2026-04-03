@@ -89,16 +89,34 @@ def limit_image_size(img: Image.Image) -> Image.Image:
     return limited
 
 
-def preprocess_image_variants(img: Image.Image) -> Iterator[Image.Image]:
+def preprocess_image_variants(img: Image.Image, request_id: str | None = None) -> Iterator[Image.Image]:
     base_image = ImageOps.exif_transpose(img).convert("RGB")
     limited_base = limit_image_size(base_image)
     width, height = limited_base.size
+
+    logger.info(
+        "OCR preprocessing base image",
+        extra={
+            "request_id": request_id,
+            "width": width,
+            "height": height,
+            "mode": limited_base.mode,
+        },
+    )
 
     if max(width, height) < 1000:
         upscale_factor = 1.5
         resized = limited_base.resize(
             (int(width * upscale_factor), int(height * upscale_factor)),
             Image.Resampling.LANCZOS,
+        )
+        logger.info(
+            "OCR preprocessing upscaled image",
+            extra={
+                "request_id": request_id,
+                "width": resized.size[0],
+                "height": resized.size[1],
+            },
         )
     else:
         resized = limited_base
@@ -112,13 +130,38 @@ def preprocess_image_variants(img: Image.Image) -> Iterator[Image.Image]:
     yield sharpened
 
 
-def extract_text_from_variants(img: Image.Image) -> str:
+def extract_text_from_variants(img: Image.Image, request_id: str | None = None) -> str:
     detections: list[tuple[str, float]] = []
     ocr_reader = get_reader()
 
-    for variant in preprocess_image_variants(img):
+    for index, variant in enumerate(preprocess_image_variants(img, request_id=request_id), start=1):
+        logger.info(
+            "OCR variant processing started",
+            extra={
+                "request_id": request_id,
+                "variant_index": index,
+                "variant_mode": variant.mode,
+                "variant_size": f"{variant.size[0]}x{variant.size[1]}",
+            },
+        )
         variant_array = np.array(variant)
+        logger.info(
+            "OCR readtext starting",
+            extra={
+                "request_id": request_id,
+                "variant_index": index,
+                "array_shape": tuple(variant_array.shape),
+            },
+        )
         results = ocr_reader.readtext(variant_array, detail=1, paragraph=False)
+        logger.info(
+            "OCR readtext completed",
+            extra={
+                "request_id": request_id,
+                "variant_index": index,
+                "results_count": len(results),
+            },
+        )
         del variant_array
 
         for result in results:
@@ -256,8 +299,26 @@ async def extract_text(request: Request):
             },
         )
 
+        logger.info(
+            "OCR opening image bytes",
+            extra={
+                "request_id": request_id,
+                "byte_length": len(content),
+                "source_type": source_type,
+            },
+        )
+
         with Image.open(BytesIO(content)) as img:
-            text = extract_text_from_variants(img)
+            logger.info(
+                "OCR image opened",
+                extra={
+                    "request_id": request_id,
+                    "image_mode": img.mode,
+                    "image_size": f"{img.size[0]}x{img.size[1]}",
+                    "image_format": img.format,
+                },
+            )
+            text = extract_text_from_variants(img, request_id=request_id)
             metadata = extract_image_metadata(img)
 
         if not text:

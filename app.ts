@@ -11,13 +11,16 @@ import { config } from './src/config';
 import { captureRequestException } from './src/lib/sentry';
 
 const app = express();
+const runtimePublicDir = path.resolve(process.cwd(), 'public');
+const bundledPublicDir = path.join(__dirname, 'public');
 
 const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
 app.use(morgan(morganFormat));
 app.use(express.json({ limit: config.REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: false, limit: config.REQUEST_BODY_LIMIT }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(runtimePublicDir));
+app.use(express.static(bundledPublicDir));
 app.use((req: Request, res: Response, next: NextFunction) => {
 	const incomingRequestId = req.get('x-request-id');
 	const requestId = incomingRequestId && incomingRequestId.trim() ? incomingRequestId.trim() : randomUUID();

@@ -43,6 +43,7 @@ router.get('/settings', AIController.getAISettings);
 router.put('/settings', AIController.updateAISettings);
 router.post('/scan-receipt', receiptUploadMiddleware, AIController.scanReceipt);
 router.post('/receipt-analysis', receiptUploadMiddleware, AIController.scanReceipt);
+router.post('/receipt-samples', receiptUploadMiddleware, AIController.uploadReceiptSample);
 router.post('/analyze', AIController.analyzeTransactions);
 router.post('/suggest-budget', AIController.getBudgetSuggestions);
 
