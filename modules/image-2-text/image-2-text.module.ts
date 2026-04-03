@@ -1,5 +1,5 @@
-import axios, { AxiosError } from 'axios';
-import FormData from 'form-data';
+import axios from 'axios';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 
@@ -25,79 +25,58 @@ export type OCRImageInput =
 			size?: number;
 	  };
 
+const RECEIPT_OCR_PROMPT =
+	'Extract all visible text from this receipt image exactly as it appears. ' +
+	'Return only the raw text content, preserving line breaks. ' +
+	'Do not add commentary, formatting, or explanations.';
+
 class Image2TextModule {
-	private getCandidateServiceUrls(): string[] {
-		const configuredUrl = config.IMAGE_2_TEXT_SERVICE_URL.replace(/\/$/, '');
-		return [
-			...new Set([
-				configuredUrl,
-				'http://zentra-image-extractor:4000',
-				'http://local-zentra-image-extractor-1:4000',
-				'http://localhost:4000',
-			]),
-		];
+	private model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>;
+
+	constructor() {
+		const genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
+		this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
 	}
 
-	private createRequestConfig(image: OCRImageInput) {
+	private async resolveInlineData(image: OCRImageInput): Promise<{ data: string; mimeType: string }> {
 		if (image.type === 'file') {
-			const formData = new FormData();
-			formData.append('image', image.buffer, {
-				filename: image.filename || 'receipt-upload',
-				contentType: image.mimeType || 'application/octet-stream',
-				knownLength: image.size ?? image.buffer.length,
-			});
-
 			return {
-				payload: formData,
-				headers: formData.getHeaders(),
+				data: image.buffer.toString('base64'),
+				mimeType: image.mimeType || 'image/jpeg',
 			};
 		}
 
+		const response = await axios.get<ArrayBuffer>(image.value, {
+			responseType: 'arraybuffer',
+			timeout: 30_000,
+		});
+
+		const mimeType = (response.headers['content-type'] as string | undefined) || 'image/jpeg';
+
 		return {
-			payload: { image: image.value },
-			headers: { 'Content-Type': 'application/json' },
+			data: Buffer.from(response.data).toString('base64'),
+			mimeType: mimeType.split(';')[0].trim(),
 		};
 	}
 
 	private async extractText(image: OCRImageInput): Promise<OCRExtractResult> {
-		let lastError: AxiosError | null = null;
+		const inlineData = await this.resolveInlineData(image);
 
-		for (const baseUrl of this.getCandidateServiceUrls()) {
-			try {
-				const { payload, headers } = this.createRequestConfig(image);
-				const response = await axios.post(`${baseUrl}/extract-text/`, payload, {
-					headers,
-					maxContentLength: Infinity,
-					maxBodyLength: Infinity,
-					timeout: 60_000,
-				});
+		const result = await this.model.generateContent([
+			RECEIPT_OCR_PROMPT,
+			{ inlineData },
+		]);
 
-				if (baseUrl !== config.IMAGE_2_TEXT_SERVICE_URL.replace(/\/$/, '')) {
-					logger.warn('OCR service fallback URL used', { baseUrl });
-				}
+		const text = result.response.text().trim();
 
-				return {
-					text: response.data.text,
-					metadata: response.data.metadata,
-				};
-			} catch (error: unknown) {
-				const axiosError = error as AxiosError;
-				lastError = axiosError;
-				logger.warn('OCR extraction attempt failed', {
-					baseUrl,
-					message: axiosError.message,
-					responseData: axiosError.response?.data,
-					status: axiosError.response?.status,
-				});
-			}
+		if (!text) {
+			throw new Error('No text found in the image. Try to improve the image quality.');
 		}
 
-		logger.error('Error extracting text from images', {
-			responseData: lastError?.response?.data,
-			message: lastError?.message,
-			status: lastError?.response?.status,
-		});
-		throw new Error('Error extracting text from images');
+		return {
+			text,
+			metadata: { capturedAt: null, deviceModel: null, deviceMake: null },
+		};
 	}
 
 	async extractTextFromImages(images: Array<OCRImageInput | string> = []): Promise<OCRExtractResult[]> {
@@ -108,12 +87,16 @@ class Image2TextModule {
 		for (const image of images) {
 			const normalizedImage: OCRImageInput =
 				typeof image === 'string'
-					? {
-							type: 'image-source',
-							value: image,
-						}
+					? { type: 'image-source', value: image }
 					: image;
-			texts.push(await this.extractText(normalizedImage));
+
+			try {
+				texts.push(await this.extractText(normalizedImage));
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : 'Unknown error';
+				logger.error('OCR extraction failed', { message });
+				throw new Error(message);
+			}
 		}
 
 		logger.info(`Texts extracted from ${texts.length} images`);
