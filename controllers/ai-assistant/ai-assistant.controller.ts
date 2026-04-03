@@ -3,6 +3,7 @@ import path from 'path';
 import { Request, Response } from 'express';
 import { AISettingsService, AIAssistantFactory } from '../../modules/ai-assistant/ai-assistant.module';
 import { PrismaModule as prisma } from '../../modules/database/database.module';
+import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 import { AppError } from '../../src/lib/appError';
 import {
@@ -11,32 +12,9 @@ import {
   saveReceiptProcessingImage,
 } from '../../src/lib/receipt-image-storage';
 import { captureException } from '../../src/lib/sentry';
-import { Image2TextService } from '../../modules/image-2-text/image-2-text.module';
-import { BaseTransactions } from '../../modules/base-transactions/base-transactions.module';
-import {
-  getBeloWithdrawCommissionFromGross,
-  getBeloWithdrawGrossFromReceiptAmount,
-  isBeloWithdrawDescription,
-} from '../../src/helpers/belo-withdraw.helper';
-
-function formatMetadataDateTime(value: string | null | undefined): string | null {
-  if (!value) return null;
-
-  const normalized = value.trim().replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(' ', 'T');
-  const parsed = new Date(normalized);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, '0');
-  const day = String(parsed.getDate()).padStart(2, '0');
-  const hours = String(parsed.getHours()).padStart(2, '0');
-  const minutes = String(parsed.getMinutes()).padStart(2, '0');
-
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
+import { ReceiptOcrQueueService } from '../../modules/ai-assistant/receipt-ocr-queue.service';
+import { analyzeReceiptImageForUser } from '../../modules/ai-assistant/receipt-analysis.service';
+import type { OCRImageInput } from '../../modules/image-2-text/image-2-text.module';
 
 function sanitizeReceiptSource(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -55,73 +33,16 @@ function getPublicBaseUrl(req: Request): string {
   return `${protocol}://${req.get('host')}`;
 }
 
-async function findMatchingBeloWithdraw(userId: number, parsed: {
-  amount: number;
-  date: string;
-  currency: string;
-}) {
-  const receiptDate = new Date(parsed.date);
-  const dayStart = new Date(receiptDate);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(receiptDate);
-  dayEnd.setHours(23, 59, 59, 999);
-  const expectedGrossAmount = getBeloWithdrawGrossFromReceiptAmount(parsed.amount);
-
-  const candidates = await prisma.transaction.findMany({
-    where: {
-      userId,
-      type: 'debit',
-      currency: parsed.currency,
-      date: {
-        gte: dayStart,
-        lte: dayEnd,
-      },
-    },
-    orderBy: { date: 'desc' },
-  });
-
-  const withdrawCandidates = candidates.filter((transaction) => isBeloWithdrawDescription(transaction.description));
-
-  if (withdrawCandidates.length === 0) {
-    return null;
-  }
-
-  const bestMatch = withdrawCandidates
-    .map((transaction) => {
-      const grossAmount = Number(transaction.amount || 0);
-      return {
-        transaction,
-        amountDifference: Math.abs(grossAmount - expectedGrossAmount),
-      };
-    })
-    .sort((left, right) => left.amountDifference - right.amountDifference)[0];
-
-  if (!bestMatch || bestMatch.amountDifference > 5) {
-    return null;
-  }
-
-  const grossAmount = Number(bestMatch.transaction.amount || 0);
-
-  return {
-    id: bestMatch.transaction.id,
-    date: bestMatch.transaction.date.toISOString(),
-    description: bestMatch.transaction.description,
-    grossAmount,
-    expectedNetAmount: parsed.amount,
-    commissionAmount: getBeloWithdrawCommissionFromGross(grossAmount),
-  };
-}
+type UploadFileLike = {
+  buffer: Buffer;
+  originalname?: string;
+  mimetype?: string;
+  size?: number;
+};
 
 export async function scanReceipt(req: Request, res: Response): Promise<void> {
   try {
-    const uploadedFile = req.file as
-      | {
-          buffer: Buffer;
-          originalname?: string;
-          mimetype?: string;
-          size?: number;
-        }
-      | undefined;
+    const uploadedFile = req.file as UploadFileLike | undefined;
     const image = typeof req.body?.image === 'string' ? req.body.image : null;
 
     if (!uploadedFile && !image) {
@@ -147,7 +68,7 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
     let savedReceiptMimeType: string | null = uploadedFile?.mimetype ?? null;
     let savedReceiptOriginalName: string | undefined = uploadedFile?.originalname;
 
-    const imageInput = uploadedFile
+    const imageInput: OCRImageInput = uploadedFile
       ? await (async () => {
           const optimizationDetails = await optimizeReceiptImageForOcr(uploadedFile.buffer);
           optimizedFileSize = optimizationDetails.optimizedBytes;
@@ -207,59 +128,13 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       savedReceiptImageUrl,
       savedReceiptImagePath,
     });
-    const extractedTexts = await Image2TextService.extractTextFromImages([imageInput]);
-    
-    if (!extractedTexts || extractedTexts.length === 0) {
-      res.status(422).json({ message: 'Could not extract text from image' });
-      return;
-    }
-
-    const extractedReceipt = extractedTexts[0];
-    const textLines = extractedReceipt.text.split('\n');
-    let parsed: Awaited<ReturnType<typeof BaseTransactions.parseTransactionFromText>> | null = null;
-    let duplicate = null;
-    let beloWithdrawMatch = null;
-    let requiresManualReview = true;
-    let parseWarning: string | null = null;
-
-    try {
-      parsed = await BaseTransactions.parseTransactionFromText(textLines, req.user.id);
-      requiresManualReview = false;
-
-      duplicate = await BaseTransactions.findDuplicate({
-        userId: req.user.id,
-        amount: parsed.amount,
-        date: new Date(parsed.date),
-        type: parsed.type,
-        currency: parsed.currency,
-        description: parsed.description
-      });
-
-      beloWithdrawMatch = await findMatchingBeloWithdraw(req.user.id, {
-        amount: parsed.amount,
-        date: parsed.date,
-        currency: parsed.currency,
-      });
-    } catch (parseError) {
-      parseWarning = parseError instanceof Error ? parseError.message : 'Could not parse receipt fields automatically';
-      logger.warn('Receipt OCR extracted text but automatic parsing needs manual review', {
-        userId: req.user.id,
-        warning: parseWarning,
-      });
-    }
-
-    res.status(200).json({
-      ...(parsed ?? {}),
-      isDuplicate: !!duplicate,
-      duplicateId: duplicate?.id,
-      beloWithdrawMatch,
-      rawText: extractedReceipt.text,
-      textLines,
-      requiresManualReview,
-      parseWarning,
-      imageMetadata: extractedReceipt.metadata,
-      metadataDateTimeSuggestion: formatMetadataDateTime(extractedReceipt.metadata?.capturedAt),
+    const result = await analyzeReceiptImageForUser({
+      userId: req.user.id,
+      imageInput,
+      requestId,
     });
+
+    res.status(200).json(result);
   } catch (error) {
     if (error instanceof AppError) {
       logger.warn('Receipt scanning rejected', {
@@ -288,6 +163,174 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
     });
     
     res.status(500).json({ message: 'Failed to process receipt' });
+  }
+}
+
+function getUploadedFiles(req: Request): UploadFileLike[] {
+  const directFile = req.file as UploadFileLike | undefined;
+  const files = req.files as UploadFileLike[] | Record<string, UploadFileLike[]> | undefined;
+
+  if (directFile) {
+    return [directFile];
+  }
+
+  if (Array.isArray(files)) {
+    return files;
+  }
+
+  if (files && typeof files === 'object') {
+    return Object.values(files).flat();
+  }
+
+  return [];
+}
+
+async function optimizeAndStoreReceiptFile(params: {
+  file: UploadFileLike;
+  requestId: string;
+  baseUrl: string;
+  label: string;
+}) {
+  const optimizationDetails = await optimizeReceiptImageForOcr(params.file.buffer);
+  const mimeType = optimizationDetails.didOptimize
+    ? optimizationDetails.mimeType
+    : params.file.mimetype || 'application/octet-stream';
+  const originalName = optimizationDetails.didOptimize
+    ? 'optimized-receipt.jpg'
+    : params.file.originalname;
+  const savedImage = await saveReceiptProcessingImage({
+    buffer: optimizationDetails.buffer,
+    originalName,
+    mimeType,
+    requestId: params.requestId,
+    baseUrl: params.baseUrl,
+    label: params.label,
+  });
+
+  return {
+    savedImage,
+    optimizedBytes: optimizationDetails.optimizedBytes,
+    mimeType,
+    originalName,
+  };
+}
+
+export async function queueReceiptAnalysis(req: Request, res: Response): Promise<void> {
+  try {
+    const uploadedFiles = getUploadedFiles(req);
+
+    if (uploadedFiles.length === 0) {
+      res.status(400).json({ message: 'No image files provided' });
+      return;
+    }
+
+    const limitedFiles = uploadedFiles.slice(0, config.RECEIPT_BULK_UPLOAD_MAX_FILES);
+    const baseUrl = getPublicBaseUrl(req);
+    const queuedFiles: Array<{
+      publicUrl: string;
+      filePath: string;
+      fileName: string;
+      originalName?: string;
+      mimeType?: string;
+      size: number;
+      requestId?: string | null;
+    }> = [];
+
+    for (let index = 0; index < limitedFiles.length; index += 1) {
+      const file = limitedFiles[index];
+      const requestId = `${typeof res.locals.requestId === 'string' ? res.locals.requestId : 'queue'}-${index + 1}`;
+      const { savedImage, optimizedBytes, mimeType, originalName } = await optimizeAndStoreReceiptFile({
+        file,
+        requestId,
+        baseUrl,
+        label: `queue-${index + 1}`,
+      });
+
+      queuedFiles.push({
+        publicUrl: savedImage.publicUrl,
+        filePath: savedImage.filePath,
+        fileName: savedImage.fileName,
+        originalName,
+        mimeType,
+        size: optimizedBytes,
+        requestId,
+      });
+    }
+
+    const jobs = await ReceiptOcrQueueService.enqueueJobs(req.user.id, queuedFiles);
+
+    res.status(202).json({
+      jobs,
+      queuedCount: jobs.length,
+      skippedCount: Math.max(0, uploadedFiles.length - jobs.length),
+    });
+  } catch (error) {
+    captureException(error, {
+      controller: 'queueReceiptAnalysis',
+      userId: req.user.id,
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      fileCount: Array.isArray(req.files) ? req.files.length : req.file ? 1 : 0,
+    });
+
+    logger.error('Failed to queue receipt OCR jobs', {
+      userId: req.user.id,
+      error,
+    });
+
+    res.status(500).json({ message: 'Failed to queue receipt OCR jobs' });
+  }
+}
+
+export async function getQueuedReceiptAnalysisJobs(req: Request, res: Response): Promise<void> {
+  try {
+    const rawIds = typeof req.query.ids === 'string' ? req.query.ids : '';
+    const ids = rawIds
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+    const limitRaw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : 50;
+    const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 50;
+
+    const jobs = ids.length > 0
+      ? await ReceiptOcrQueueService.getJobsByIds(req.user.id, ids)
+      : await ReceiptOcrQueueService.listJobsForUser(req.user.id, limit);
+
+    res.status(200).json({ jobs });
+  } catch (error) {
+    captureException(error, {
+      controller: 'getQueuedReceiptAnalysisJobs',
+      userId: req.user.id,
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+    });
+    logger.error('Failed to fetch queued receipt OCR jobs', { userId: req.user.id, error });
+    res.status(500).json({ message: 'Failed to fetch queued receipt OCR jobs' });
+  }
+}
+
+export async function retryQueuedReceiptAnalysisJob(req: Request, res: Response): Promise<void> {
+  try {
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : '';
+    if (!jobId) {
+      res.status(400).json({ message: 'Job ID is required' });
+      return;
+    }
+
+    const job = await ReceiptOcrQueueService.retryJob(req.user.id, jobId);
+    if (!job) {
+      res.status(404).json({ message: 'Job not found' });
+      return;
+    }
+
+    res.status(200).json({ job });
+  } catch (error) {
+    captureException(error, {
+      controller: 'retryQueuedReceiptAnalysisJob',
+      userId: req.user.id,
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      jobId: req.params?.jobId ?? null,
+    });
+    logger.error('Failed to retry queued receipt OCR job', { userId: req.user.id, error, jobId: req.params?.jobId });
+    res.status(500).json({ message: 'Failed to retry queued receipt OCR job' });
   }
 }
 
