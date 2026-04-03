@@ -11,6 +11,8 @@ import dayjs from 'dayjs';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 import { cleanupOldReceiptProcessingImages } from '../../src/lib/receipt-image-storage';
+import { ReceiptOcrQueueService } from '../ai-assistant/receipt-ocr-queue.service';
+import { analyzeReceiptImageForUser } from '../ai-assistant/receipt-analysis.service';
 
 const CRON_EXPRESSIONS = {
 	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10 * * 1-5',
@@ -18,6 +20,7 @@ const CRON_EXPRESSIONS = {
 	updateTransactionsTable: process.env.CRON_UPDATE_TRANSACTIONS || '0 9 * * 0-6',
 	checkGmailEmails: process.env.CRON_CHECK_GMAIL || '0 */30 * * 1-5',
 	cleanupReceiptProcessingImages: process.env.CRON_CLEAN_RECEIPT_PROCESSING_IMAGES || '0 * * * *',
+	processReceiptOcrQueue: process.env.CRON_PROCESS_RECEIPT_OCR_QUEUE || '*/10 * * * * *',
 };
 
 export class TaskQueueModule {
@@ -51,6 +54,14 @@ export class TaskQueueModule {
 		{ timezone: config.CRON_TIMEZONE, scheduled: true }
 	);
 
+	private processReceiptOcrQueue = cron.schedule(
+		CRON_EXPRESSIONS.processReceiptOcrQueue,
+		this._processReceiptOcrQueue.bind(this),
+		{ timezone: config.CRON_TIMEZONE, scheduled: true }
+	);
+
+	private isProcessingReceiptQueue = false;
+
 	start() {
 		logger.info('Starting task queue module...', { cronExpressions: CRON_EXPRESSIONS });
 
@@ -59,6 +70,7 @@ export class TaskQueueModule {
 		this.startDailyUpdateTransactionsTable.start();
 		this.checkGmailSchedule.start();
 		this.cleanupReceiptProcessingImages.start();
+		this.processReceiptOcrQueue.start();
 	}
 
 	private async _createDailyExchangeRateTask() {
@@ -305,6 +317,53 @@ export class TaskQueueModule {
 			});
 		} catch (error) {
 			logger.error('Error cleaning receipt processing images', { error });
+		}
+	}
+
+	private async _processReceiptOcrQueue() {
+		if (this.isProcessingReceiptQueue) {
+			return;
+		}
+
+		this.isProcessingReceiptQueue = true;
+
+		try {
+			let processedCount = 0;
+			while (processedCount < config.RECEIPT_OCR_QUEUE_BATCH_SIZE) {
+				const job = await ReceiptOcrQueueService.dequeueNextQueuedJob();
+				if (!job) {
+					break;
+				}
+
+				try {
+					const result = await analyzeReceiptImageForUser({
+						userId: job.userId,
+						requestId: job.requestId || job.id,
+						imageInput: {
+							type: 'image-source',
+							value: job.image.publicUrl,
+						},
+					});
+
+					await ReceiptOcrQueueService.markCompleted(job, result as unknown as Record<string, unknown>);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : 'Unexpected OCR queue processing error';
+					await ReceiptOcrQueueService.markFailed(job, message);
+					logger.warn('Queued receipt OCR processing failed', {
+						jobId: job.id,
+						userId: job.userId,
+						attempts: job.attempts,
+						maxAttempts: job.maxAttempts,
+						error: message,
+					});
+				}
+
+				processedCount += 1;
+			}
+		} catch (error) {
+			logger.error('Error processing queued receipt OCR jobs', { error });
+		} finally {
+			this.isProcessingReceiptQueue = false;
 		}
 	}
 }

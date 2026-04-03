@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import FormData from 'form-data';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
+import { AppError } from '../../src/lib/appError';
 
 type OCRExtractResult = {
 	text: string;
@@ -38,7 +39,7 @@ class Image2TextModule {
 		];
 	}
 
-	private createRequestConfig(image: OCRImageInput) {
+	private createRequestConfig(image: OCRImageInput, requestId?: string) {
 		if (image.type === 'file') {
 			const formData = new FormData();
 			formData.append('image', image.buffer, {
@@ -49,22 +50,28 @@ class Image2TextModule {
 
 			return {
 				payload: formData,
-				headers: formData.getHeaders(),
+				headers: {
+					...formData.getHeaders(),
+					...(requestId ? { 'x-request-id': requestId } : {}),
+				},
 			};
 		}
 
 		return {
 			payload: { image: image.value },
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				...(requestId ? { 'x-request-id': requestId } : {}),
+			},
 		};
 	}
 
-	private async extractText(image: OCRImageInput): Promise<OCRExtractResult> {
+	private async extractText(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
 		let lastError: AxiosError | null = null;
 
 		for (const baseUrl of this.getCandidateServiceUrls()) {
 			try {
-				const { payload, headers } = this.createRequestConfig(image);
+				const { payload, headers } = this.createRequestConfig(image, requestId);
 				const response = await axios.post(`${baseUrl}/extract-text/`, payload, {
 					headers,
 					maxContentLength: Infinity,
@@ -85,22 +92,35 @@ class Image2TextModule {
 				lastError = axiosError;
 				logger.warn('OCR extraction attempt failed', {
 					baseUrl,
+					requestId,
 					message: axiosError.message,
 					responseData: axiosError.response?.data,
 					status: axiosError.response?.status,
 				});
+
+				if (axiosError.response) {
+					const statusCode = axiosError.response.status;
+					const responseData = axiosError.response.data as
+						| { detail?: string; message?: string }
+						| undefined;
+					const detail =
+						responseData?.detail || responseData?.message || axiosError.message || 'OCR request failed';
+
+					throw new AppError(detail, statusCode);
+				}
 			}
 		}
 
 		logger.error('Error extracting text from images', {
+			requestId,
 			responseData: lastError?.response?.data,
 			message: lastError?.message,
 			status: lastError?.response?.status,
 		});
-		throw new Error('Error extracting text from images');
+		throw new AppError('Error extracting text from images', 503);
 	}
 
-	async extractTextFromImages(images: Array<OCRImageInput | string> = []): Promise<OCRExtractResult[]> {
+	async extractTextFromImages(images: Array<OCRImageInput | string> = [], requestId?: string): Promise<OCRExtractResult[]> {
 		if (!images.length) throw new Error('No images provided');
 
 		const texts: OCRExtractResult[] = [];
@@ -113,7 +133,7 @@ class Image2TextModule {
 							value: image,
 						}
 					: image;
-			texts.push(await this.extractText(normalizedImage));
+			texts.push(await this.extractText(normalizedImage, requestId));
 		}
 
 		logger.info(`Texts extracted from ${texts.length} images`);

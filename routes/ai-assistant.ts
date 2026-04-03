@@ -36,6 +36,23 @@ const receiptUploadMiddleware: express.RequestHandler = (req, res, next) => {
 	});
 };
 
+const receiptBulkUploadMiddleware: express.RequestHandler = (req, res, next) => {
+	receiptUpload.array('images', config.RECEIPT_BULK_UPLOAD_MAX_FILES)(req, res, (error: unknown) => {
+		const uploadError = error as { code?: string } | undefined;
+		if (uploadError?.code === 'LIMIT_FILE_SIZE') {
+			next(new AppError('One or more receipt images are too large. Please upload smaller images.', 413));
+			return;
+		}
+
+		if (error) {
+			next(error instanceof Error ? error : new Error('Failed to process receipt uploads'));
+			return;
+		}
+
+		next();
+	});
+};
+
 // All AI routes require authentication
 router.use(requireAuth);
 
@@ -43,6 +60,9 @@ router.get('/settings', AIController.getAISettings);
 router.put('/settings', AIController.updateAISettings);
 router.post('/scan-receipt', receiptUploadMiddleware, AIController.scanReceipt);
 router.post('/receipt-analysis', receiptUploadMiddleware, AIController.scanReceipt);
+router.post('/receipt-analysis/queue', receiptBulkUploadMiddleware, AIController.queueReceiptAnalysis);
+router.get('/receipt-analysis/jobs', AIController.getQueuedReceiptAnalysisJobs);
+router.post('/receipt-analysis/jobs/:jobId/retry', AIController.retryQueuedReceiptAnalysisJob);
 router.post('/receipt-samples', receiptUploadMiddleware, AIController.uploadReceiptSample);
 router.post('/analyze', AIController.analyzeTransactions);
 router.post('/suggest-budget', AIController.getBudgetSuggestions);
