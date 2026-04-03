@@ -97,16 +97,13 @@ docker image prune -af || true
 docker volume prune -f || true
 docker network prune -f || true
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pulling API and OCR images..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull \
-	zentra-image-extractor-production \
-	zentra-api-production
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pulling API image..."
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull zentra-api-production
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Traefik, Redis, and OCR services..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Traefik and Redis..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans \
 	traefik \
-	redis-zentra-production \
-	zentra-image-extractor-production
+	redis-zentra-production
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running Prisma migrations in one-off API container..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --no-deps zentra-api-production npx prisma migrate deploy

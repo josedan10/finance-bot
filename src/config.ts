@@ -18,6 +18,7 @@ export const config = {
 	TEST_CHAT_ID: Number(process.env.TEST_CHAT_ID) || 0,
 	CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'America/Caracas',
 	PYDOLAR_API_URL: process.env.PYDOLAR_API_URL || 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar',
+	IMAGE_2_TEXT_SERVICE_URL: process.env.IMAGE_2_TEXT_SERVICE_URL || '',
 	REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT || '15mb',
 	RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES: Number(process.env.RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES) || 10 * 1024 * 1024,
 	RECEIPT_PROCESSING_TTL_HOURS: Number(process.env.RECEIPT_PROCESSING_TTL_HOURS) || 1,
