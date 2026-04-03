@@ -5,7 +5,11 @@ import { AISettingsService, AIAssistantFactory } from '../../modules/ai-assistan
 import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from '../../src/lib/logger';
 import { AppError } from '../../src/lib/appError';
-import { getImageExtension, saveReceiptProcessingImage } from '../../src/lib/receipt-image-storage';
+import {
+  getImageExtension,
+  optimizeReceiptImageForOcr,
+  saveReceiptProcessingImage,
+} from '../../src/lib/receipt-image-storage';
 import { captureException } from '../../src/lib/sentry';
 import { Image2TextService } from '../../modules/image-2-text/image-2-text.module';
 import { BaseTransactions } from '../../modules/base-transactions/base-transactions.module';
@@ -128,13 +132,30 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
     const requestId = typeof res.locals.requestId === 'string' ? res.locals.requestId : 'no-request-id';
     let savedReceiptImageUrl: string | null = null;
     let savedReceiptImagePath: string | null = null;
+    let optimizedFileSize: number | null = null;
+    let originalImageWidth: number | null = null;
+    let originalImageHeight: number | null = null;
+    let optimizedImageWidth: number | null = null;
+    let optimizedImageHeight: number | null = null;
+    let originalImageFormat: string | null = null;
+    let optimizedImageFormat: string | null = null;
+    let didOptimizeImage = false;
 
     const imageInput = uploadedFile
       ? await (async () => {
+          const optimizationDetails = await optimizeReceiptImageForOcr(uploadedFile.buffer);
+          optimizedFileSize = optimizationDetails.optimizedBytes;
+          originalImageWidth = optimizationDetails.originalWidth;
+          originalImageHeight = optimizationDetails.originalHeight;
+          optimizedImageWidth = optimizationDetails.optimizedWidth;
+          optimizedImageHeight = optimizationDetails.optimizedHeight;
+          originalImageFormat = optimizationDetails.originalFormat;
+          optimizedImageFormat = optimizationDetails.optimizedFormat;
+          didOptimizeImage = optimizationDetails.didOptimize;
           const savedImage = await saveReceiptProcessingImage({
-            buffer: uploadedFile.buffer,
-            originalName: uploadedFile.originalname,
-            mimeType: uploadedFile.mimetype,
+            buffer: optimizationDetails.buffer,
+            originalName: 'optimized-receipt.jpg',
+            mimeType: 'image/jpeg',
             requestId,
             baseUrl: getPublicBaseUrl(req),
             label: 'scan',
@@ -157,6 +178,14 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       transport: uploadedFile ? 'stored-url' : 'json',
       mimeType: uploadedFile?.mimetype ?? null,
       fileSize: uploadedFile?.size ?? (typeof image === 'string' ? image.length : null),
+      optimizedFileSize,
+      originalImageWidth,
+      originalImageHeight,
+      optimizedImageWidth,
+      optimizedImageHeight,
+      originalImageFormat,
+      optimizedImageFormat,
+      didOptimizeImage,
       requestId,
       savedReceiptImageUrl,
       savedReceiptImagePath,
