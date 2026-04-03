@@ -27,7 +27,7 @@ const initialGeminiModel = config.GEMINI_RECEIPT_MODEL;
 const initialImage2TextUrl = config.IMAGE_2_TEXT_SERVICE_URL;
 
 function resetGeminiModelCache() {
-	(image2TextModule as unknown as { geminiModel: unknown }).geminiModel = null;
+	(image2TextModule as unknown as { geminiModels: Map<string, unknown> }).geminiModels = new Map<string, unknown>();
 }
 
 describe('Image2TextModule', () => {
@@ -47,13 +47,56 @@ describe('Image2TextModule', () => {
 	afterEach(() => {
 		config.RECEIPT_TEXT_PROVIDER = 'auto';
 		config.GOOGLE_AI_API_KEY = 'test-google-key';
-		config.GEMINI_RECEIPT_MODEL = 'gemini-1.5-flash';
+		config.GEMINI_RECEIPT_MODEL = 'gemini-2.0-flash';
 		config.IMAGE_2_TEXT_SERVICE_URL = 'http://localhost:4000';
 		resetGeminiModelCache();
 		jest.clearAllMocks();
 		sandbox.resetHistory();
 		spyPost.resetBehavior();
 		spyGet.resetBehavior();
+	});
+
+	it('should fallback to a supported Gemini model when configured model is not found', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'gemini';
+		config.GEMINI_RECEIPT_MODEL = 'gemini-1.5-flash';
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+
+		const missingModel = {
+			generateContent: jest.fn().mockRejectedValue(
+				new Error(
+					'Error fetching from https://generativelanguage.googleapis.com/... [404 Not Found] models/gemini-1.5-flash is not found for API version v1beta'
+				)
+			),
+		};
+		const validModel = {
+			generateContent: jest.fn().mockResolvedValue({
+				response: {
+					text: () => 'Recovered with fallback model',
+				},
+			}),
+		};
+
+		MockGoogleAI.prototype.getGenerativeModel.mockImplementation(({ model }) =>
+			(model === 'gemini-1.5-flash' ? missingModel : validModel) as unknown as ReturnType<
+				GoogleGenerativeAI['getGenerativeModel']
+			>
+		);
+
+		spyGet.resolves({
+			data: Buffer.from('fake-image-binary'),
+			headers: { 'content-type': 'image/jpeg' },
+		});
+
+		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg']);
+
+		expect(result).toEqual([
+			{
+				text: 'Recovered with fallback model',
+				metadata: { capturedAt: null, deviceModel: null, deviceMake: null },
+			},
+		]);
+		expect(missingModel.generateContent).toHaveBeenCalled();
+		expect(validModel.generateContent).toHaveBeenCalled();
 	});
 
 	it('should use Gemini first in auto mode when API key is present', async () => {
