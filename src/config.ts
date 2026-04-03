@@ -4,6 +4,16 @@ import * as dotenv from 'dotenv';
 // Load environment variables immediately
 dotenv.config();
 
+function parseIntegerInRange(value: string | undefined, fallback: number, min: number, max: number): number {
+	const parsed = Number.parseInt(value ?? '', 10);
+
+	if (!Number.isFinite(parsed)) {
+		return fallback;
+	}
+
+	return Math.min(max, Math.max(min, parsed));
+}
+
 export const config = {
 	TEST_CHAT_ID: Number(process.env.TEST_CHAT_ID) || 0,
 	CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'America/Caracas',
@@ -12,8 +22,8 @@ export const config = {
 	REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT || '15mb',
 	RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES: Number(process.env.RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES) || 10 * 1024 * 1024,
 	RECEIPT_PROCESSING_TTL_HOURS: Number(process.env.RECEIPT_PROCESSING_TTL_HOURS) || 1,
-	RECEIPT_OCR_MAX_IMAGE_DIMENSION: Number(process.env.RECEIPT_OCR_MAX_IMAGE_DIMENSION) || 1600,
-	RECEIPT_OCR_JPEG_QUALITY: Number(process.env.RECEIPT_OCR_JPEG_QUALITY) || 85,
+	RECEIPT_OCR_JPEG_QUALITY: parseIntegerInRange(process.env.RECEIPT_OCR_JPEG_QUALITY, 85, 1, 100),
+	RECEIPT_OCR_MAX_IMAGE_DIMENSION: parseIntegerInRange(process.env.RECEIPT_OCR_MAX_IMAGE_DIMENSION, 1600, 1, 8000),
 	RATE_AVAILABLE_START_HOUR: 9,
 	RATE_AVAILABLE_END_HOUR: 11,
 	MAX_DESCRIPTION_LENGTH: 100,

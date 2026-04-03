@@ -12,6 +12,7 @@ type StoredReceiptImage = {
 
 export type OptimizedReceiptImage = {
 	buffer: Buffer;
+	mimeType: string;
 	originalBytes: number;
 	optimizedBytes: number;
 	originalWidth: number | null;
@@ -64,6 +65,7 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 
 		return {
 			buffer: resizedBuffer,
+			mimeType: 'image/jpeg',
 			originalBytes,
 			optimizedBytes: resizedBuffer.length,
 			originalWidth: metadata.width ?? null,
@@ -82,6 +84,7 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 
 		return {
 			buffer,
+			mimeType: 'application/octet-stream',
 			originalBytes,
 			optimizedBytes: originalBytes,
 			originalWidth: null,

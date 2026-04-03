@@ -140,6 +140,8 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
     let originalImageFormat: string | null = null;
     let optimizedImageFormat: string | null = null;
     let didOptimizeImage = false;
+    let savedReceiptMimeType: string | null = uploadedFile?.mimetype ?? null;
+    let savedReceiptOriginalName: string | undefined = uploadedFile?.originalname;
 
     const imageInput = uploadedFile
       ? await (async () => {
@@ -152,10 +154,12 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
           originalImageFormat = optimizationDetails.originalFormat;
           optimizedImageFormat = optimizationDetails.optimizedFormat;
           didOptimizeImage = optimizationDetails.didOptimize;
+          savedReceiptMimeType = optimizationDetails.didOptimize ? optimizationDetails.mimeType : uploadedFile.mimetype ?? savedReceiptMimeType;
+          savedReceiptOriginalName = optimizationDetails.didOptimize ? 'optimized-receipt.jpg' : uploadedFile.originalname;
           const savedImage = await saveReceiptProcessingImage({
             buffer: optimizationDetails.buffer,
-            originalName: 'optimized-receipt.jpg',
-            mimeType: 'image/jpeg',
+            originalName: savedReceiptOriginalName,
+            mimeType: savedReceiptMimeType ?? undefined,
             requestId,
             baseUrl: getPublicBaseUrl(req),
             label: 'scan',
@@ -186,6 +190,7 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       originalImageFormat,
       optimizedImageFormat,
       didOptimizeImage,
+      savedReceiptMimeType,
       requestId,
       savedReceiptImageUrl,
       savedReceiptImagePath,
