@@ -10,12 +10,14 @@ import { BaseTransactions } from '../base-transactions/base-transactions.module'
 import dayjs from 'dayjs';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
+import { cleanupOldReceiptProcessingImages } from '../../src/lib/receipt-image-storage';
 
 const CRON_EXPRESSIONS = {
 	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10 * * 1-5',
 	updateExchangeRate: process.env.CRON_UPDATE_EXCHANGE_RATE || '0 * * * 1-5',
 	updateTransactionsTable: process.env.CRON_UPDATE_TRANSACTIONS || '0 9 * * 0-6',
 	checkGmailEmails: process.env.CRON_CHECK_GMAIL || '0 */30 * * 1-5',
+	cleanupReceiptProcessingImages: process.env.CRON_CLEAN_RECEIPT_PROCESSING_IMAGES || '0 * * * *',
 };
 
 export class TaskQueueModule {
@@ -43,6 +45,12 @@ export class TaskQueueModule {
 		{ timezone: config.CRON_TIMEZONE, scheduled: true }
 	);
 
+	private cleanupReceiptProcessingImages = cron.schedule(
+		CRON_EXPRESSIONS.cleanupReceiptProcessingImages,
+		this._cleanupReceiptProcessingImages.bind(this),
+		{ timezone: config.CRON_TIMEZONE, scheduled: true }
+	);
+
 	start() {
 		logger.info('Starting task queue module...', { cronExpressions: CRON_EXPRESSIONS });
 
@@ -50,6 +58,7 @@ export class TaskQueueModule {
 		this.startDailyExchangeRateMonitor.start();
 		this.startDailyUpdateTransactionsTable.start();
 		this.checkGmailSchedule.start();
+		this.cleanupReceiptProcessingImages.start();
 	}
 
 	private async _createDailyExchangeRateTask() {
@@ -284,6 +293,18 @@ export class TaskQueueModule {
 				`❌ Gmail check error: ${errorMessage}`,
 				config.TEST_CHAT_ID
 			);
+		}
+	}
+
+	private async _cleanupReceiptProcessingImages() {
+		try {
+			const result = await cleanupOldReceiptProcessingImages(config.RECEIPT_PROCESSING_TTL_HOURS);
+			logger.info('Receipt processing image cleanup completed', {
+				deletedCount: result.deletedCount,
+				maxAgeHours: config.RECEIPT_PROCESSING_TTL_HOURS,
+			});
+		} catch (error) {
+			logger.error('Error cleaning receipt processing images', { error });
 		}
 	}
 }
