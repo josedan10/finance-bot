@@ -63,7 +63,7 @@ services:
       NODE_ENV: production
       APP_MODE: production
       RECEIPT_TEXT_PROVIDER: ${RECEIPT_TEXT_PROVIDER:-auto}
-      GEMINI_RECEIPT_MODEL: ${GEMINI_RECEIPT_MODEL:-gemini-1.5-flash}
+      GEMINI_RECEIPT_MODEL: ${GEMINI_RECEIPT_MODEL:-gemini-2.0-flash}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TEST_CHAT_ID: ${TEST_CHAT_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

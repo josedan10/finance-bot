@@ -28,7 +28,7 @@ export type OCRImageInput =
 	  };
 
 class Image2TextModule {
-	private geminiModel: GenerativeModel | null = null;
+	private geminiModels = new Map<string, GenerativeModel>();
 
 	private getCandidateServiceUrls(): string[] {
 		const configuredUrl = config.IMAGE_2_TEXT_SERVICE_URL.replace(/\/$/, '');
@@ -64,17 +64,29 @@ class Image2TextModule {
 		};
 	}
 
-	private getGeminiModel(): GenerativeModel {
+	private getGeminiCandidateModels(): string[] {
+		return [...new Set([config.GEMINI_RECEIPT_MODEL, 'gemini-2.0-flash', 'gemini-2.0-flash-lite'])];
+	}
+
+	private getGeminiModel(modelName: string): GenerativeModel {
 		if (!config.GOOGLE_AI_API_KEY) {
 			throw new AppError('Gemini OCR is not configured', 500);
 		}
 
-		if (!this.geminiModel) {
-			const genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
-			this.geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_RECEIPT_MODEL });
+		const cachedModel = this.geminiModels.get(modelName);
+		if (cachedModel) {
+			return cachedModel;
 		}
 
-		return this.geminiModel;
+		const genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
+		const model = genAI.getGenerativeModel({ model: modelName });
+		this.geminiModels.set(modelName, model);
+		return model;
+	}
+
+	private isGeminiModelNotFoundError(error: unknown): boolean {
+		const message = error instanceof Error ? error.message : String(error);
+		return /models\/.+ is not found for API version/i.test(message);
 	}
 
 	private async resolveImageBufferForGemini(
@@ -119,32 +131,51 @@ class Image2TextModule {
 	private async extractTextWithGemini(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
 		try {
 			const { mimeType, base64Data } = await this.resolveImageBufferForGemini(image, requestId);
-			const model = this.getGeminiModel();
 			const prompt = [
 				'Extract all visible text from this receipt image.',
 				'Return plain text only, line by line, without markdown fences or explanations.',
 			].join(' ');
 
-			const result = await model.generateContent([
-				{ text: prompt },
-				{
-					inlineData: {
-						mimeType,
-						data: base64Data,
-					},
-				},
-			]);
-			const response = await result.response;
-			const normalizedText = this.normalizeGeminiText(response.text());
+			const candidateModels = this.getGeminiCandidateModels();
+			let lastError: unknown = null;
 
-			if (!normalizedText) {
-				throw new AppError('Gemini OCR returned empty text', 422);
-			}
+			for (const modelName of candidateModels) {
+				try {
+					const model = this.getGeminiModel(modelName);
+					const result = await model.generateContent([
+						{ text: prompt },
+						{
+							inlineData: {
+								mimeType,
+								data: base64Data,
+							},
+						},
+					]);
+					const response = await result.response;
+					const normalizedText = this.normalizeGeminiText(response.text());
 
-			return {
-				text: normalizedText,
-				metadata: { capturedAt: null, deviceModel: null, deviceMake: null },
-			};
+					if (!normalizedText) {
+						throw new AppError('Gemini OCR returned empty text', 422);
+					}
+
+					return {
+						text: normalizedText,
+						metadata: { capturedAt: null, deviceModel: null, deviceMake: null },
+					};
+				} catch (error) {
+					lastError = error;
+					if (this.isGeminiModelNotFoundError(error)) {
+						logger.warn('Gemini model not found, trying next fallback model', {
+							requestId,
+							modelName,
+						});
+						continue;
+						}
+						throw error;
+					}
+				}
+
+			throw lastError || new AppError('Gemini OCR model is unavailable', 503);
 		} catch (error) {
 			if (error instanceof AppError) {
 				throw error;
