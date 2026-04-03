@@ -123,6 +123,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Install 1Password CLI beta
         uses: 1password/install-cli-action@c1b138d5779f64eda6936d5caa8e754b9f3996c0
@@ -255,5 +256,5 @@ jobs:
       - name: Create Sentry release
         run: |
           npx @sentry/cli releases new "$GITHUB_SHA"
-          npx @sentry/cli releases set-commits "$GITHUB_SHA" --auto
+          npx @sentry/cli releases set-commits "$GITHUB_SHA" --auto --ignore-missing
           npx @sentry/cli releases finalize "$GITHUB_SHA"
