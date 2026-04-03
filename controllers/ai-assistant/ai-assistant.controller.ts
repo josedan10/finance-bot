@@ -190,6 +190,7 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       transport: req.file ? 'multipart' : 'json',
       imagePayloadLength: typeof req.body?.image === 'string' ? req.body.image.length : req.file?.size ?? null,
       mimeType: req.file?.mimetype ?? null,
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
       userAgent: req.get('user-agent') ?? null,
       contentLength: req.get('content-length') ?? null,
     });
@@ -207,6 +208,11 @@ export async function getAISettings(req: Request, res: Response): Promise<void> 
     const settings = await AISettingsService.getSettings(req.user.id);
     res.status(200).json(settings);
   } catch (error) {
+    captureException(error, {
+      controller: 'getAISettings',
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      userId: req.user.id,
+    });
     logger.error('Failed to get AI settings', { userId: req.user.id, error });
     res.status(500).json({ message: 'Failed to fetch AI settings' });
   }
@@ -221,6 +227,13 @@ export async function updateAISettings(req: Request, res: Response): Promise<voi
     });
     res.status(200).json(settings);
   } catch (error) {
+    captureException(error, {
+      controller: 'updateAISettings',
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      userId: req.user.id,
+      aiEnabled: req.body?.aiEnabled,
+      aiProvider: req.body?.aiProvider,
+    });
     logger.error('Failed to update AI settings', { userId: req.user.id, error });
     res.status(500).json({ message: 'Failed to update AI settings' });
   }
@@ -270,6 +283,11 @@ export async function analyzeTransactions(req: Request, res: Response): Promise<
     const analysis = await provider.analyzeExpenses(simplifiedData);
     res.status(200).json(analysis);
   } catch (error) {
+    captureException(error, {
+      controller: 'analyzeTransactions',
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      userId: req.user.id,
+    });
     logger.error('AI Analysis failed', { userId: req.user.id, error });
     res.status(500).json({ message: 'AI Analysis failed' });
   }
