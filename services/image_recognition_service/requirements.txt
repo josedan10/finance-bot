@@ -7,3 +7,4 @@ opencv-python-headless>=4.10,<5
 python-multipart>=0.0.20,<1
 requests>=2.32,<3
 pydantic>=2.11,<3
+sentry-sdk[fastapi]>=2.38,<3
