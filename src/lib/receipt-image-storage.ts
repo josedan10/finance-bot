@@ -1,14 +1,34 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import sharp from 'sharp';
 import { config } from '../config';
 import logger from './logger';
+import type sharp from 'sharp';
 
 type StoredReceiptImage = {
 	fileName: string;
 	filePath: string;
 	publicUrl: string;
 };
+
+type SharpFactory = typeof sharp;
+
+let cachedSharpFactory: SharpFactory | null | undefined;
+
+async function getSharpFactory(): Promise<SharpFactory | null> {
+	if (cachedSharpFactory !== undefined) {
+		return cachedSharpFactory;
+	}
+
+	try {
+		const sharpModule = await import('sharp');
+		cachedSharpFactory = (sharpModule.default ?? sharpModule) as SharpFactory;
+	} catch (error) {
+		cachedSharpFactory = null;
+		logger.warn('Sharp unavailable; OCR image optimization disabled for this process', { error });
+	}
+
+	return cachedSharpFactory;
+}
 
 export type OptimizedReceiptImage = {
 	buffer: Buffer;
@@ -53,9 +73,30 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 	const initialQuality = config.RECEIPT_OCR_JPEG_QUALITY;
 	const minQuality = Math.min(initialQuality, config.RECEIPT_OCR_MIN_JPEG_QUALITY);
 	const qualityStep = 7;
+	const sharpFactory = await getSharpFactory();
+
+	if (!sharpFactory) {
+		return {
+			buffer,
+			mimeType: 'application/octet-stream',
+			compressionIterations: 0,
+			compressionQuality: null,
+			targetMaxBytes,
+			targetReached: false,
+			originalBytes,
+			optimizedBytes: originalBytes,
+			originalWidth: null,
+			originalHeight: null,
+			optimizedWidth: null,
+			optimizedHeight: null,
+			originalFormat: null,
+			optimizedFormat: null,
+			didOptimize: false,
+		};
+	}
 
 	try {
-		const rotatedPipeline = sharp(buffer, { failOn: 'none' }).rotate();
+		const rotatedPipeline = sharpFactory(buffer, { failOn: 'none' }).rotate();
 		const metadata = await rotatedPipeline.metadata();
 		const resizedBuffer = await rotatedPipeline
 			.resize({
@@ -68,7 +109,7 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 
 		let compressionIterations = 0;
 		let quality = initialQuality;
-		let optimizedBuffer = await sharp(resizedBuffer, { failOn: 'none' })
+		let optimizedBuffer = await sharpFactory(resizedBuffer, { failOn: 'none' })
 			.jpeg({
 				quality,
 				mozjpeg: true,
@@ -83,7 +124,7 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 
 			quality = nextQuality;
 			compressionIterations += 1;
-			optimizedBuffer = await sharp(resizedBuffer, { failOn: 'none' })
+			optimizedBuffer = await sharpFactory(resizedBuffer, { failOn: 'none' })
 				.jpeg({
 					quality,
 					mozjpeg: true,
@@ -91,7 +132,7 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 				.toBuffer();
 		}
 
-		const optimizedMetadata = await sharp(optimizedBuffer, { failOn: 'none' }).metadata();
+		const optimizedMetadata = await sharpFactory(optimizedBuffer, { failOn: 'none' }).metadata();
 		const targetReached = optimizedBuffer.length <= targetMaxBytes;
 
 		return {
