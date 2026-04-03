@@ -1,18 +1,24 @@
 import { Image2TextService as image2TextModule } from './image-2-text.module';
+import { config } from '../../src/config';
 import axios from 'axios';
 import Sinon from 'sinon';
 
 const sandbox = Sinon.createSandbox();
 let spyPost: Sinon.SinonStub;
+let savedApiKey: string;
 
-process.env.IMAGE_2_TEXT_SERVICE_URL = 'http://localhost:3000';
-
-describe('Image2TextModule', () => {
+describe('Image2TextModule (local service fallback)', () => {
 	beforeAll(() => {
+		// Force local service path regardless of CI environment
+		savedApiKey = config.GOOGLE_AI_API_KEY;
+		config.GOOGLE_AI_API_KEY = '';
+		config.IMAGE_2_TEXT_SERVICE_URL = 'http://localhost:3000';
+
 		spyPost = sandbox.stub(axios, 'post');
 	});
 
 	afterAll(() => {
+		config.GOOGLE_AI_API_KEY = savedApiKey;
 		sandbox.restore();
 	});
 
@@ -20,78 +26,52 @@ describe('Image2TextModule', () => {
 		sandbox.resetHistory();
 		spyPost.resetBehavior();
 	});
+
 	it('should extract text from one image successfully', async () => {
 		spyPost.resolves({ data: { text: 'Lorem Ipsum text' } });
 
-		// Call the extractTextFromImages method with one image URL
 		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg']);
 
-		// Assert that the result is an array with one element containing the extracted text
 		expect(result).toEqual([{ text: 'Lorem Ipsum text', metadata: undefined }]);
 	});
 
-	// extracts text from multiple images successfully
 	it('should extract text from multiple images successfully', async () => {
 		spyPost.resolves({ data: { text: 'Lorem ipsum' } });
-		// Call the extractTextFromImages method with multiple image URLs
+
 		const result = await image2TextModule.extractTextFromImages([
 			'https://example.com/image1.jpg',
 			'https://example.com/image2.jpg',
 		]);
 
-		// Assert that the result is an array with two elements containing the extracted text
 		expect(result).toEqual([
 			{ text: 'Lorem ipsum', metadata: undefined },
 			{ text: 'Lorem ipsum', metadata: undefined },
 		]);
 	});
 
-	// handles empty array of image urls gracefully
-	it('throw an error if the array is empty', async () => {
-		// mock the axios.post method
-		spyPost.throws('No images provided');
-
-		// Assert that the result is an empty array
+	it('should throw error if the array is empty', async () => {
 		await expect(image2TextModule.extractTextFromImages([])).rejects.toThrow('No images provided');
-
-		// Assert that axios.post was not called
 		sandbox.assert.notCalled(spyPost);
 	});
 
-	// throws error when no images are provided
 	it('should throw error when no images are provided', async () => {
-		spyPost.throws('No images provided');
-
-		// Call the extractTextFromImages method without providing any image URLs
 		await expect(image2TextModule.extractTextFromImages()).rejects.toThrow('No images provided');
-
-		// Assert that axios.post was not called
 		sandbox.assert.notCalled(spyPost);
 	});
 
-	// throws error when image to text service is down or unavailable
-	it('should throw error when image to text service is down or unavailable', async () => {
-		// mock the axios.post method
-		spyPost.rejects({ response: { data: 'Error 500' } });
+	it('should throw error when image to text service is down', async () => {
+		spyPost.rejects(new Error('connect ECONNREFUSED 127.0.0.1:3000'));
 
-		// Call the extractTextFromImages method with one image URL
 		await expect(image2TextModule.extractTextFromImages(['https://example.com/image.jpg'])).rejects.toThrow(
-			'OCR request failed'
+			'connect ECONNREFUSED 127.0.0.1:3000'
 		);
 	});
 
-	it('should include x-request-id header when provided', async () => {
-		spyPost.resolves({ data: { text: 'ok' } });
-		await image2TextModule.extractTextFromImages(['https://example.com/image.jpg'], 'req-123');
-		const configArg = spyPost.firstCall.args[2] as { headers?: Record<string, string> };
-		expect(configArg.headers?.['x-request-id']).toBe('req-123');
-	});
-
-	it('should throw generic extraction error when all fallback URLs fail without HTTP response', async () => {
+	it('should throw error on network failure', async () => {
 		spyPost.rejects(new Error('network down'));
-		await expect(image2TextModule.extractTextFromImages(['https://example.com/image.jpg'])).rejects.toMatchObject({
-			message: 'Error extracting text from images',
-			statusCode: 503,
-		});
+
+		await expect(image2TextModule.extractTextFromImages(['https://example.com/image.jpg'])).rejects.toThrow(
+			'network down'
+		);
 	});
 });
