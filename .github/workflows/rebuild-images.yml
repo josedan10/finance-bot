@@ -57,36 +57,3 @@ jobs:
             ${{ steps.meta.outputs.image }}
             ghcr.io/${{ github.repository_owner }}/zentra-api-production:latest
 
-  build-ocr:
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Define OCR image metadata
-        id: meta
-        run: |
-          echo "image=ghcr.io/${{ github.repository_owner }}/zentra-image-extractor-production:${{ github.sha }}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push OCR image without cache
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/image_recognition_service
-          file: ./services/image_recognition_service/Dockerfile
-          push: true
-          no-cache: true
-          tags: |
-            ${{ steps.meta.outputs.image }}
-            ghcr.io/${{ github.repository_owner }}/zentra-image-extractor-production:latest

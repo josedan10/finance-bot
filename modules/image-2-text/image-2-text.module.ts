@@ -32,14 +32,9 @@ class Image2TextModule {
 
 	private getCandidateServiceUrls(): string[] {
 		const configuredUrl = config.IMAGE_2_TEXT_SERVICE_URL.replace(/\/$/, '');
-		return [
-			...new Set([
-				configuredUrl,
-				'http://zentra-image-extractor:4000',
-				'http://local-zentra-image-extractor-1:4000',
-				'http://localhost:4000',
-			]),
-		];
+		const fallbacks = ['http://zentra-image-extractor:4000', 'http://local-zentra-image-extractor-1:4000', 'http://localhost:4000'];
+
+		return [...new Set([configuredUrl, ...fallbacks].filter((url) => url.length > 0))];
 	}
 
 	private createRequestConfig(image: OCRImageInput, requestId?: string) {
@@ -100,7 +95,7 @@ class Image2TextModule {
 				headers: requestId ? { 'x-request-id': requestId } : undefined,
 			});
 			const headerType = response.headers['content-type'];
-			const mimeType = typeof headerType === 'string' ? headerType : 'image/jpeg';
+			const mimeType = typeof headerType === 'string' ? headerType.split(';')[0].trim() : 'image/jpeg';
 
 			return {
 				mimeType,
@@ -117,7 +112,7 @@ class Image2TextModule {
 	}
 
 	private normalizeGeminiText(text: string): string {
-		const markdownMatch = text.match(/^```(?:text|plaintext)?\s*([\s\S]*?)\s*```$/i);
+		const markdownMatch = text.match(/^```(?:text|plaintext|json)?\s*([\s\S]*?)\s*```$/i);
 		return markdownMatch ? markdownMatch[1].trim() : text.trim();
 	}
 
@@ -148,6 +143,7 @@ class Image2TextModule {
 
 			return {
 				text: normalizedText,
+				metadata: { capturedAt: null, deviceModel: null, deviceMake: null },
 			};
 		} catch (error) {
 			if (error instanceof AppError) {
@@ -162,11 +158,7 @@ class Image2TextModule {
 		}
 	}
 
-	private async extractText(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
-		if (config.RECEIPT_TEXT_PROVIDER === 'gemini') {
-			return this.extractTextWithGemini(image, requestId);
-		}
-
+	private async extractTextWithOcrService(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
 		let lastError: AxiosError | null = null;
 
 		for (const baseUrl of this.getCandidateServiceUrls()) {
@@ -200,12 +192,8 @@ class Image2TextModule {
 
 				if (axiosError.response) {
 					const statusCode = axiosError.response.status;
-					const responseData = axiosError.response.data as
-						| { detail?: string; message?: string }
-						| undefined;
-					const detail =
-						responseData?.detail || responseData?.message || axiosError.message || 'OCR request failed';
-
+					const responseData = axiosError.response.data as { detail?: string; message?: string } | undefined;
+					const detail = responseData?.detail || responseData?.message || axiosError.message || 'OCR request failed';
 					throw new AppError(detail, statusCode);
 				}
 			}
@@ -218,6 +206,14 @@ class Image2TextModule {
 			status: lastError?.response?.status,
 		});
 		throw new AppError('Error extracting text from images', 503);
+	}
+
+	private async extractText(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
+		if (config.RECEIPT_TEXT_PROVIDER === 'gemini') {
+			return this.extractTextWithGemini(image, requestId);
+		}
+
+		return this.extractTextWithOcrService(image, requestId);
 	}
 
 	async extractTextFromImages(images: Array<OCRImageInput | string> = [], requestId?: string): Promise<OCRExtractResult[]> {

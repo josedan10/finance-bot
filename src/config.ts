@@ -23,7 +23,7 @@ export const config = {
 	TEST_CHAT_ID: Number(process.env.TEST_CHAT_ID) || 0,
 	CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'America/Caracas',
 	PYDOLAR_API_URL: process.env.PYDOLAR_API_URL || 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar',
-	IMAGE_2_TEXT_SERVICE_URL: process.env.IMAGE_2_TEXT_SERVICE_URL || 'http://localhost:4000',
+	IMAGE_2_TEXT_SERVICE_URL: process.env.IMAGE_2_TEXT_SERVICE_URL || '',
 	RECEIPT_TEXT_PROVIDER: parseReceiptTextProvider(process.env.RECEIPT_TEXT_PROVIDER),
 	GEMINI_RECEIPT_MODEL: process.env.GEMINI_RECEIPT_MODEL || 'gemini-1.5-flash',
 	REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT || '15mb',

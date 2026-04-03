@@ -6,10 +6,6 @@ import { config } from '../../src/config';
 
 jest.mock('@google/generative-ai');
 
-const sandbox = Sinon.createSandbox();
-let spyPost: Sinon.SinonStub;
-let spyGet: Sinon.SinonStub;
-
 type GenerativeResponse = {
 	response: {
 		text: () => string;
@@ -20,11 +16,15 @@ type MockGenerativeModel = {
 	generateContent: jest.Mock<Promise<GenerativeResponse>, unknown[]>;
 };
 
+const sandbox = Sinon.createSandbox();
+let spyPost: Sinon.SinonStub;
+let spyGet: Sinon.SinonStub;
 const MockGoogleAI = GoogleGenerativeAI as jest.MockedClass<typeof GoogleGenerativeAI>;
 
 const initialProvider = config.RECEIPT_TEXT_PROVIDER;
 const initialGoogleApiKey = config.GOOGLE_AI_API_KEY;
 const initialGeminiModel = config.GEMINI_RECEIPT_MODEL;
+const initialImage2TextUrl = config.IMAGE_2_TEXT_SERVICE_URL;
 
 function resetGeminiModelCache() {
 	(image2TextModule as unknown as { geminiModel: unknown }).geminiModel = null;
@@ -40,6 +40,7 @@ describe('Image2TextModule', () => {
 		config.RECEIPT_TEXT_PROVIDER = initialProvider;
 		config.GOOGLE_AI_API_KEY = initialGoogleApiKey;
 		config.GEMINI_RECEIPT_MODEL = initialGeminiModel;
+		config.IMAGE_2_TEXT_SERVICE_URL = initialImage2TextUrl;
 		sandbox.restore();
 	});
 
@@ -47,6 +48,7 @@ describe('Image2TextModule', () => {
 		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		config.GOOGLE_AI_API_KEY = 'test-google-key';
 		config.GEMINI_RECEIPT_MODEL = 'gemini-1.5-flash';
+		config.IMAGE_2_TEXT_SERVICE_URL = 'http://localhost:4000';
 		resetGeminiModelCache();
 		jest.clearAllMocks();
 		sandbox.resetHistory();
@@ -76,16 +78,28 @@ describe('Image2TextModule', () => {
 		]);
 	});
 
-	it('throw an error if the array is empty', async () => {
-		spyPost.throws('No images provided');
+	it('should extract text from uploaded file payload using OCR provider', async () => {
+		spyPost.resolves({ data: { text: 'Text from file' } });
 
+		const result = await image2TextModule.extractTextFromImages([
+			{
+				type: 'file',
+				buffer: Buffer.from('abc'),
+				mimeType: 'image/png',
+				filename: 'receipt.png',
+			},
+		]);
+
+		expect(result).toEqual([{ text: 'Text from file', metadata: undefined }]);
+		expect(spyPost.firstCall.args[1].constructor?.name).toBe('FormData');
+	});
+
+	it('throw an error if the array is empty', async () => {
 		await expect(image2TextModule.extractTextFromImages([])).rejects.toThrow('No images provided');
 		sandbox.assert.notCalled(spyPost);
 	});
 
 	it('should throw error when no images are provided', async () => {
-		spyPost.throws('No images provided');
-
 		await expect(image2TextModule.extractTextFromImages()).rejects.toThrow('No images provided');
 		sandbox.assert.notCalled(spyPost);
 	});
@@ -104,6 +118,19 @@ describe('Image2TextModule', () => {
 		await image2TextModule.extractTextFromImages(['https://example.com/image.jpg'], 'req-123');
 		const configArg = spyPost.firstCall.args[2] as { headers?: Record<string, string> };
 		expect(configArg.headers?.['x-request-id']).toBe('req-123');
+	});
+
+	it('should use fallback OCR URL if primary URL network call fails', async () => {
+		config.IMAGE_2_TEXT_SERVICE_URL = 'http://primary-ocr:4000';
+
+		spyPost.onFirstCall().rejects(new Error('network down'));
+		spyPost.onSecondCall().resolves({ data: { text: 'Fallback OCR text' } });
+
+		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg']);
+
+		expect(result).toEqual([{ text: 'Fallback OCR text', metadata: undefined }]);
+		expect(spyPost.callCount).toBe(2);
+		expect(spyPost.firstCall.args[0]).toContain('http://primary-ocr:4000/extract-text/');
 	});
 
 	it('should throw generic extraction error when all OCR fallback URLs fail without HTTP response', async () => {
@@ -135,7 +162,7 @@ describe('Image2TextModule', () => {
 
 		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg'], 'req-gemini');
 
-		expect(result).toEqual([{ text: 'Store\nTotal 20' }]);
+		expect(result).toEqual([{ text: 'Store\nTotal 20', metadata: { capturedAt: null, deviceModel: null, deviceMake: null } }]);
 		expect(model.generateContent).toHaveBeenCalled();
 		sandbox.assert.calledOnce(spyGet);
 		sandbox.assert.notCalled(spyPost);
@@ -165,7 +192,7 @@ describe('Image2TextModule', () => {
 
 		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg']);
 
-		expect(result).toEqual([{ text: 'Store ABC\nTotal 44' }]);
+		expect(result).toEqual([{ text: 'Store ABC\nTotal 44', metadata: { capturedAt: null, deviceModel: null, deviceMake: null } }]);
 	});
 
 	it('should throw when Gemini provider receives empty text result', async () => {
@@ -239,7 +266,7 @@ describe('Image2TextModule', () => {
 			},
 		]);
 
-		expect(result).toEqual([{ text: 'Text from file' }]);
+		expect(result).toEqual([{ text: 'Text from file', metadata: { capturedAt: null, deviceModel: null, deviceMake: null } }]);
 		sandbox.assert.notCalled(spyGet);
 		expect(model.generateContent).toHaveBeenCalled();
 	});
