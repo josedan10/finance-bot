@@ -1,8 +1,9 @@
 import axios, { AxiosError } from 'axios';
 import FormData from 'form-data';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GenerativeModel, GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
+import { AppError } from '../../src/lib/appError';
 
 type OCRExtractResult = {
 	text: string;
@@ -26,109 +27,196 @@ export type OCRImageInput =
 			size?: number;
 	  };
 
-const RECEIPT_OCR_PROMPT =
-	'Extract all visible text from this receipt image exactly as it appears. ' +
-	'Return only the raw text content, preserving line breaks. ' +
-	'Do not add commentary, formatting, or explanations.';
+class Image2TextModule {
+	private geminiModel: GenerativeModel | null = null;
 
-// ---------------------------------------------------------------------------
-// Gemini Vision (primary — production)
-// ---------------------------------------------------------------------------
+	private getCandidateServiceUrls(): string[] {
+		const configuredUrl = config.IMAGE_2_TEXT_SERVICE_URL.replace(/\/$/, '');
+		const fallbacks = ['http://zentra-image-extractor:4000', 'http://local-zentra-image-extractor-1:4000', 'http://localhost:4000'];
 
-async function resolveInlineData(image: OCRImageInput): Promise<{ data: string; mimeType: string }> {
-	if (image.type === 'file') {
+		return [...new Set([configuredUrl, ...fallbacks].filter((url) => url.length > 0))];
+	}
+
+	private createRequestConfig(image: OCRImageInput, requestId?: string) {
+		if (image.type === 'file') {
+			const formData = new FormData();
+			formData.append('image', image.buffer, {
+				filename: image.filename || 'receipt-upload',
+				contentType: image.mimeType || 'application/octet-stream',
+				knownLength: image.size ?? image.buffer.length,
+			});
+
+			return {
+				payload: formData,
+				headers: {
+					...formData.getHeaders(),
+					...(requestId ? { 'x-request-id': requestId } : {}),
+				},
+			};
+		}
+
 		return {
-			data: image.buffer.toString('base64'),
-			mimeType: image.mimeType || 'image/jpeg',
+			payload: { image: image.value },
+			headers: {
+				'Content-Type': 'application/json',
+				...(requestId ? { 'x-request-id': requestId } : {}),
+			},
 		};
 	}
 
-	const response = await axios.get<ArrayBuffer>(image.value, {
-		responseType: 'arraybuffer',
-		timeout: 30_000,
-	});
-
-	const mimeType = (response.headers['content-type'] as string | undefined) || 'image/jpeg';
-
-	return {
-		data: Buffer.from(response.data).toString('base64'),
-		mimeType: mimeType.split(';')[0].trim(),
-	};
-}
-
-async function extractWithGemini(image: OCRImageInput): Promise<OCRExtractResult> {
-	const genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
-	const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
-
-	const inlineData = await resolveInlineData(image);
-	const result = await model.generateContent([RECEIPT_OCR_PROMPT, { inlineData }]);
-	const text = result.response.text().trim();
-
-	if (!text) {
-		throw new Error('No text found in the image. Try to improve the image quality.');
-	}
-
-	return { text, metadata: { capturedAt: null, deviceModel: null, deviceMake: null } };
-}
-
-// ---------------------------------------------------------------------------
-// Local Python OCR service (fallback — local dev only)
-// ---------------------------------------------------------------------------
-
-async function extractWithLocalService(image: OCRImageInput, serviceUrl: string): Promise<OCRExtractResult> {
-	const baseUrl = serviceUrl.replace(/\/$/, '');
-
-	let payload: FormData | { image: string };
-	let headers: Record<string, string>;
-
-	if (image.type === 'file') {
-		const formData = new FormData();
-		formData.append('image', image.buffer, {
-			filename: image.filename || 'receipt-upload',
-			contentType: image.mimeType || 'application/octet-stream',
-			knownLength: image.size ?? image.buffer.length,
-		});
-		payload = formData;
-		headers = formData.getHeaders();
-	} else {
-		payload = { image: image.value };
-		headers = { 'Content-Type': 'application/json' };
-	}
-
-	const response = await axios.post(`${baseUrl}/extract-text/`, payload, {
-		headers,
-		maxContentLength: Infinity,
-		maxBodyLength: Infinity,
-		timeout: 60_000,
-	});
-
-	return {
-		text: response.data.text,
-		metadata: response.data.metadata,
-	};
-}
-
-// ---------------------------------------------------------------------------
-// Module
-// ---------------------------------------------------------------------------
-
-class Image2TextModule {
-	private async extractText(image: OCRImageInput): Promise<OCRExtractResult> {
-		if (config.GOOGLE_AI_API_KEY) {
-			return extractWithGemini(image);
+	private getGeminiModel(): GenerativeModel {
+		if (!config.GOOGLE_AI_API_KEY) {
+			throw new AppError('Gemini OCR is not configured', 500);
 		}
 
-		if (config.IMAGE_2_TEXT_SERVICE_URL) {
-			logger.warn('GOOGLE_AI_API_KEY not set — falling back to local OCR service', {
-				url: config.IMAGE_2_TEXT_SERVICE_URL,
+		if (!this.geminiModel) {
+			const genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
+			this.geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_RECEIPT_MODEL });
+		}
+
+		return this.geminiModel;
+	}
+
+	private async resolveImageBufferForGemini(
+		image: OCRImageInput,
+		requestId?: string
+	): Promise<{ mimeType: string; base64Data: string }> {
+		if (image.type === 'file') {
+			return {
+				mimeType: image.mimeType || 'application/octet-stream',
+				base64Data: image.buffer.toString('base64'),
+			};
+		}
+
+		try {
+			const response = await axios.get<ArrayBuffer>(image.value, {
+				responseType: 'arraybuffer',
+				timeout: 60_000,
+				headers: requestId ? { 'x-request-id': requestId } : undefined,
 			});
-			return extractWithLocalService(image, config.IMAGE_2_TEXT_SERVICE_URL);
-		}
+			const headerType = response.headers['content-type'];
+			const mimeType = typeof headerType === 'string' ? headerType.split(';')[0].trim() : 'image/jpeg';
 
-		throw new Error('No OCR provider configured. Set GOOGLE_AI_API_KEY or IMAGE_2_TEXT_SERVICE_URL.');
+			return {
+				mimeType,
+				base64Data: Buffer.from(response.data).toString('base64'),
+			};
+		} catch (error) {
+			logger.warn('Gemini OCR image source fetch failed', {
+				requestId,
+				imageSource: image.value,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+			throw new AppError('Unable to load image for Gemini OCR', 422);
+		}
 	}
 
-	async extractTextFromImages(images: Array<OCRImageInput | string> = [], _requestId?: string): Promise<OCRExtractResult[]> {
+	private normalizeGeminiText(text: string): string {
+		const markdownMatch = text.match(/^```(?:text|plaintext|json)?\s*([\s\S]*?)\s*```$/i);
+		return markdownMatch ? markdownMatch[1].trim() : text.trim();
+	}
+
+	private async extractTextWithGemini(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
+		try {
+			const { mimeType, base64Data } = await this.resolveImageBufferForGemini(image, requestId);
+			const model = this.getGeminiModel();
+			const prompt = [
+				'Extract all visible text from this receipt image.',
+				'Return plain text only, line by line, without markdown fences or explanations.',
+			].join(' ');
+
+			const result = await model.generateContent([
+				{ text: prompt },
+				{
+					inlineData: {
+						mimeType,
+						data: base64Data,
+					},
+				},
+			]);
+			const response = await result.response;
+			const normalizedText = this.normalizeGeminiText(response.text());
+
+			if (!normalizedText) {
+				throw new AppError('Gemini OCR returned empty text', 422);
+			}
+
+			return {
+				text: normalizedText,
+				metadata: { capturedAt: null, deviceModel: null, deviceMake: null },
+			};
+		} catch (error) {
+			if (error instanceof AppError) {
+				throw error;
+			}
+
+			logger.error('Gemini OCR extraction failed', {
+				requestId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+			throw new AppError('Error extracting text from images', 503);
+		}
+	}
+
+	private async extractTextWithOcrService(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
+		let lastError: AxiosError | null = null;
+
+		for (const baseUrl of this.getCandidateServiceUrls()) {
+			try {
+				const { payload, headers } = this.createRequestConfig(image, requestId);
+				const response = await axios.post(`${baseUrl}/extract-text/`, payload, {
+					headers,
+					maxContentLength: Infinity,
+					maxBodyLength: Infinity,
+					timeout: 60_000,
+				});
+
+				if (baseUrl !== config.IMAGE_2_TEXT_SERVICE_URL.replace(/\/$/, '')) {
+					logger.warn('OCR service fallback URL used', { baseUrl });
+				}
+
+				return {
+					text: response.data.text,
+					metadata: response.data.metadata,
+				};
+			} catch (error: unknown) {
+				const axiosError = error as AxiosError;
+				lastError = axiosError;
+				logger.warn('OCR extraction attempt failed', {
+					baseUrl,
+					requestId,
+					message: axiosError.message,
+					responseData: axiosError.response?.data,
+					status: axiosError.response?.status,
+				});
+
+				if (axiosError.response) {
+					const statusCode = axiosError.response.status;
+					const responseData = axiosError.response.data as { detail?: string; message?: string } | undefined;
+					const detail = responseData?.detail || responseData?.message || axiosError.message || 'OCR request failed';
+					throw new AppError(detail, statusCode);
+				}
+			}
+		}
+
+		logger.error('Error extracting text from images', {
+			requestId,
+			responseData: lastError?.response?.data,
+			message: lastError?.message,
+			status: lastError?.response?.status,
+		});
+		throw new AppError('Error extracting text from images', 503);
+	}
+
+	private async extractText(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
+		if (config.RECEIPT_TEXT_PROVIDER === 'gemini') {
+			return this.extractTextWithGemini(image, requestId);
+		}
+
+		return this.extractTextWithOcrService(image, requestId);
+	}
+
+	async extractTextFromImages(images: Array<OCRImageInput | string> = [], requestId?: string): Promise<OCRExtractResult[]> {
 		if (!images.length) throw new Error('No images provided');
 
 		const texts: OCRExtractResult[] = [];
@@ -136,20 +224,12 @@ class Image2TextModule {
 		for (const image of images) {
 			const normalizedImage: OCRImageInput =
 				typeof image === 'string'
-					? { type: 'image-source', value: image }
+					? {
+							type: 'image-source',
+							value: image,
+						}
 					: image;
-
-			try {
-				texts.push(await this.extractText(normalizedImage));
-			} catch (error: unknown) {
-				const message = error instanceof Error ? error.message : 'Unknown error';
-				logger.error('OCR extraction failed', {
-					message,
-					provider: config.GOOGLE_AI_API_KEY ? 'gemini' : 'local',
-					axiosStatus: (error as AxiosError)?.response?.status,
-				});
-				throw new Error(message);
-			}
+			texts.push(await this.extractText(normalizedImage, requestId));
 		}
 
 		logger.info(`Texts extracted from ${texts.length} images`);
