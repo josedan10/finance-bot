@@ -1,8 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import sharp from 'sharp';
 import { config } from '../config';
 import logger from './logger';
+import type sharp from 'sharp';
 
 type StoredReceiptImage = {
 	fileName: string;
@@ -10,9 +10,33 @@ type StoredReceiptImage = {
 	publicUrl: string;
 };
 
+type SharpFactory = typeof sharp;
+
+let cachedSharpFactory: SharpFactory | null | undefined;
+
+async function getSharpFactory(): Promise<SharpFactory | null> {
+	if (cachedSharpFactory !== undefined) {
+		return cachedSharpFactory;
+	}
+
+	try {
+		const sharpModule = await import('sharp');
+		cachedSharpFactory = (sharpModule.default ?? sharpModule) as SharpFactory;
+	} catch (error) {
+		cachedSharpFactory = null;
+		logger.warn('Sharp unavailable; OCR image optimization disabled for this process', { error });
+	}
+
+	return cachedSharpFactory;
+}
+
 export type OptimizedReceiptImage = {
 	buffer: Buffer;
 	mimeType: string;
+	compressionIterations: number;
+	compressionQuality: number | null;
+	targetMaxBytes: number | null;
+	targetReached: boolean;
 	originalBytes: number;
 	optimizedBytes: number;
 	originalWidth: number | null;
@@ -45,29 +69,81 @@ function sanitizeLabel(value: string): string {
 
 export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<OptimizedReceiptImage> {
 	const originalBytes = buffer.length;
+	const targetMaxBytes = config.RECEIPT_OCR_TARGET_MAX_BYTES;
+	const initialQuality = config.RECEIPT_OCR_JPEG_QUALITY;
+	const minQuality = Math.min(initialQuality, config.RECEIPT_OCR_MIN_JPEG_QUALITY);
+	const qualityStep = 7;
+	const sharpFactory = await getSharpFactory();
+
+	if (!sharpFactory) {
+		return {
+			buffer,
+			mimeType: 'application/octet-stream',
+			compressionIterations: 0,
+			compressionQuality: null,
+			targetMaxBytes,
+			targetReached: false,
+			originalBytes,
+			optimizedBytes: originalBytes,
+			originalWidth: null,
+			originalHeight: null,
+			optimizedWidth: null,
+			optimizedHeight: null,
+			originalFormat: null,
+			optimizedFormat: null,
+			didOptimize: false,
+		};
+	}
 
 	try {
-		const pipeline = sharp(buffer, { failOn: 'none' }).rotate();
-		const metadata = await pipeline.metadata();
-		const resizedBuffer = await pipeline
+		const rotatedPipeline = sharpFactory(buffer, { failOn: 'none' }).rotate();
+		const metadata = await rotatedPipeline.metadata();
+		const resizedBuffer = await rotatedPipeline
 			.resize({
 				width: config.RECEIPT_OCR_MAX_IMAGE_DIMENSION,
 				height: config.RECEIPT_OCR_MAX_IMAGE_DIMENSION,
 				fit: 'inside',
 				withoutEnlargement: true,
 			})
+			.toBuffer();
+
+		let compressionIterations = 0;
+		let quality = initialQuality;
+		let optimizedBuffer = await sharpFactory(resizedBuffer, { failOn: 'none' })
 			.jpeg({
-				quality: config.RECEIPT_OCR_JPEG_QUALITY,
+				quality,
 				mozjpeg: true,
 			})
 			.toBuffer();
-		const optimizedMetadata = await sharp(resizedBuffer, { failOn: 'none' }).metadata();
+
+		while (optimizedBuffer.length > targetMaxBytes && quality > minQuality) {
+			const nextQuality = Math.max(minQuality, quality - qualityStep);
+			if (nextQuality === quality) {
+				break;
+			}
+
+			quality = nextQuality;
+			compressionIterations += 1;
+			optimizedBuffer = await sharpFactory(resizedBuffer, { failOn: 'none' })
+				.jpeg({
+					quality,
+					mozjpeg: true,
+				})
+				.toBuffer();
+		}
+
+		const optimizedMetadata = await sharpFactory(optimizedBuffer, { failOn: 'none' }).metadata();
+		const targetReached = optimizedBuffer.length <= targetMaxBytes;
 
 		return {
-			buffer: resizedBuffer,
+			buffer: optimizedBuffer,
 			mimeType: 'image/jpeg',
+			compressionIterations,
+			compressionQuality: quality,
+			targetMaxBytes,
+			targetReached,
 			originalBytes,
-			optimizedBytes: resizedBuffer.length,
+			optimizedBytes: optimizedBuffer.length,
 			originalWidth: metadata.width ?? null,
 			originalHeight: metadata.height ?? null,
 			optimizedWidth: optimizedMetadata.width ?? null,
@@ -85,6 +161,10 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 		return {
 			buffer,
 			mimeType: 'application/octet-stream',
+			compressionIterations: 0,
+			compressionQuality: null,
+			targetMaxBytes: null,
+			targetReached: false,
 			originalBytes,
 			optimizedBytes: originalBytes,
 			originalWidth: null,

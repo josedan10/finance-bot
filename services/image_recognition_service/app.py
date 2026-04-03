@@ -1,7 +1,9 @@
 import base64
 import logging
+import multiprocessing as mp
 import os
 from io import BytesIO
+from queue import Empty
 from typing import Iterator
 
 import easyocr
@@ -25,6 +27,7 @@ OCR_SENTRY_DSN = os.environ.get("OCR_SENTRY_DSN")
 SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
 SENTRY_RELEASE = os.environ.get("SENTRY_RELEASE")
 SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0"))
+OCR_READTEXT_TIMEOUT_SECONDS = int(os.environ.get("OCR_READTEXT_TIMEOUT_SECONDS", "40"))
 
 
 if OCR_SENTRY_DSN:
@@ -45,6 +48,100 @@ def get_reader() -> easyocr.Reader:
         reader = easyocr.Reader(["en", "es"], gpu=False, model_storage_directory=EASYOCR_MODEL_STORAGE_DIRECTORY)
 
     return reader
+
+
+class OcrWorkerTimeoutError(Exception):
+    pass
+
+
+class OcrWorkerCrashedError(Exception):
+    pass
+
+
+def _ocr_readtext_worker(image_bytes: bytes, queue: mp.Queue, request_id: str | None = None) -> None:
+    try:
+        with Image.open(BytesIO(image_bytes)) as variant:
+            variant_array = np.array(variant)
+
+        local_reader = easyocr.Reader(["en", "es"], gpu=False, model_storage_directory=EASYOCR_MODEL_STORAGE_DIRECTORY)
+        results = local_reader.readtext(variant_array, detail=1, paragraph=False)
+
+        detections: list[tuple[str, float]] = []
+        for result in results:
+            if len(result) < 3:
+                continue
+
+            _, text, confidence = result
+            normalized_text = " ".join(str(text).split()).strip()
+            if not normalized_text:
+                continue
+
+            detections.append((normalized_text, float(confidence)))
+
+        queue.put({"ok": True, "detections": detections})
+    except Exception as exc:
+        queue.put(
+            {
+                "ok": False,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "request_id": request_id,
+            }
+        )
+
+
+def run_readtext_isolated(variant: Image.Image, request_id: str | None, variant_index: int) -> list[tuple[str, float]]:
+    buffer = BytesIO()
+    variant.convert("RGB").save(buffer, format="PNG")
+    payload = buffer.getvalue()
+
+    queue: mp.Queue = mp.Queue()
+    process = mp.Process(
+        target=_ocr_readtext_worker,
+        args=(payload, queue, request_id),
+        daemon=True,
+    )
+    process.start()
+
+    try:
+        process.join(timeout=OCR_READTEXT_TIMEOUT_SECONDS)
+
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+            raise OcrWorkerTimeoutError(
+                f"OCR worker timed out after {OCR_READTEXT_TIMEOUT_SECONDS}s for variant {variant_index}."
+            )
+
+        if process.exitcode not in (0, None):
+            raise OcrWorkerCrashedError(
+                f"OCR worker crashed with exit code {process.exitcode} on variant {variant_index}."
+            )
+
+        try:
+            result = queue.get(timeout=1)
+        except Empty as exc:
+            raise OcrWorkerCrashedError(
+                f"OCR worker exited without returning detections for variant {variant_index}."
+            ) from exc
+
+        if not result.get("ok"):
+            error_message = result.get("error", "Unknown OCR worker failure")
+            error_type = result.get("error_type", "WorkerError")
+            raise OcrWorkerCrashedError(f"{error_type}: {error_message}")
+
+        detections = result.get("detections", [])
+        normalized: list[tuple[str, float]] = []
+        for text, confidence in detections:
+            normalized_text = " ".join(str(text).split()).strip()
+            if not normalized_text:
+                continue
+            normalized.append((normalized_text, float(confidence)))
+
+        return normalized
+    finally:
+        queue.close()
+        queue.join_thread()
 
 
 @app.on_event("startup")
@@ -132,7 +229,6 @@ def preprocess_image_variants(img: Image.Image, request_id: str | None = None) -
 
 def extract_text_from_variants(img: Image.Image, request_id: str | None = None) -> str:
     detections: list[tuple[str, float]] = []
-    ocr_reader = get_reader()
 
     for index, variant in enumerate(preprocess_image_variants(img, request_id=request_id), start=1):
         logger.info(
@@ -153,28 +249,18 @@ def extract_text_from_variants(img: Image.Image, request_id: str | None = None) 
                 "array_shape": tuple(variant_array.shape),
             },
         )
-        results = ocr_reader.readtext(variant_array, detail=1, paragraph=False)
+        variant_detections = run_readtext_isolated(variant, request_id=request_id, variant_index=index)
         logger.info(
             "OCR readtext completed",
             extra={
                 "request_id": request_id,
                 "variant_index": index,
-                "results_count": len(results),
+                "results_count": len(variant_detections),
             },
         )
         del variant_array
 
-        for result in results:
-            if len(result) < 3:
-                continue
-
-            _, text, confidence = result
-            normalized_text = " ".join(str(text).split()).strip()
-
-            if not normalized_text:
-                continue
-
-            detections.append((normalized_text, float(confidence)))
+        detections.extend(variant_detections)
 
         variant.close()
 
@@ -350,6 +436,39 @@ async def extract_text(request: Request):
             },
         )
         raise HTTPException(status_code=415, detail="Unsupported or corrupted image file.") from exc
+    except OcrWorkerTimeoutError as exc:
+        logger.error(
+            "OCR worker timed out",
+            extra={
+                "request_id": request_id,
+                "content_type": content_type,
+                "content_length": content_length,
+                "timeout_seconds": OCR_READTEXT_TIMEOUT_SECONDS,
+                "error": str(exc),
+            },
+        )
+        if OCR_SENTRY_DSN:
+            sentry_sdk.capture_exception(exc)
+        raise HTTPException(
+            status_code=503,
+            detail="OCR processing timed out. Please retry with a clearer or smaller image.",
+        ) from exc
+    except OcrWorkerCrashedError as exc:
+        logger.error(
+            "OCR worker crashed during extraction",
+            extra={
+                "request_id": request_id,
+                "content_type": content_type,
+                "content_length": content_length,
+                "error": str(exc),
+            },
+        )
+        if OCR_SENTRY_DSN:
+            sentry_sdk.capture_exception(exc)
+        raise HTTPException(
+            status_code=503,
+            detail="OCR engine failed while processing the image. Please retry.",
+        ) from exc
     except Exception as exc:
         logger.exception(
             "Unexpected OCR extraction failure",

@@ -140,6 +140,10 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
     let originalImageFormat: string | null = null;
     let optimizedImageFormat: string | null = null;
     let didOptimizeImage = false;
+    let compressionIterations: number | null = null;
+    let compressionQuality: number | null = null;
+    let compressionTargetBytes: number | null = null;
+    let compressionTargetReached = false;
     let savedReceiptMimeType: string | null = uploadedFile?.mimetype ?? null;
     let savedReceiptOriginalName: string | undefined = uploadedFile?.originalname;
 
@@ -154,6 +158,10 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
           originalImageFormat = optimizationDetails.originalFormat;
           optimizedImageFormat = optimizationDetails.optimizedFormat;
           didOptimizeImage = optimizationDetails.didOptimize;
+          compressionIterations = optimizationDetails.compressionIterations;
+          compressionQuality = optimizationDetails.compressionQuality;
+          compressionTargetBytes = optimizationDetails.targetMaxBytes;
+          compressionTargetReached = optimizationDetails.targetReached;
           savedReceiptMimeType = optimizationDetails.didOptimize ? optimizationDetails.mimeType : uploadedFile.mimetype ?? savedReceiptMimeType;
           savedReceiptOriginalName = optimizationDetails.didOptimize ? 'optimized-receipt.jpg' : uploadedFile.originalname;
           const savedImage = await saveReceiptProcessingImage({
@@ -190,6 +198,10 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       originalImageFormat,
       optimizedImageFormat,
       didOptimizeImage,
+      compressionIterations,
+      compressionQuality,
+      compressionTargetBytes,
+      compressionTargetReached,
       savedReceiptMimeType,
       requestId,
       savedReceiptImageUrl,
