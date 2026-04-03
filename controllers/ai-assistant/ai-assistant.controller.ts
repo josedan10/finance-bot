@@ -5,6 +5,7 @@ import { AISettingsService, AIAssistantFactory } from '../../modules/ai-assistan
 import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from '../../src/lib/logger';
 import { AppError } from '../../src/lib/appError';
+import { getImageExtension, saveReceiptProcessingImage } from '../../src/lib/receipt-image-storage';
 import { captureException } from '../../src/lib/sentry';
 import { Image2TextService } from '../../modules/image-2-text/image-2-text.module';
 import { BaseTransactions } from '../../modules/base-transactions/base-transactions.module';
@@ -48,20 +49,6 @@ function getPublicBaseUrl(req: Request): string {
   const forwardedProto = req.get('x-forwarded-proto');
   const protocol = forwardedProto?.split(',')[0]?.trim() || req.protocol;
   return `${protocol}://${req.get('host')}`;
-}
-
-function getImageExtension(mimeType: string | undefined, originalName: string | undefined): string {
-  if (mimeType === 'image/png') return '.png';
-  if (mimeType === 'image/webp') return '.webp';
-  if (mimeType === 'image/heic') return '.heic';
-  if (mimeType === 'image/heif') return '.heif';
-
-  const originalExtension = originalName ? path.extname(originalName).toLowerCase() : '';
-  if (originalExtension) {
-    return originalExtension;
-  }
-
-  return '.jpg';
 }
 
 async function findMatchingBeloWithdraw(userId: number, parsed: {
@@ -138,14 +125,27 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    const requestId = typeof res.locals.requestId === 'string' ? res.locals.requestId : 'no-request-id';
+    let savedReceiptImageUrl: string | null = null;
+    let savedReceiptImagePath: string | null = null;
+
     const imageInput = uploadedFile
-      ? {
-          type: 'file' as const,
-          buffer: uploadedFile.buffer,
-          filename: uploadedFile.originalname,
-          mimeType: uploadedFile.mimetype,
-          size: uploadedFile.size,
-        }
+      ? await (async () => {
+          const savedImage = await saveReceiptProcessingImage({
+            buffer: uploadedFile.buffer,
+            originalName: uploadedFile.originalname,
+            mimeType: uploadedFile.mimetype,
+            requestId,
+            baseUrl: getPublicBaseUrl(req),
+            label: 'scan',
+          });
+          savedReceiptImageUrl = savedImage.publicUrl;
+          savedReceiptImagePath = savedImage.filePath;
+          return {
+            type: 'image-source' as const,
+            value: savedImage.publicUrl,
+          };
+        })()
       : {
           type: 'image-source' as const,
           value: image as string,
@@ -154,9 +154,12 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
     // 1. Extract text using the OCR Service
     logger.info('Starting OCR extraction for receipt', {
       userId: req.user.id,
-      transport: uploadedFile ? 'multipart' : 'json',
+      transport: uploadedFile ? 'stored-url' : 'json',
       mimeType: uploadedFile?.mimetype ?? null,
       fileSize: uploadedFile?.size ?? (typeof image === 'string' ? image.length : null),
+      requestId,
+      savedReceiptImageUrl,
+      savedReceiptImagePath,
     });
     const extractedTexts = await Image2TextService.extractTextFromImages([imageInput]);
     
