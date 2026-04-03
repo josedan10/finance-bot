@@ -13,6 +13,12 @@ declare module 'express-serve-static-core' {
   interface Request {
     user: AuthenticatedUser;
     firebaseUser?: DecodedIdToken;
+    file?: {
+      buffer: Buffer;
+      originalname?: string;
+      mimetype?: string;
+      size?: number;
+    };
   }
 }
 

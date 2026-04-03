@@ -21,6 +21,9 @@ if (isSentryEnabled) {
 		profilesSampleRate: Number.isFinite(profileSampleRate) ? profileSampleRate : 0,
 		sendDefaultPii: false,
 	});
+	console.info('[sentry] Backend Sentry initialized', { environment, release: release ?? null });
+} else {
+	console.warn('[sentry] Backend Sentry disabled: missing SENTRY_DSN');
 }
 
 export type SentryLogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
