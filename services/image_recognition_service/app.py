@@ -18,10 +18,10 @@ app = FastAPI()
 reader: easyocr.Reader | None = None
 EASYOCR_MODEL_STORAGE_DIRECTORY = os.environ.get("EASYOCR_MODULE_PATH", "/root/.EasyOCR")
 MAX_IMAGE_DIMENSION = int(os.environ.get("OCR_MAX_IMAGE_DIMENSION", "1600"))
-SENTRY_DSN = os.environ.get("SENTRY_DSN")
-SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
-SENTRY_RELEASE = os.environ.get("SENTRY_RELEASE")
-SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0"))
+SENTRY_DSN = os.environ.get("OCR_SENTRY_DSN")
+SENTRY_ENVIRONMENT = os.environ.get("OCR_SENTRY_ENVIRONMENT", "development")
+SENTRY_RELEASE = os.environ.get("OCR_SENTRY_RELEASE")
+SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get("OCR_SENTRY_TRACES_SAMPLE_RATE", "0"))
 
 if SENTRY_DSN:
     sentry_sdk.init(
