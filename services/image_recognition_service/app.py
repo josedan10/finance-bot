@@ -183,14 +183,33 @@ async def resolve_request_image(request: Request) -> tuple[bytes, str]:
         form = await request.form()
         uploaded_image = form.get("image")
 
-        if not isinstance(uploaded_image, UploadFile):
+        logger.info(
+            "OCR multipart form parsed",
+            extra={
+                "request_id": request.headers.get("x-request-id"),
+                "form_keys": list(form.keys()),
+                "image_field_type": type(uploaded_image).__name__ if uploaded_image is not None else None,
+            },
+        )
+
+        if uploaded_image is None:
             raise HTTPException(status_code=400, detail="No receipt image file provided.")
+
+        if isinstance(uploaded_image, str):
+            raise HTTPException(status_code=400, detail="Receipt image field must be a file upload.")
+
+        if not hasattr(uploaded_image, "read"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported multipart image field type: {type(uploaded_image).__name__}",
+            )
 
         content = await read_upload_file(uploaded_image)
         if not content:
             raise HTTPException(status_code=400, detail="Uploaded receipt image is empty.")
 
-        return content, f"multipart:{uploaded_image.filename or 'upload'}"
+        filename = getattr(uploaded_image, "filename", None) or "upload"
+        return content, f"multipart:{filename}"
 
     try:
         payload = await request.json()
