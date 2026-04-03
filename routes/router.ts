@@ -29,7 +29,8 @@ function isIgnoredTransactionStatus(status?: string): boolean {
 router.use((req: Request, res: Response, next) => {
 	res.header('Access-Control-Allow-Origin', '*');
 	res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
-	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, Sentry-Trace, Baggage');
+	res.header('Access-Control-Expose-Headers', 'X-Request-Id');
 
 	if (req.method === 'OPTIONS') {
 		return res.sendStatus(204);
