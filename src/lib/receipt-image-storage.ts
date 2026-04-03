@@ -1,11 +1,27 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import sharp from 'sharp';
+import { config } from '../config';
 import logger from './logger';
 
 type StoredReceiptImage = {
 	fileName: string;
 	filePath: string;
 	publicUrl: string;
+};
+
+export type OptimizedReceiptImage = {
+	buffer: Buffer;
+	mimeType: string;
+	originalBytes: number;
+	optimizedBytes: number;
+	originalWidth: number | null;
+	originalHeight: number | null;
+	optimizedWidth: number | null;
+	optimizedHeight: number | null;
+	originalFormat: string | null;
+	optimizedFormat: string | null;
+	didOptimize: boolean;
 };
 
 export function getImageExtension(mimeType: string | undefined, originalName: string | undefined): string {
@@ -25,6 +41,61 @@ export function getImageExtension(mimeType: string | undefined, originalName: st
 function sanitizeLabel(value: string): string {
 	const sanitized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
 	return sanitized || 'receipt';
+}
+
+export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<OptimizedReceiptImage> {
+	const originalBytes = buffer.length;
+
+	try {
+		const pipeline = sharp(buffer, { failOn: 'none' }).rotate();
+		const metadata = await pipeline.metadata();
+		const resizedBuffer = await pipeline
+			.resize({
+				width: config.RECEIPT_OCR_MAX_IMAGE_DIMENSION,
+				height: config.RECEIPT_OCR_MAX_IMAGE_DIMENSION,
+				fit: 'inside',
+				withoutEnlargement: true,
+			})
+			.jpeg({
+				quality: config.RECEIPT_OCR_JPEG_QUALITY,
+				mozjpeg: true,
+			})
+			.toBuffer();
+		const optimizedMetadata = await sharp(resizedBuffer, { failOn: 'none' }).metadata();
+
+		return {
+			buffer: resizedBuffer,
+			mimeType: 'image/jpeg',
+			originalBytes,
+			optimizedBytes: resizedBuffer.length,
+			originalWidth: metadata.width ?? null,
+			originalHeight: metadata.height ?? null,
+			optimizedWidth: optimizedMetadata.width ?? null,
+			optimizedHeight: optimizedMetadata.height ?? null,
+			originalFormat: metadata.format ?? null,
+			optimizedFormat: optimizedMetadata.format ?? null,
+			didOptimize: true,
+		};
+	} catch (error) {
+		logger.warn('Failed to optimize receipt image for OCR; using original buffer', {
+			error,
+			originalBytes,
+		});
+
+		return {
+			buffer,
+			mimeType: 'application/octet-stream',
+			originalBytes,
+			optimizedBytes: originalBytes,
+			originalWidth: null,
+			originalHeight: null,
+			optimizedWidth: null,
+			optimizedHeight: null,
+			originalFormat: null,
+			optimizedFormat: null,
+			didOptimize: false,
+		};
+	}
 }
 
 export async function saveReceiptProcessingImage(params: {
