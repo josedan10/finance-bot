@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AISettingsService, AIAssistantFactory } from '../../modules/ai-assistant/ai-assistant.module';
 import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from '../../src/lib/logger';
+import { AppError } from '../../src/lib/appError';
 import { captureException } from '../../src/lib/sentry';
 import { Image2TextService } from '../../modules/image-2-text/image-2-text.module';
 import { BaseTransactions } from '../../modules/base-transactions/base-transactions.module';
@@ -89,16 +90,42 @@ async function findMatchingBeloWithdraw(userId: number, parsed: {
 
 export async function scanReceipt(req: Request, res: Response): Promise<void> {
   try {
-    const { image } = req.body;
+    const uploadedFile = req.file as
+      | {
+          buffer: Buffer;
+          originalname?: string;
+          mimetype?: string;
+          size?: number;
+        }
+      | undefined;
+    const image = typeof req.body?.image === 'string' ? req.body.image : null;
 
-    if (!image) {
+    if (!uploadedFile && !image) {
       res.status(400).json({ message: 'No image provided' });
       return;
     }
 
+    const imageInput = uploadedFile
+      ? {
+          type: 'file' as const,
+          buffer: uploadedFile.buffer,
+          filename: uploadedFile.originalname,
+          mimeType: uploadedFile.mimetype,
+          size: uploadedFile.size,
+        }
+      : {
+          type: 'image-source' as const,
+          value: image as string,
+        };
+
     // 1. Extract text using the OCR Service
-    logger.info('Starting OCR extraction for receipt', { userId: req.user.id });
-    const extractedTexts = await Image2TextService.extractTextFromImages([image]);
+    logger.info('Starting OCR extraction for receipt', {
+      userId: req.user.id,
+      transport: uploadedFile ? 'multipart' : 'json',
+      mimeType: uploadedFile?.mimetype ?? null,
+      fileSize: uploadedFile?.size ?? (typeof image === 'string' ? image.length : null),
+    });
+    const extractedTexts = await Image2TextService.extractTextFromImages([imageInput]);
     
     if (!extractedTexts || extractedTexts.length === 0) {
       res.status(422).json({ message: 'Could not extract text from image' });
@@ -152,18 +179,30 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
       metadataDateTimeSuggestion: formatMetadataDateTime(extractedReceipt.metadata?.capturedAt),
     });
   } catch (error) {
+    if (error instanceof AppError) {
+      logger.warn('Receipt scanning rejected', {
+        userId: req.user.id,
+        statusCode: error.statusCode,
+        error: error.message,
+      });
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+
     captureException(error, {
       controller: 'scanReceipt',
-      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
       userId: req.user.id,
-      hasImage: Boolean(req.body?.image),
-      imagePayloadLength: typeof req.body?.image === 'string' ? req.body.image.length : null,
+      hasImage: Boolean(req.file || req.body?.image),
+      transport: req.file ? 'multipart' : 'json',
+      imagePayloadLength: typeof req.body?.image === 'string' ? req.body.image.length : req.file?.size ?? null,
+      mimeType: req.file?.mimetype ?? null,
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
       userAgent: req.get('user-agent') ?? null,
       contentLength: req.get('content-length') ?? null,
     });
-    logger.error('Receipt scanning failed', { 
-      userId: req.user.id, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    logger.error('Receipt scanning failed', {
+      userId: req.user.id,
+      error,
     });
     
     res.status(500).json({ message: 'Failed to process receipt' });

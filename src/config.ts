@@ -10,6 +10,7 @@ export const config = {
 	PYDOLAR_API_URL: process.env.PYDOLAR_API_URL || 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar',
 	IMAGE_2_TEXT_SERVICE_URL: process.env.IMAGE_2_TEXT_SERVICE_URL || 'http://localhost:4000',
 	REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT || '15mb',
+	RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES: Number(process.env.RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES) || 10 * 1024 * 1024,
 	RATE_AVAILABLE_START_HOUR: 9,
 	RATE_AVAILABLE_END_HOUR: 11,
 	MAX_DESCRIPTION_LENGTH: 100,

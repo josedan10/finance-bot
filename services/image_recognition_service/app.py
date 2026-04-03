@@ -1,40 +1,41 @@
-# app.py
 import base64
+import logging
 import os
 from io import BytesIO
 from typing import Iterator
 
 import easyocr
 import numpy as np
-from fastapi import FastAPI, HTTPException
-from PIL import Image, ImageFilter, ImageOps
-from PIL.ExifTags import TAGS
-from pydantic import BaseModel
 import requests
 import sentry_sdk
+from fastapi import FastAPI, HTTPException, Request, UploadFile
+from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
+from PIL.ExifTags import TAGS
+from pydantic import ValidationError
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 app = FastAPI()
+logger = logging.getLogger("zentra.ocr")
+logging.basicConfig(level=os.environ.get("OCR_LOG_LEVEL", "INFO"))
+
 reader: easyocr.Reader | None = None
 EASYOCR_MODEL_STORAGE_DIRECTORY = os.environ.get("EASYOCR_MODULE_PATH", "/root/.EasyOCR")
 MAX_IMAGE_DIMENSION = int(os.environ.get("OCR_MAX_IMAGE_DIMENSION", "1600"))
-SENTRY_DSN = os.environ.get("OCR_SENTRY_DSN")
+OCR_SENTRY_DSN = os.environ.get("OCR_SENTRY_DSN")
 SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
 SENTRY_RELEASE = os.environ.get("SENTRY_RELEASE")
 SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0"))
 
-if SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        environment=SENTRY_ENVIRONMENT,
-        release=SENTRY_RELEASE,
-        integrations=[FastApiIntegration()],
-        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
-    )
-    sentry_sdk.set_tag("service", "ocr-image-recognition")
 
-class ImageData(BaseModel):
-    image: str
+if OCR_SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=OCR_SENTRY_DSN,
+        environment=os.environ.get("SENTRY_ENVIRONMENT") or os.environ.get("NODE_ENV") or "development",
+        release=os.environ.get("SENTRY_RELEASE") or None,
+        traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0")),
+        integrations=[FastApiIntegration()],
+        send_default_pii=False,
+    )
 
 
 def get_reader() -> easyocr.Reader:
@@ -49,6 +50,7 @@ def get_reader() -> easyocr.Reader:
 @app.on_event("startup")
 async def preload_easyocr_models():
     get_reader()
+    logger.info("OCR service startup complete", extra={"sentry_enabled": bool(OCR_SENTRY_DSN)})
 
 
 @app.get("/health")
@@ -168,27 +170,123 @@ def load_image_bytes(image_source: str) -> bytes:
     return response.content
 
 
+async def read_upload_file(upload: UploadFile) -> bytes:
+    content = await upload.read()
+    await upload.close()
+    return content
+
+
+async def resolve_request_image(request: Request) -> tuple[bytes, str]:
+    content_type = request.headers.get("content-type", "")
+
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        uploaded_image = form.get("image")
+
+        if not isinstance(uploaded_image, UploadFile):
+            raise HTTPException(status_code=400, detail="No receipt image file provided.")
+
+        content = await read_upload_file(uploaded_image)
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded receipt image is empty.")
+
+        return content, f"multipart:{uploaded_image.filename or 'upload'}"
+
+    try:
+        payload = await request.json()
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid OCR request payload.") from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid OCR request payload.")
+
+    image_source = payload.get("image")
+    if not isinstance(image_source, str) or not image_source.strip():
+        raise HTTPException(status_code=400, detail="No image provided.")
+
+    return load_image_bytes(image_source), "json:image-source"
+
+
 @app.post("/extract-text")
 @app.post("/extract-text/")
-async def extract_text(image: ImageData):
+async def extract_text(request: Request):
+    request_id = request.headers.get("x-request-id")
+    content_length = request.headers.get("content-length")
+    content_type = request.headers.get("content-type")
+
+    logger.info(
+        "OCR request received",
+        extra={
+            "request_id": request_id,
+            "content_type": content_type,
+            "content_length": content_length,
+        },
+    )
+
     try:
         if reader is None:
             get_reader()
-        content = load_image_bytes(image.image)
+
+        content, source_type = await resolve_request_image(request)
+        logger.info(
+            "OCR image payload resolved",
+            extra={
+                "request_id": request_id,
+                "source_type": source_type,
+                "byte_length": len(content),
+            },
+        )
+
         with Image.open(BytesIO(content)) as img:
             text = extract_text_from_variants(img)
             metadata = extract_image_metadata(img)
 
         if not text:
-            raise HTTPException(status_code=404, detail="No text found in the image. Try to improve the image quality.")
+            raise HTTPException(status_code=422, detail="No text found in the image. Try to improve the image quality.")
 
         return {"text": text, "metadata": metadata}
-    except Exception as e:
-        with sentry_sdk.push_scope() as scope:
-            scope.set_tag("ocr.endpoint", "extract-text")
-            scope.set_extra("has_image_payload", bool(image.image))
-            scope.set_extra("image_payload_length", len(image.image) if image.image else 0)
-            scope.set_extra("is_data_url", image.image.startswith("data:image/"))
-            sentry_sdk.capture_exception(e)
-        print(e)
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException as exc:
+        log_method = logger.error if exc.status_code >= 500 else logger.warning
+        log_method(
+            "OCR request failed",
+            extra={
+                "request_id": request_id,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+                "content_type": content_type,
+                "content_length": content_length,
+            },
+        )
+        if exc.status_code >= 500 and OCR_SENTRY_DSN:
+            sentry_sdk.capture_exception(exc)
+        raise
+    except UnidentifiedImageError as exc:
+        logger.warning(
+            "OCR received unsupported image payload",
+            extra={
+                "request_id": request_id,
+                "content_type": content_type,
+                "content_length": content_length,
+            },
+        )
+        raise HTTPException(status_code=415, detail="Unsupported or corrupted image file.") from exc
+    except Exception as exc:
+        logger.exception(
+            "Unexpected OCR extraction failure",
+            extra={
+                "request_id": request_id,
+                "content_type": content_type,
+                "content_length": content_length,
+            },
+        )
+        if OCR_SENTRY_DSN:
+            with sentry_sdk.push_scope() as scope:
+                scope.set_tag("service", "ocr")
+                if request_id:
+                    scope.set_tag("request_id", request_id)
+                    scope.set_extra("request_id", request_id)
+                scope.set_extra("content_type", content_type)
+                scope.set_extra("content_length", content_length)
+                sentry_sdk.capture_exception(exc)
+                sentry_sdk.flush(timeout=2.0)
+        raise HTTPException(status_code=500, detail="Failed to process receipt image.") from exc
