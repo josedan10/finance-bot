@@ -13,6 +13,10 @@ type StoredReceiptImage = {
 export type OptimizedReceiptImage = {
 	buffer: Buffer;
 	mimeType: string;
+	compressionIterations: number;
+	compressionQuality: number | null;
+	targetMaxBytes: number | null;
+	targetReached: boolean;
 	originalBytes: number;
 	optimizedBytes: number;
 	originalWidth: number | null;
@@ -45,29 +49,60 @@ function sanitizeLabel(value: string): string {
 
 export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<OptimizedReceiptImage> {
 	const originalBytes = buffer.length;
+	const targetMaxBytes = config.RECEIPT_OCR_TARGET_MAX_BYTES;
+	const initialQuality = config.RECEIPT_OCR_JPEG_QUALITY;
+	const minQuality = Math.min(initialQuality, config.RECEIPT_OCR_MIN_JPEG_QUALITY);
+	const qualityStep = 7;
 
 	try {
-		const pipeline = sharp(buffer, { failOn: 'none' }).rotate();
-		const metadata = await pipeline.metadata();
-		const resizedBuffer = await pipeline
+		const rotatedPipeline = sharp(buffer, { failOn: 'none' }).rotate();
+		const metadata = await rotatedPipeline.metadata();
+		const resizedBuffer = await rotatedPipeline
 			.resize({
 				width: config.RECEIPT_OCR_MAX_IMAGE_DIMENSION,
 				height: config.RECEIPT_OCR_MAX_IMAGE_DIMENSION,
 				fit: 'inside',
 				withoutEnlargement: true,
 			})
+			.toBuffer();
+
+		let compressionIterations = 0;
+		let quality = initialQuality;
+		let optimizedBuffer = await sharp(resizedBuffer, { failOn: 'none' })
 			.jpeg({
-				quality: config.RECEIPT_OCR_JPEG_QUALITY,
+				quality,
 				mozjpeg: true,
 			})
 			.toBuffer();
-		const optimizedMetadata = await sharp(resizedBuffer, { failOn: 'none' }).metadata();
+
+		while (optimizedBuffer.length > targetMaxBytes && quality > minQuality) {
+			const nextQuality = Math.max(minQuality, quality - qualityStep);
+			if (nextQuality === quality) {
+				break;
+			}
+
+			quality = nextQuality;
+			compressionIterations += 1;
+			optimizedBuffer = await sharp(resizedBuffer, { failOn: 'none' })
+				.jpeg({
+					quality,
+					mozjpeg: true,
+				})
+				.toBuffer();
+		}
+
+		const optimizedMetadata = await sharp(optimizedBuffer, { failOn: 'none' }).metadata();
+		const targetReached = optimizedBuffer.length <= targetMaxBytes;
 
 		return {
-			buffer: resizedBuffer,
+			buffer: optimizedBuffer,
 			mimeType: 'image/jpeg',
+			compressionIterations,
+			compressionQuality: quality,
+			targetMaxBytes,
+			targetReached,
 			originalBytes,
-			optimizedBytes: resizedBuffer.length,
+			optimizedBytes: optimizedBuffer.length,
 			originalWidth: metadata.width ?? null,
 			originalHeight: metadata.height ?? null,
 			optimizedWidth: optimizedMetadata.width ?? null,
@@ -85,6 +120,10 @@ export async function optimizeReceiptImageForOcr(buffer: Buffer): Promise<Optimi
 		return {
 			buffer,
 			mimeType: 'application/octet-stream',
+			compressionIterations: 0,
+			compressionQuality: null,
+			targetMaxBytes: null,
+			targetReached: false,
 			originalBytes,
 			optimizedBytes: originalBytes,
 			originalWidth: null,
