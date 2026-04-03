@@ -59,6 +59,7 @@ services:
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
+      OCR_ENABLE_EXTRA_VARIANTS: ${OCR_ENABLE_EXTRA_VARIANTS:-false}
       EASYOCR_MODULE_PATH: /root/.EasyOCR
     volumes:
       - easyocr_data:/root/.EasyOCR
