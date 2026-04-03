@@ -56,6 +56,10 @@ services:
     environment:
       OCR_MAX_IMAGE_DIMENSION: ${OCR_MAX_IMAGE_DIMENSION:-1600}
       EASYOCR_MODULE_PATH: /root/.EasyOCR
+      OCR_SENTRY_DSN: ${OCR_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
     volumes:
       - easyocr_data:/root/.EasyOCR
     healthcheck:
