@@ -112,6 +112,7 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@zentra-app.pro}
     volumes:
       - ./secrets/firebase-service-account.json:/app/firebase-service-account.json:ro
+      - ./public:/app/public
     labels:
       - traefik.enable=true
       - traefik.http.routers.zentra-api.rule=Host(`${API_DOMAIN:-api.zentra-app.pro}`)

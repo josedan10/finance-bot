@@ -1,3 +1,5 @@
+import { promises as fs } from 'fs';
+import path from 'path';
 import { Request, Response } from 'express';
 import { AISettingsService, AIAssistantFactory } from '../../modules/ai-assistant/ai-assistant.module';
 import { PrismaModule as prisma } from '../../modules/database/database.module';
@@ -29,6 +31,37 @@ function formatMetadataDateTime(value: string | null | undefined): string | null
   const minutes = String(parsed.getMinutes()).padStart(2, '0');
 
   return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function sanitizeReceiptSource(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  const sanitized = normalized.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+
+  if (!sanitized) {
+    return 'unknown';
+  }
+
+  return sanitized.slice(0, 40);
+}
+
+function getPublicBaseUrl(req: Request): string {
+  const forwardedProto = req.get('x-forwarded-proto');
+  const protocol = forwardedProto?.split(',')[0]?.trim() || req.protocol;
+  return `${protocol}://${req.get('host')}`;
+}
+
+function getImageExtension(mimeType: string | undefined, originalName: string | undefined): string {
+  if (mimeType === 'image/png') return '.png';
+  if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'image/heic') return '.heic';
+  if (mimeType === 'image/heif') return '.heif';
+
+  const originalExtension = originalName ? path.extname(originalName).toLowerCase() : '';
+  if (originalExtension) {
+    return originalExtension;
+  }
+
+  return '.jpg';
 }
 
 async function findMatchingBeloWithdraw(userId: number, parsed: {
@@ -206,6 +239,88 @@ export async function scanReceipt(req: Request, res: Response): Promise<void> {
     });
     
     res.status(500).json({ message: 'Failed to process receipt' });
+  }
+}
+
+export async function uploadReceiptSample(req: Request, res: Response): Promise<void> {
+  try {
+    const uploadedFile = req.file as
+      | {
+          buffer: Buffer;
+          originalname?: string;
+          mimetype?: string;
+          size?: number;
+        }
+      | undefined;
+
+    if (!uploadedFile) {
+      res.status(400).json({ message: 'No image provided' });
+      return;
+    }
+
+    const source = sanitizeReceiptSource(req.body?.source);
+    const requestId = typeof res.locals.requestId === 'string' ? res.locals.requestId : 'no-request-id';
+    const receiptSamplesDir = path.resolve(process.cwd(), 'public', 'receipt-samples');
+    const extension = getImageExtension(uploadedFile.mimetype, uploadedFile.originalname);
+    const fileName = `${new Date().toISOString().replace(/[:.]/g, '-')}-${source}-${requestId}${extension}`;
+    const filePath = path.join(receiptSamplesDir, fileName);
+    const metadataPath = path.join(receiptSamplesDir, `${fileName}.json`);
+
+    await fs.mkdir(receiptSamplesDir, { recursive: true });
+    await fs.writeFile(filePath, uploadedFile.buffer);
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify(
+        {
+          source,
+          requestId,
+          uploadedAt: new Date().toISOString(),
+          originalName: uploadedFile.originalname ?? null,
+          mimeType: uploadedFile.mimetype ?? null,
+          size: uploadedFile.size ?? uploadedFile.buffer.length,
+          userId: req.user.id,
+          userAgent: req.get('user-agent') ?? null,
+        },
+        null,
+        2
+      )
+    );
+
+    const publicUrl = `${getPublicBaseUrl(req)}/receipt-samples/${fileName}`;
+    const metadataUrl = `${publicUrl}.json`;
+
+    logger.info('Stored receipt sample image for OCR debugging', {
+      userId: req.user.id,
+      source,
+      requestId,
+      fileName,
+      fileSize: uploadedFile.size ?? uploadedFile.buffer.length,
+      mimeType: uploadedFile.mimetype ?? null,
+      publicUrl,
+    });
+
+    res.status(201).json({
+      source,
+      fileName,
+      publicUrl,
+      metadataUrl,
+      savedTo: filePath,
+    });
+  } catch (error) {
+    captureException(error, {
+      controller: 'uploadReceiptSample',
+      userId: req.user.id,
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      source: sanitizeReceiptSource(req.body?.source),
+      hasFile: Boolean(req.file),
+    });
+
+    logger.error('Failed to store receipt sample image', {
+      userId: req.user.id,
+      error,
+    });
+
+    res.status(500).json({ message: 'Failed to store receipt sample image' });
   }
 }
 
