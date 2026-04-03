@@ -11,11 +11,27 @@ from PIL import Image, ImageFilter, ImageOps
 from PIL.ExifTags import TAGS
 from pydantic import BaseModel
 import requests
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 app = FastAPI()
 reader: easyocr.Reader | None = None
 EASYOCR_MODEL_STORAGE_DIRECTORY = os.environ.get("EASYOCR_MODULE_PATH", "/root/.EasyOCR")
 MAX_IMAGE_DIMENSION = int(os.environ.get("OCR_MAX_IMAGE_DIMENSION", "1600"))
+SENTRY_DSN = os.environ.get("SENTRY_DSN")
+SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
+SENTRY_RELEASE = os.environ.get("SENTRY_RELEASE")
+SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0"))
+
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+    )
+    sentry_sdk.set_tag("service", "ocr-image-recognition")
 
 class ImageData(BaseModel):
     image: str
@@ -168,5 +184,11 @@ async def extract_text(image: ImageData):
 
         return {"text": text, "metadata": metadata}
     except Exception as e:
+        with sentry_sdk.push_scope() as scope:
+            scope.set_tag("ocr.endpoint", "extract-text")
+            scope.set_extra("has_image_payload", bool(image.image))
+            scope.set_extra("image_payload_length", len(image.image) if image.image else 0)
+            scope.set_extra("is_data_url", image.image.startswith("data:image/"))
+            sentry_sdk.capture_exception(e)
         print(e)
         raise HTTPException(status_code=500, detail=str(e))
