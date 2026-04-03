@@ -23,14 +23,12 @@ ENV NODE_ENV=production
 ENV PORT=5000
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package*.json ./
 
-RUN npm ci --omit=dev --ignore-scripts \
+RUN npm prune --omit=dev --ignore-scripts \
 	&& npm cache clean --force
-
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 EXPOSE 5000
 
