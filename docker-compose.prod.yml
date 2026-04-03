@@ -94,6 +94,8 @@ services:
       NODE_ENV: production
       APP_MODE: production
       IMAGE_2_TEXT_SERVICE_URL: http://zentra-image-extractor-production:4000
+      RECEIPT_TEXT_PROVIDER: ${RECEIPT_TEXT_PROVIDER:-ocr}
+      GEMINI_RECEIPT_MODEL: ${GEMINI_RECEIPT_MODEL:-gemini-1.5-flash}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TEST_CHAT_ID: ${TEST_CHAT_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import FormData from 'form-data';
+import { GenerativeModel, GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 import { AppError } from '../../src/lib/appError';
@@ -27,6 +28,8 @@ export type OCRImageInput =
 	  };
 
 class Image2TextModule {
+	private geminiModel: GenerativeModel | null = null;
+
 	private getCandidateServiceUrls(): string[] {
 		const configuredUrl = config.IMAGE_2_TEXT_SERVICE_URL.replace(/\/$/, '');
 		return [
@@ -66,7 +69,104 @@ class Image2TextModule {
 		};
 	}
 
+	private getGeminiModel(): GenerativeModel {
+		if (!config.GOOGLE_AI_API_KEY) {
+			throw new AppError('Gemini OCR is not configured', 500);
+		}
+
+		if (!this.geminiModel) {
+			const genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
+			this.geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_RECEIPT_MODEL });
+		}
+
+		return this.geminiModel;
+	}
+
+	private async resolveImageBufferForGemini(
+		image: OCRImageInput,
+		requestId?: string
+	): Promise<{ mimeType: string; base64Data: string }> {
+		if (image.type === 'file') {
+			return {
+				mimeType: image.mimeType || 'application/octet-stream',
+				base64Data: image.buffer.toString('base64'),
+			};
+		}
+
+		try {
+			const response = await axios.get<ArrayBuffer>(image.value, {
+				responseType: 'arraybuffer',
+				timeout: 60_000,
+				headers: requestId ? { 'x-request-id': requestId } : undefined,
+			});
+			const headerType = response.headers['content-type'];
+			const mimeType = typeof headerType === 'string' ? headerType : 'image/jpeg';
+
+			return {
+				mimeType,
+				base64Data: Buffer.from(response.data).toString('base64'),
+			};
+		} catch (error) {
+			logger.warn('Gemini OCR image source fetch failed', {
+				requestId,
+				imageSource: image.value,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+			throw new AppError('Unable to load image for Gemini OCR', 422);
+		}
+	}
+
+	private normalizeGeminiText(text: string): string {
+		const markdownMatch = text.match(/^```(?:text|plaintext)?\s*([\s\S]*?)\s*```$/i);
+		return markdownMatch ? markdownMatch[1].trim() : text.trim();
+	}
+
+	private async extractTextWithGemini(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
+		try {
+			const { mimeType, base64Data } = await this.resolveImageBufferForGemini(image, requestId);
+			const model = this.getGeminiModel();
+			const prompt = [
+				'Extract all visible text from this receipt image.',
+				'Return plain text only, line by line, without markdown fences or explanations.',
+			].join(' ');
+
+			const result = await model.generateContent([
+				{ text: prompt },
+				{
+					inlineData: {
+						mimeType,
+						data: base64Data,
+					},
+				},
+			]);
+			const response = await result.response;
+			const normalizedText = this.normalizeGeminiText(response.text());
+
+			if (!normalizedText) {
+				throw new AppError('Gemini OCR returned empty text', 422);
+			}
+
+			return {
+				text: normalizedText,
+			};
+		} catch (error) {
+			if (error instanceof AppError) {
+				throw error;
+			}
+
+			logger.error('Gemini OCR extraction failed', {
+				requestId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+			throw new AppError('Error extracting text from images', 503);
+		}
+	}
+
 	private async extractText(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
+		if (config.RECEIPT_TEXT_PROVIDER === 'gemini') {
+			return this.extractTextWithGemini(image, requestId);
+		}
+
 		let lastError: AxiosError | null = null;
 
 		for (const baseUrl of this.getCandidateServiceUrls()) {
