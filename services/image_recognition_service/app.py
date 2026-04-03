@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import multiprocessing as mp
@@ -20,7 +21,6 @@ app = FastAPI()
 logger = logging.getLogger("zentra.ocr")
 logging.basicConfig(level=os.environ.get("OCR_LOG_LEVEL", "INFO"))
 
-reader: easyocr.Reader | None = None
 EASYOCR_MODEL_STORAGE_DIRECTORY = os.environ.get("EASYOCR_MODULE_PATH", "/root/.EasyOCR")
 MAX_IMAGE_DIMENSION = int(os.environ.get("OCR_MAX_IMAGE_DIMENSION", "1600"))
 OCR_SENTRY_DSN = os.environ.get("OCR_SENTRY_DSN")
@@ -28,6 +28,7 @@ SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
 SENTRY_RELEASE = os.environ.get("SENTRY_RELEASE")
 SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0"))
 OCR_READTEXT_TIMEOUT_SECONDS = int(os.environ.get("OCR_READTEXT_TIMEOUT_SECONDS", "40"))
+OCR_ENABLE_EXTRA_VARIANTS = os.environ.get("OCR_ENABLE_EXTRA_VARIANTS", "false").lower() in ("1", "true", "yes", "on")
 
 
 if OCR_SENTRY_DSN:
@@ -39,15 +40,6 @@ if OCR_SENTRY_DSN:
         integrations=[FastApiIntegration()],
         send_default_pii=False,
     )
-
-
-def get_reader() -> easyocr.Reader:
-    global reader
-
-    if reader is None:
-        reader = easyocr.Reader(["en", "es"], gpu=False, model_storage_directory=EASYOCR_MODEL_STORAGE_DIRECTORY)
-
-    return reader
 
 
 class OcrWorkerTimeoutError(Exception):
@@ -95,8 +87,9 @@ def run_readtext_isolated(variant: Image.Image, request_id: str | None, variant_
     variant.convert("RGB").save(buffer, format="PNG")
     payload = buffer.getvalue()
 
-    queue: mp.Queue = mp.Queue()
-    process = mp.Process(
+    context = mp.get_context("spawn")
+    queue: mp.Queue = context.Queue()
+    process = context.Process(
         target=_ocr_readtext_worker,
         args=(payload, queue, request_id),
         daemon=True,
@@ -146,13 +139,11 @@ def run_readtext_isolated(variant: Image.Image, request_id: str | None, variant_
 
 @app.on_event("startup")
 async def preload_easyocr_models():
-    get_reader()
     logger.info("OCR service startup complete", extra={"sentry_enabled": bool(OCR_SENTRY_DSN)})
 
 
 @app.get("/health")
 async def health():
-    get_reader()
     return {"status": "ok"}
 
 
@@ -201,28 +192,15 @@ def preprocess_image_variants(img: Image.Image, request_id: str | None = None) -
         },
     )
 
-    if max(width, height) < 1000:
-        upscale_factor = 1.5
-        resized = limited_base.resize(
-            (int(width * upscale_factor), int(height * upscale_factor)),
-            Image.Resampling.LANCZOS,
-        )
-        logger.info(
-            "OCR preprocessing upscaled image",
-            extra={
-                "request_id": request_id,
-                "width": resized.size[0],
-                "height": resized.size[1],
-            },
-        )
-    else:
-        resized = limited_base
+    yield limited_base
 
-    grayscale = ImageOps.grayscale(resized)
+    if not OCR_ENABLE_EXTRA_VARIANTS:
+        return
+
+    grayscale = ImageOps.grayscale(limited_base)
     autocontrast = ImageOps.autocontrast(grayscale)
     sharpened = autocontrast.filter(ImageFilter.SHARPEN)
 
-    yield resized
     yield autocontrast
     yield sharpened
 
@@ -240,13 +218,13 @@ def extract_text_from_variants(img: Image.Image, request_id: str | None = None) 
                 "variant_size": f"{variant.size[0]}x{variant.size[1]}",
             },
         )
-        variant_array = np.array(variant)
         logger.info(
             "OCR readtext starting",
             extra={
                 "request_id": request_id,
                 "variant_index": index,
-                "array_shape": tuple(variant_array.shape),
+                "variant_mode": variant.mode,
+                "variant_size": f"{variant.size[0]}x{variant.size[1]}",
             },
         )
         variant_detections = run_readtext_isolated(variant, request_id=request_id, variant_index=index)
@@ -258,11 +236,7 @@ def extract_text_from_variants(img: Image.Image, request_id: str | None = None) 
                 "results_count": len(variant_detections),
             },
         )
-        del variant_array
-
         detections.extend(variant_detections)
-
-        variant.close()
 
     if not detections:
         return ""
@@ -372,9 +346,6 @@ async def extract_text(request: Request):
     )
 
     try:
-        if reader is None:
-            get_reader()
-
         content, source_type = await resolve_request_image(request)
         logger.info(
             "OCR image payload resolved",
@@ -404,8 +375,12 @@ async def extract_text(request: Request):
                     "image_format": img.format,
                 },
             )
-            text = extract_text_from_variants(img, request_id=request_id)
+            processed = img.copy()
             metadata = extract_image_metadata(img)
+        try:
+            text = await asyncio.to_thread(extract_text_from_variants, processed, request_id)
+        finally:
+            processed.close()
 
         if not text:
             raise HTTPException(status_code=422, detail="No text found in the image. Try to improve the image quality.")
@@ -438,14 +413,12 @@ async def extract_text(request: Request):
         raise HTTPException(status_code=415, detail="Unsupported or corrupted image file.") from exc
     except OcrWorkerTimeoutError as exc:
         logger.error(
-            "OCR worker timed out",
-            extra={
-                "request_id": request_id,
-                "content_type": content_type,
-                "content_length": content_length,
-                "timeout_seconds": OCR_READTEXT_TIMEOUT_SECONDS,
-                "error": str(exc),
-            },
+            "OCR worker timed out | request_id=%s | timeout_seconds=%s | content_type=%s | content_length=%s | error=%s",
+            request_id,
+            OCR_READTEXT_TIMEOUT_SECONDS,
+            content_type,
+            content_length,
+            str(exc),
         )
         if OCR_SENTRY_DSN:
             sentry_sdk.capture_exception(exc)
@@ -455,13 +428,11 @@ async def extract_text(request: Request):
         ) from exc
     except OcrWorkerCrashedError as exc:
         logger.error(
-            "OCR worker crashed during extraction",
-            extra={
-                "request_id": request_id,
-                "content_type": content_type,
-                "content_length": content_length,
-                "error": str(exc),
-            },
+            "OCR worker crashed during extraction | request_id=%s | content_type=%s | content_length=%s | error=%s",
+            request_id,
+            content_type,
+            content_length,
+            str(exc),
         )
         if OCR_SENTRY_DSN:
             sentry_sdk.capture_exception(exc)
