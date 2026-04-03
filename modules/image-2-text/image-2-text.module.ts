@@ -213,6 +213,17 @@ class Image2TextModule {
 			return this.extractTextWithGemini(image, requestId);
 		}
 
+		if (config.RECEIPT_TEXT_PROVIDER === 'auto' && config.GOOGLE_AI_API_KEY) {
+			try {
+				return await this.extractTextWithGemini(image, requestId);
+			} catch (error) {
+				logger.warn('Gemini OCR failed, falling back to OCR service', {
+					requestId,
+					error: error instanceof Error ? error.message : 'Unknown error',
+				});
+			}
+		}
+
 		return this.extractTextWithOcrService(image, requestId);
 	}
 

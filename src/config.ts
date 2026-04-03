@@ -14,9 +14,12 @@ function parseIntegerInRange(value: string | undefined, fallback: number, min: n
 	return Math.min(max, Math.max(min, parsed));
 }
 
-function parseReceiptTextProvider(value: string | undefined): 'ocr' | 'gemini' {
+function parseReceiptTextProvider(value: string | undefined): 'ocr' | 'gemini' | 'auto' {
 	const normalized = value?.trim().toLowerCase();
-	return normalized === 'gemini' ? 'gemini' : 'ocr';
+	if (normalized === 'ocr' || normalized === 'gemini' || normalized === 'auto') {
+		return normalized;
+	}
+	return 'auto';
 }
 
 export const config = {

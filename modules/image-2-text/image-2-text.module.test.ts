@@ -45,7 +45,7 @@ describe('Image2TextModule', () => {
 	});
 
 	afterEach(() => {
-		config.RECEIPT_TEXT_PROVIDER = 'ocr';
+		config.RECEIPT_TEXT_PROVIDER = 'auto';
 		config.GOOGLE_AI_API_KEY = 'test-google-key';
 		config.GEMINI_RECEIPT_MODEL = 'gemini-1.5-flash';
 		config.IMAGE_2_TEXT_SERVICE_URL = 'http://localhost:4000';
@@ -56,7 +56,35 @@ describe('Image2TextModule', () => {
 		spyGet.resetBehavior();
 	});
 
+	it('should use Gemini first in auto mode when API key is present', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'auto';
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+
+		const model: MockGenerativeModel = {
+			generateContent: jest.fn().mockResolvedValue({
+				response: {
+					text: () => 'Gemini first text',
+				},
+			}),
+		};
+		MockGoogleAI.prototype.getGenerativeModel.mockReturnValue(model as unknown as ReturnType<
+			GoogleGenerativeAI['getGenerativeModel']
+		>);
+		spyGet.resolves({
+			data: Buffer.from('fake-image-binary'),
+			headers: { 'content-type': 'image/jpeg' },
+		});
+		spyPost.resolves({ data: { text: 'OCR text' } });
+
+		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg']);
+
+		expect(result).toEqual([{ text: 'Gemini first text', metadata: { capturedAt: null, deviceModel: null, deviceMake: null } }]);
+		expect(model.generateContent).toHaveBeenCalled();
+		sandbox.assert.notCalled(spyPost);
+	});
+
 	it('should extract text from one image successfully using OCR provider', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		spyPost.resolves({ data: { text: 'Lorem Ipsum text' } });
 
 		const result = await image2TextModule.extractTextFromImages(['https://example.com/image.jpg']);
@@ -65,6 +93,7 @@ describe('Image2TextModule', () => {
 	});
 
 	it('should extract text from multiple images successfully using OCR provider', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		spyPost.resolves({ data: { text: 'Lorem ipsum' } });
 
 		const result = await image2TextModule.extractTextFromImages([
@@ -79,6 +108,7 @@ describe('Image2TextModule', () => {
 	});
 
 	it('should extract text from uploaded file payload using OCR provider', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		spyPost.resolves({ data: { text: 'Text from file' } });
 
 		const result = await image2TextModule.extractTextFromImages([
@@ -105,6 +135,7 @@ describe('Image2TextModule', () => {
 	});
 
 	it('should throw AppError from OCR provider when service responds with error status', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		spyPost.rejects({ response: { status: 503, data: 'Error 500' }, message: 'upstream failed' });
 
 		await expect(image2TextModule.extractTextFromImages(['https://example.com/image.jpg'])).rejects.toThrow(
@@ -113,6 +144,7 @@ describe('Image2TextModule', () => {
 	});
 
 	it('should include x-request-id header for OCR provider', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		spyPost.resolves({ data: { text: 'ok' } });
 
 		await image2TextModule.extractTextFromImages(['https://example.com/image.jpg'], 'req-123');
@@ -121,6 +153,7 @@ describe('Image2TextModule', () => {
 	});
 
 	it('should use fallback OCR URL if primary URL network call fails', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		config.IMAGE_2_TEXT_SERVICE_URL = 'http://primary-ocr:4000';
 
 		spyPost.onFirstCall().rejects(new Error('network down'));
@@ -134,6 +167,7 @@ describe('Image2TextModule', () => {
 	});
 
 	it('should throw generic extraction error when all OCR fallback URLs fail without HTTP response', async () => {
+		config.RECEIPT_TEXT_PROVIDER = 'ocr';
 		spyPost.rejects(new Error('network down'));
 
 		await expect(image2TextModule.extractTextFromImages(['https://example.com/image.jpg'])).rejects.toMatchObject({
