@@ -28,7 +28,7 @@ export const config = {
 	PYDOLAR_API_URL: process.env.PYDOLAR_API_URL || 'https://pydolarvenezuela-api.vercel.app/api/v1/dollar',
 	IMAGE_2_TEXT_SERVICE_URL: process.env.IMAGE_2_TEXT_SERVICE_URL || '',
 	RECEIPT_TEXT_PROVIDER: parseReceiptTextProvider(process.env.RECEIPT_TEXT_PROVIDER),
-	GEMINI_RECEIPT_MODEL: process.env.GEMINI_RECEIPT_MODEL || 'gemini-2.0-flash',
+	GEMINI_RECEIPT_MODEL: process.env.GEMINI_RECEIPT_MODEL || 'gemini-2.5-flash',
 	REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT || '15mb',
 	RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES: Number(process.env.RECEIPT_UPLOAD_MAX_FILE_SIZE_BYTES) || 10 * 1024 * 1024,
 	RECEIPT_BULK_UPLOAD_MAX_FILES: parseIntegerInRange(process.env.RECEIPT_BULK_UPLOAD_MAX_FILES, 10, 1, 100),
@@ -62,6 +62,6 @@ export const config = {
 
 	// AI Assistant
 	GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '',
-	GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+	GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
 	OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
 };

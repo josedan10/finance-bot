@@ -10,8 +10,8 @@ export class GeminiAssistant implements IAIAssistant {
 
 	constructor() {
 		this.genAI = new GoogleGenerativeAI(config.GOOGLE_AI_API_KEY);
-		const configuredModel = config.GEMINI_MODEL || 'gemini-2.0-flash';
-		this.modelCandidates = [...new Set([configuredModel, 'gemini-2.0-flash', 'gemini-2.0-flash-lite'])];
+		const configuredModel = config.GEMINI_MODEL || 'gemini-2.5-flash';
+		this.modelCandidates = [...new Set([configuredModel, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'])];
 		this.model = this.genAI.getGenerativeModel({ model: this.modelCandidates[0] });
 	}
 
