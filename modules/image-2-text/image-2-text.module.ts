@@ -65,7 +65,7 @@ class Image2TextModule {
 	}
 
 	private getGeminiCandidateModels(): string[] {
-		return [...new Set([config.GEMINI_RECEIPT_MODEL, 'gemini-2.0-flash', 'gemini-2.0-flash-lite'])];
+		return [...new Set([config.GEMINI_RECEIPT_MODEL, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'])];
 	}
 
 	private getGeminiModel(modelName: string): GenerativeModel {

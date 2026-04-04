@@ -47,7 +47,7 @@ describe('Image2TextModule', () => {
 	afterEach(() => {
 		config.RECEIPT_TEXT_PROVIDER = 'auto';
 		config.GOOGLE_AI_API_KEY = 'test-google-key';
-		config.GEMINI_RECEIPT_MODEL = 'gemini-2.0-flash';
+		config.GEMINI_RECEIPT_MODEL = 'gemini-2.5-flash';
 		config.IMAGE_2_TEXT_SERVICE_URL = 'http://localhost:4000';
 		resetGeminiModelCache();
 		jest.clearAllMocks();

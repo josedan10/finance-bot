@@ -11,7 +11,7 @@ jest.mock('openai');
 jest.mock('../../src/config', () => ({
   config: {
     GOOGLE_AI_API_KEY: 'test-google-key',
-    GEMINI_MODEL: 'gemini-2.0-flash',
+    GEMINI_MODEL: 'gemini-2.5-flash',
     OPENAI_API_KEY: 'test-openai-key',
   },
 }));
