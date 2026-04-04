@@ -348,6 +348,54 @@ describe('Image2TextModule', () => {
 		expect(model.generateContent).toHaveBeenCalled();
 	});
 
+	it('should analyze receipt fields with Gemini and default unknown categories to Other', async () => {
+		const previousApiKey = config.GOOGLE_AI_API_KEY;
+		config.GOOGLE_AI_API_KEY = 'test-key';
+		const model: MockGenerativeModel = {
+			generateContent: jest.fn().mockResolvedValue({
+				response: {
+					text: () =>
+						JSON.stringify({
+							amount: 25.45,
+							description: 'Coffee Shop',
+							dateTime: '2026-04-04T10:30:00',
+							category: 'Random Guess',
+							currency: 'USD',
+							type: 'expense',
+							referenceId: 'abc-123',
+							rawText: 'Coffee Shop\nTotal 25.45',
+						}),
+				},
+			}),
+		};
+		MockGoogleAI.prototype.getGenerativeModel.mockReturnValue(model as unknown as ReturnType<
+			GoogleGenerativeAI['getGenerativeModel']
+		>);
+		spyGet.resolves({
+			data: Buffer.from('fake-image-binary'),
+			headers: { 'content-type': 'image/jpeg' },
+		});
+
+		const result = await image2TextModule.analyzeReceiptWithGemini(
+			{ type: 'image-source', value: 'https://example.com/image.jpg' },
+			['Other', 'Food'],
+			'req-structured'
+		);
+
+		expect(result).toEqual({
+			rawText: 'Coffee Shop\nTotal 25.45',
+			amount: 25.45,
+			description: 'Coffee Shop',
+			dateTime: '2026-04-04T10:30:00',
+			category: 'Other',
+			currency: 'USD',
+			type: 'expense',
+			referenceId: 'abc-123',
+		});
+		expect(model.generateContent).toHaveBeenCalled();
+		config.GOOGLE_AI_API_KEY = previousApiKey;
+	});
+
 	it('should throw generic extraction error when Gemini generation fails unexpectedly', async () => {
 		config.RECEIPT_TEXT_PROVIDER = 'gemini';
 		spyGet.resolves({

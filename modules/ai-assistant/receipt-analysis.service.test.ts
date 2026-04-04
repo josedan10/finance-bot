@@ -2,6 +2,7 @@ import { analyzeReceiptImageForUser } from './receipt-analysis.service';
 import { BaseTransactions } from '../base-transactions/base-transactions.module';
 import { Image2TextService } from '../image-2-text/image-2-text.module';
 import { PrismaModule as prisma } from '../database/database.module';
+import { config } from '../../src/config';
 
 jest.mock('../base-transactions/base-transactions.module', () => ({
 	BaseTransactions: {
@@ -13,12 +14,16 @@ jest.mock('../base-transactions/base-transactions.module', () => ({
 jest.mock('../image-2-text/image-2-text.module', () => ({
 	Image2TextService: {
 		extractTextFromImages: jest.fn(),
+		analyzeReceiptWithGemini: jest.fn(),
 	},
 }));
 
 jest.mock('../database/database.module', () => ({
 	PrismaModule: {
 		transaction: {
+			findMany: jest.fn(),
+		},
+		category: {
 			findMany: jest.fn(),
 		},
 	},
@@ -31,14 +36,25 @@ describe('receipt-analysis.service', () => {
 		transaction: {
 			findMany: jest.Mock;
 		};
+		category: {
+			findMany: jest.Mock;
+		};
 	};
+	const initialGoogleAiApiKey = config.GOOGLE_AI_API_KEY;
 
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockedPrisma.transaction.findMany.mockResolvedValue([]);
+		mockedPrisma.category.findMany.mockResolvedValue([]);
+		config.GOOGLE_AI_API_KEY = initialGoogleAiApiKey;
+	});
+
+	afterAll(() => {
+		config.GOOGLE_AI_API_KEY = initialGoogleAiApiKey;
 	});
 
 	it('returns parsed receipt data when OCR and parsing succeed', async () => {
+		config.GOOGLE_AI_API_KEY = '';
 		mockedImage2Text.extractTextFromImages.mockResolvedValue([
 			{
 				text: 'Store ABC\nTotal 25',
@@ -84,6 +100,7 @@ describe('receipt-analysis.service', () => {
 	});
 
 	it('falls back to manual review data when parsing fails', async () => {
+		config.GOOGLE_AI_API_KEY = '';
 		mockedImage2Text.extractTextFromImages.mockResolvedValue([
 			{
 				text: 'Unknown Receipt Content',
@@ -109,6 +126,7 @@ describe('receipt-analysis.service', () => {
 	});
 
 	it('matches belo withdraw candidate when parsing succeeds', async () => {
+		config.GOOGLE_AI_API_KEY = '';
 		mockedImage2Text.extractTextFromImages.mockResolvedValue([
 			{
 				text: 'Belo receipt',
@@ -143,5 +161,48 @@ describe('receipt-analysis.service', () => {
 		expect(result.beloWithdrawMatch).toBeTruthy();
 		expect(result.beloWithdrawMatch?.id).toBe(10);
 		expect(result.beloWithdrawMatch?.grossAmount).toBe(100);
+	});
+
+	it('uses Gemini structured receipt analysis and falls back unknown categories to Other', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'Supermarket Purchase\nTotal 14.5',
+			amount: 14.5,
+			description: 'Supermarket purchase',
+			dateTime: '2026-04-04T12:30:00',
+			category: 'Unknown Category',
+			currency: 'USD',
+			type: 'expense',
+			referenceId: 'ref-1',
+		});
+		mockedImage2Text.extractTextFromImages.mockResolvedValue([
+			{
+				text: 'ignored raw text',
+				metadata: {},
+			},
+		]);
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-structured',
+		});
+
+		expect(result.requiresManualReview).toBe(false);
+		expect(result.amount).toBe(14.5);
+		expect(result.description).toBe('Supermarket purchase');
+		expect(result.category).toBe('Other');
+		expect(result.type).toBe('expense');
+		expect(result.referenceId).toBe('ref-1');
+		expect(result.rawText).toContain('Supermarket Purchase');
+		expect(mockedBaseTransactions.parseTransactionFromText).not.toHaveBeenCalled();
+		expect(mockedImage2Text.extractTextFromImages).not.toHaveBeenCalled();
+		expect(mockedImage2Text.analyzeReceiptWithGemini).toHaveBeenCalledWith(
+			{ type: 'image-source', value: 'https://example.com/r.jpg' },
+			['Other', 'Food'],
+			'req-structured'
+		);
 	});
 });
