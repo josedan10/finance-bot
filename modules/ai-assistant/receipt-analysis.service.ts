@@ -8,6 +8,7 @@ import {
 	getBeloWithdrawGrossFromReceiptAmount,
 	isBeloWithdrawDescription,
 } from '../../src/helpers/belo-withdraw.helper';
+import { config } from '../../src/config';
 
 export interface OcrReceiptMatch {
 	id: number;
@@ -40,6 +41,17 @@ export interface ReceiptAnalysisOutput {
 	};
 	metadataDateTimeSuggestion: string | null;
 }
+
+type ParsedReceiptFields = {
+	date: string;
+	amount: number;
+	originalAmount: number;
+	currency: string;
+	description: string;
+	category: string;
+	categoryId?: number;
+	type: 'credit' | 'debit';
+};
 
 function formatMetadataDateTime(value: string | null | undefined): string | null {
 	if (!value) return null;
@@ -152,11 +164,53 @@ function mapParsedTypeToApiType(type: string | null | undefined): 'income' | 'ex
 	return 'expense';
 }
 
+function normalizeAiReceiptDate(value: string | null | undefined): string | null {
+	if (!value) return null;
+
+	const normalized = value.trim();
+	if (!normalized) return null;
+
+	const parsed = new Date(normalized);
+	if (Number.isNaN(parsed.getTime())) {
+		return null;
+	}
+
+	if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+		return normalized;
+	}
+
+	return parsed.toISOString();
+}
+
 export async function analyzeReceiptImageForUser(params: {
 	userId: number;
 	imageInput: OCRImageInput;
 	requestId?: string | null;
 }): Promise<ReceiptAnalysisOutput> {
+	const categories = await prisma.category.findMany({
+		where: { userId: params.userId },
+		select: { id: true, name: true },
+	});
+	const categoryMap = new Map(categories.map((category) => [category.name.toLowerCase(), category]));
+
+	let aiStructuredResult: Awaited<ReturnType<typeof Image2TextService.analyzeReceiptWithGemini>> | null = null;
+
+	if (config.GOOGLE_AI_API_KEY) {
+		try {
+			aiStructuredResult = await Image2TextService.analyzeReceiptWithGemini(
+				params.imageInput,
+				['Other', ...categories.map((category) => category.name)],
+				params.requestId || undefined
+			);
+		} catch (error) {
+			logger.warn('Structured Gemini receipt analysis failed, falling back to OCR text parsing', {
+				userId: params.userId,
+				requestId: params.requestId || null,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+	}
+
 	const extractedTexts = await Image2TextService.extractTextFromImages([params.imageInput], params.requestId || undefined);
 
 	if (!extractedTexts || extractedTexts.length === 0) {
@@ -164,15 +218,46 @@ export async function analyzeReceiptImageForUser(params: {
 	}
 
 	const extractedReceipt = extractedTexts[0];
-	const textLines = extractedReceipt.text.split('\n');
-	let parsed: Awaited<ReturnType<typeof BaseTransactions.parseTransactionFromText>> | null = null;
+	const rawText = aiStructuredResult?.rawText?.trim() || extractedReceipt.text;
+	const textLines = rawText.split('\n');
+	let parsed: ParsedReceiptFields | null = null;
 	let duplicate = null;
 	let beloWithdrawMatch: OcrReceiptMatch | null = null;
 	let requiresManualReview = true;
 	let parseWarning: string | null = null;
 
 	try {
-		parsed = await BaseTransactions.parseTransactionFromText(textLines, params.userId);
+		const structuredCategory =
+			aiStructuredResult?.category && aiStructuredResult.category !== 'Other'
+				? categoryMap.get(aiStructuredResult.category.toLowerCase())
+				: null;
+		const structuredDate = normalizeAiReceiptDate(aiStructuredResult?.dateTime);
+
+		if (
+			aiStructuredResult &&
+			typeof aiStructuredResult.amount === 'number' &&
+			Number.isFinite(aiStructuredResult.amount) &&
+			aiStructuredResult.description &&
+			structuredDate
+		) {
+			parsed = {
+				date: structuredDate,
+				amount: aiStructuredResult.amount,
+				originalAmount: aiStructuredResult.amount,
+				currency: aiStructuredResult.currency || 'USD',
+				description: aiStructuredResult.description,
+				category: structuredCategory?.name || 'Other',
+				categoryId: structuredCategory?.id,
+				type: aiStructuredResult.type === 'income' ? 'credit' : 'debit',
+			};
+		} else {
+			parsed = await BaseTransactions.parseTransactionFromText(textLines, params.userId);
+		}
+
+		if (!parsed) {
+			throw new Error('Could not parse receipt fields automatically');
+		}
+
 		requiresManualReview = false;
 
 		duplicate = await BaseTransactions.findDuplicate({
@@ -199,7 +284,7 @@ export async function analyzeReceiptImageForUser(params: {
 		});
 	}
 
-	const fallback = buildManualReviewFallback(extractedReceipt.text);
+	const fallback = buildManualReviewFallback(rawText);
 
 	return {
 		date: parsed?.date || fallback.date,
@@ -212,7 +297,7 @@ export async function analyzeReceiptImageForUser(params: {
 		isDuplicate: Boolean(duplicate),
 		duplicateId: duplicate?.id,
 		beloWithdrawMatch,
-		rawText: extractedReceipt.text,
+		rawText,
 		textLines,
 		requiresManualReview,
 		parseWarning,

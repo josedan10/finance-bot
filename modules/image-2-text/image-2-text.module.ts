@@ -14,6 +14,17 @@ type OCRExtractResult = {
 	};
 };
 
+export type StructuredReceiptAnalysis = {
+	rawText: string;
+	amount: number | null;
+	description: string | null;
+	dateTime: string | null;
+	category: string;
+	currency: string | null;
+	type: 'income' | 'expense' | null;
+	referenceId?: string | null;
+};
+
 export type OCRImageInput =
 	| {
 			type: 'image-source';
@@ -128,6 +139,10 @@ class Image2TextModule {
 		return markdownMatch ? markdownMatch[1].trim() : text.trim();
 	}
 
+	private parseGeminiJsonResponse<T>(text: string): T {
+		return JSON.parse(this.normalizeGeminiText(text)) as T;
+	}
+
 	private async extractTextWithGemini(image: OCRImageInput, requestId?: string): Promise<OCRExtractResult> {
 		try {
 			const { mimeType, base64Data } = await this.resolveImageBufferForGemini(image, requestId);
@@ -186,6 +201,85 @@ class Image2TextModule {
 				error: error instanceof Error ? error.message : 'Unknown error',
 			});
 			throw new AppError('Error extracting text from images', 503);
+		}
+	}
+
+	async analyzeReceiptWithGemini(
+		image: OCRImageInput,
+		availableCategories: string[],
+		requestId?: string
+	): Promise<StructuredReceiptAnalysis> {
+		try {
+			const { mimeType, base64Data } = await this.resolveImageBufferForGemini(image, requestId);
+			const normalizedCategories = [...new Set(availableCategories.map((category) => category.trim()).filter(Boolean))];
+			const prompt = [
+				'Analyze this receipt or transaction image and return only one JSON object.',
+				'Extract the transaction amount, a short transaction description, the transaction date/time visible in the image, the currency, the transaction type, and the full raw text visible in the image.',
+				`Classify the transaction using exactly one of these categories: ${normalizedCategories.join(', ')}.`,
+				'If you are not confident about the category, use "Other".',
+				'Return amount as a number without currency symbols or separators other than the decimal point.',
+				'Return dateTime in ISO 8601 format when possible (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss). If unavailable, return null.',
+				'Return type as "expense" or "income". If unsure, use "expense".',
+				'Return description as a concise merchant or transaction summary.',
+				'Use this exact JSON shape:',
+				'{"amount": number|null, "description": string|null, "dateTime": string|null, "category": string, "currency": string|null, "type": "expense"|"income"|null, "referenceId": string|null, "rawText": string}',
+			].join(' ');
+
+			const candidateModels = this.getGeminiCandidateModels();
+			let lastError: unknown = null;
+
+			for (const modelName of candidateModels) {
+				try {
+					const model = this.getGeminiModel(modelName);
+					const result = await model.generateContent([
+						{ text: prompt },
+						{
+							inlineData: {
+								mimeType,
+								data: base64Data,
+							},
+						},
+					]);
+					const response = await result.response;
+					const parsed = this.parseGeminiJsonResponse<StructuredReceiptAnalysis>(response.text());
+
+					return {
+						rawText: typeof parsed.rawText === 'string' ? parsed.rawText.trim() : '',
+						amount: typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) ? parsed.amount : null,
+						description: typeof parsed.description === 'string' ? parsed.description.trim() : null,
+						dateTime: typeof parsed.dateTime === 'string' ? parsed.dateTime.trim() : null,
+						category:
+							typeof parsed.category === 'string' && normalizedCategories.includes(parsed.category.trim())
+								? parsed.category.trim()
+								: 'Other',
+						currency: typeof parsed.currency === 'string' ? parsed.currency.trim() : null,
+						type: parsed.type === 'income' || parsed.type === 'expense' ? parsed.type : null,
+						referenceId: typeof parsed.referenceId === 'string' ? parsed.referenceId.trim() : null,
+					};
+				} catch (error) {
+					lastError = error;
+					if (this.isGeminiModelNotFoundError(error)) {
+						logger.warn('Gemini structured receipt model not found, trying next fallback model', {
+							requestId,
+							modelName,
+						});
+						continue;
+					}
+					throw error;
+				}
+			}
+
+			throw lastError || new AppError('Gemini receipt analysis model is unavailable', 503);
+		} catch (error) {
+			if (error instanceof AppError) {
+				throw error;
+			}
+
+			logger.error('Gemini structured receipt analysis failed', {
+				requestId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+			throw new AppError('Error analyzing receipt image', 503);
 		}
 	}
 
