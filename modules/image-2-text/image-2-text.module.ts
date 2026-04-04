@@ -212,6 +212,7 @@ class Image2TextModule {
 		try {
 			const { mimeType, base64Data } = await this.resolveImageBufferForGemini(image, requestId);
 			const normalizedCategories = [...new Set(availableCategories.map((category) => category.trim()).filter(Boolean))];
+			const normalizedCategoryMap = new Map(normalizedCategories.map((category) => [category.toLowerCase(), category]));
 			const prompt = [
 				'Analyze this receipt or transaction image and return only one JSON object.',
 				'Extract the transaction amount, a short transaction description, the transaction date/time visible in the image, the currency, the transaction type, and the full raw text visible in the image.',
@@ -249,8 +250,8 @@ class Image2TextModule {
 						description: typeof parsed.description === 'string' ? parsed.description.trim() : null,
 						dateTime: typeof parsed.dateTime === 'string' ? parsed.dateTime.trim() : null,
 						category:
-							typeof parsed.category === 'string' && normalizedCategories.includes(parsed.category.trim())
-								? parsed.category.trim()
+							typeof parsed.category === 'string'
+								? normalizedCategoryMap.get(parsed.category.trim().toLowerCase()) || 'Other'
 								: 'Other',
 						currency: typeof parsed.currency === 'string' ? parsed.currency.trim() : null,
 						type: parsed.type === 'income' || parsed.type === 'expense' ? parsed.type : null,

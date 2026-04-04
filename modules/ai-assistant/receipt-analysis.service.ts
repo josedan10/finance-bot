@@ -51,6 +51,7 @@ type ParsedReceiptFields = {
 	category: string;
 	categoryId?: number;
 	type: 'credit' | 'debit';
+	referenceId?: string;
 };
 
 function formatMetadataDateTime(value: string | null | undefined): string | null {
@@ -211,14 +212,29 @@ export async function analyzeReceiptImageForUser(params: {
 		}
 	}
 
-	const extractedTexts = await Image2TextService.extractTextFromImages([params.imageInput], params.requestId || undefined);
+	let extractedReceipt:
+		| {
+				text: string;
+				metadata?: {
+					capturedAt?: string | null;
+					deviceModel?: string | null;
+					deviceMake?: string | null;
+				};
+		  }
+		| undefined;
+	let rawText = aiStructuredResult?.rawText?.trim() || '';
 
-	if (!extractedTexts || extractedTexts.length === 0) {
-		throw new AppError('Could not extract text from image', 422);
+	if (!rawText) {
+		const extractedTexts = await Image2TextService.extractTextFromImages([params.imageInput], params.requestId || undefined);
+
+		if (!extractedTexts || extractedTexts.length === 0) {
+			throw new AppError('Could not extract text from image', 422);
+		}
+
+		extractedReceipt = extractedTexts[0];
+		rawText = extractedReceipt.text;
 	}
 
-	const extractedReceipt = extractedTexts[0];
-	const rawText = aiStructuredResult?.rawText?.trim() || extractedReceipt.text;
 	const textLines = rawText.split('\n');
 	let parsed: ParsedReceiptFields | null = null;
 	let duplicate = null;
@@ -249,6 +265,7 @@ export async function analyzeReceiptImageForUser(params: {
 				category: structuredCategory?.name || 'Other',
 				categoryId: structuredCategory?.id,
 				type: aiStructuredResult.type === 'income' ? 'credit' : 'debit',
+				referenceId: aiStructuredResult.referenceId || undefined,
 			};
 		} else {
 			parsed = await BaseTransactions.parseTransactionFromText(textLines, params.userId);
@@ -293,7 +310,7 @@ export async function analyzeReceiptImageForUser(params: {
 		category: parsed?.category || fallback.category,
 		type: mapParsedTypeToApiType(parsed?.type || fallback.type),
 		currency: parsed?.currency || fallback.currency,
-		referenceId: fallback.referenceId,
+		referenceId: parsed?.referenceId ?? fallback.referenceId,
 		isDuplicate: Boolean(duplicate),
 		duplicateId: duplicate?.id,
 		beloWithdrawMatch,
@@ -301,7 +318,7 @@ export async function analyzeReceiptImageForUser(params: {
 		textLines,
 		requiresManualReview,
 		parseWarning,
-		imageMetadata: extractedReceipt.metadata,
-		metadataDateTimeSuggestion: formatMetadataDateTime(extractedReceipt.metadata?.capturedAt),
+		imageMetadata: extractedReceipt?.metadata,
+		metadataDateTimeSuggestion: formatMetadataDateTime(extractedReceipt?.metadata?.capturedAt),
 	};
 }

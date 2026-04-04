@@ -349,6 +349,8 @@ describe('Image2TextModule', () => {
 	});
 
 	it('should analyze receipt fields with Gemini and default unknown categories to Other', async () => {
+		const previousApiKey = config.GOOGLE_AI_API_KEY;
+		config.GOOGLE_AI_API_KEY = 'test-key';
 		const model: MockGenerativeModel = {
 			generateContent: jest.fn().mockResolvedValue({
 				response: {
@@ -391,6 +393,7 @@ describe('Image2TextModule', () => {
 			referenceId: 'abc-123',
 		});
 		expect(model.generateContent).toHaveBeenCalled();
+		config.GOOGLE_AI_API_KEY = previousApiKey;
 	});
 
 	it('should throw generic extraction error when Gemini generation fails unexpectedly', async () => {

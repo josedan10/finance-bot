@@ -195,8 +195,10 @@ describe('receipt-analysis.service', () => {
 		expect(result.description).toBe('Supermarket purchase');
 		expect(result.category).toBe('Other');
 		expect(result.type).toBe('expense');
+		expect(result.referenceId).toBe('ref-1');
 		expect(result.rawText).toContain('Supermarket Purchase');
 		expect(mockedBaseTransactions.parseTransactionFromText).not.toHaveBeenCalled();
+		expect(mockedImage2Text.extractTextFromImages).not.toHaveBeenCalled();
 		expect(mockedImage2Text.analyzeReceiptWithGemini).toHaveBeenCalledWith(
 			{ type: 'image-source', value: 'https://example.com/r.jpg' },
 			['Other', 'Food'],
