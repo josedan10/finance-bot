@@ -106,6 +106,77 @@ async function getOrCreateOtherCategory(userId: number) {
 	});
 }
 
+async function findKeywordMatchedCategory(userId: number, description: string) {
+	const normalizedDescription = description.trim().toLowerCase();
+
+	if (!normalizedDescription) {
+		return null;
+	}
+
+	const categories = await prisma.category.findMany({
+		where: { userId },
+		select: {
+			id: true,
+			name: true,
+			categoryKeyword: {
+				select: {
+					keyword: {
+						select: {
+							name: true,
+						},
+					},
+				},
+			},
+		},
+	});
+
+	const candidates = categories
+		.map((category) => {
+			const matchedKeywords = category.categoryKeyword
+				.map((entry) => entry.keyword.name.trim().toLowerCase())
+				.filter((keyword) => keyword.length > 0 && normalizedDescription.includes(keyword));
+
+			if (matchedKeywords.length === 0) {
+				return null;
+			}
+
+			const longestKeywordLength = matchedKeywords.reduce(
+				(maxLength, keyword) => Math.max(maxLength, keyword.length),
+				0
+			);
+
+			return {
+				id: category.id,
+				name: category.name,
+				matchCount: matchedKeywords.length,
+				longestKeywordLength,
+			};
+		})
+		.filter(
+			(
+				candidate
+			): candidate is {
+				id: number;
+				name: string;
+				matchCount: number;
+				longestKeywordLength: number;
+			} => candidate !== null
+		)
+		.sort((left, right) => {
+			if (right.longestKeywordLength !== left.longestKeywordLength) {
+				return right.longestKeywordLength - left.longestKeywordLength;
+			}
+
+			if (right.matchCount !== left.matchCount) {
+				return right.matchCount - left.matchCount;
+			}
+
+			return left.name.localeCompare(right.name);
+		});
+
+	return candidates[0] ?? null;
+}
+
 function normalizeCreatedTransactionPreview(
 	transaction: {
 		id: number;
@@ -155,7 +226,8 @@ export async function processReceiptOcrJob(job: ReceiptOcrQueueJob): Promise<Pro
 		throw new AppError('Receipt transaction type could not be normalized', 422);
 	}
 
-	const otherCategory = await getOrCreateOtherCategory(job.userId);
+	const keywordMatchedCategory = await findKeywordMatchedCategory(job.userId, result.description.trim());
+	const fallbackCategory = keywordMatchedCategory ?? (await getOrCreateOtherCategory(job.userId));
 	const { transaction, isDuplicate } = await BaseTransactions.safeCreateTransaction({
 		userId: job.userId,
 		date: getQueueTransactionDateTime(result, job.timeZone),
@@ -164,7 +236,7 @@ export async function processReceiptOcrJob(job: ReceiptOcrQueueJob): Promise<Pro
 		currency: result.currency,
 		type: normalizedType,
 		referenceId: result.referenceId?.trim() || null,
-		categoryId: otherCategory.id,
+		categoryId: fallbackCategory.id,
 		reviewed: false,
 	});
 

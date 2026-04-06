@@ -21,6 +21,7 @@ jest.mock('../database/database.module', () => ({
 	PrismaModule: {
 		category: {
 			findUnique: jest.fn(),
+			findMany: jest.fn(),
 			create: jest.fn(),
 		},
 	},
@@ -32,12 +33,14 @@ describe('receipt-ocr-job-processor.service', () => {
 	const mockedPrisma = prisma as unknown as {
 		category: {
 			findUnique: jest.Mock;
+			findMany: jest.Mock;
 			create: jest.Mock;
 		};
 	};
 
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockedPrisma.category.findMany.mockResolvedValue([]);
 		mockedPrisma.category.findUnique.mockResolvedValue({ id: 7, name: 'Other' });
 		mockedBaseTransactions.safeCreateTransaction.mockResolvedValue({
 			transaction: {
@@ -174,5 +177,71 @@ describe('receipt-ocr-job-processor.service', () => {
 		expect(mockedBaseTransactions.safeCreateTransaction).toHaveBeenCalledWith(
 			expect.objectContaining({ categoryId: 11 })
 		);
+	});
+
+	it('uses a keyword-matched category before falling back to Other', async () => {
+		mockedPrisma.category.findMany.mockResolvedValue([
+			{
+				id: 21,
+				name: 'Food & Dining',
+				categoryKeyword: [
+					{ keyword: { name: 'cremolatti' } },
+				],
+			},
+		]);
+		mockedAnalyzeReceiptImageForUser.mockResolvedValue({
+			date: '2026-04-05',
+			dateTime: '2026-04-05T18:00:00',
+			description: 'QR payment to Cremolatti Villa Ortuzar',
+			amount: 2.17,
+			category: 'Other',
+			type: 'expense',
+			currency: 'USD',
+			referenceId: 'ref-22',
+			isDuplicate: false,
+			beloWithdrawMatch: null,
+			rawText: 'Cremolatti',
+			textLines: ['Cremolatti'],
+			requiresManualReview: false,
+			parseWarning: null,
+			metadataDateTimeSuggestion: null,
+		});
+		mockedBaseTransactions.safeCreateTransaction.mockResolvedValue({
+			transaction: {
+				id: 99,
+				date: new Date('2026-04-05T21:00:00.000Z'),
+				description: 'QR payment to Cremolatti Villa Ortuzar',
+				amount: 2.17,
+				currency: 'USD',
+				type: 'debit',
+				referenceId: 'ref-22',
+				category: { name: 'Food & Dining' },
+			},
+			isDuplicate: false,
+		} as never);
+
+		const result = await processReceiptOcrJob({
+			id: 'job-3',
+			userId: 4,
+			status: 'processing',
+			reviewStatus: 'pending_review',
+			reviewedAt: null,
+			timeZone: 'America/Argentina/Buenos_Aires',
+			createdAt: '2026-04-05T18:00:00.000Z',
+			updatedAt: '2026-04-05T18:00:00.000Z',
+			attempts: 1,
+			maxAttempts: 3,
+			image: {
+				publicUrl: 'https://example.com/receipt-3.jpg',
+				filePath: '/tmp/receipt-3.jpg',
+				fileName: 'receipt-3.jpg',
+				size: 456,
+			},
+		});
+
+		expect(mockedBaseTransactions.safeCreateTransaction).toHaveBeenCalledWith(
+			expect.objectContaining({ categoryId: 21 })
+		);
+		expect(result.createdTransaction.category).toBe('Food & Dining');
 	});
 });
