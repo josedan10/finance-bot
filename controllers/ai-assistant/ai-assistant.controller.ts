@@ -228,7 +228,7 @@ async function optimizeAndStoreReceiptFile(params: {
     savedImage,
     optimizedBytes: optimizationDetails.optimizedBytes,
     mimeType,
-    originalName,
+    originalName: params.file.originalname,
   };
 }
 
