@@ -1,21 +1,8 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { NextFunction, Request, Response } from 'express';
-
-const queueReceiptAnalysisMock = jest.fn(
-	async (req: Request, res: Response): Promise<void> => {
-		const files = req.files as Express.Multer.File[] | Record<string, Express.Multer.File[]> | undefined;
-		const fileCount = Array.isArray(files)
-			? files.length
-			: files
-				? Object.values(files).flat().length
-				: req.file
-					? 1
-					: 0;
-
-		res.status(200).json({ fileCount });
-	}
-);
+import app from '../app';
+import * as AIController from '../controllers/ai-assistant/ai-assistant.controller';
 
 jest.mock('../src/lib/auth.middleware', () => ({
 	requireAuth: (req: Request, _res: Response, next: NextFunction) => {
@@ -24,6 +11,7 @@ jest.mock('../src/lib/auth.middleware', () => ({
 			firebaseId: 'firebase-user-1',
 			email: 'test@example.com',
 			createdAt: new Date('2026-04-06T00:00:00.000Z'),
+			dashboardBudgetPreferences: null,
 		};
 		next();
 	},
@@ -33,7 +21,7 @@ jest.mock('../controllers/ai-assistant/ai-assistant.controller', () => ({
 	getAISettings: jest.fn(),
 	updateAISettings: jest.fn(),
 	scanReceipt: jest.fn(),
-	queueReceiptAnalysis: queueReceiptAnalysisMock,
+	queueReceiptAnalysis: jest.fn(),
 	getQueuedReceiptAnalysisJobs: jest.fn(),
 	retryQueuedReceiptAnalysisJob: jest.fn(),
 	markQueuedReceiptAnalysisJobReviewed: jest.fn(),
@@ -42,11 +30,23 @@ jest.mock('../controllers/ai-assistant/ai-assistant.controller', () => ({
 	getBudgetSuggestions: jest.fn(),
 }));
 
-import app from '../app';
+const queueReceiptAnalysisMock = jest.mocked(AIController.queueReceiptAnalysis);
 
 describe('AI Assistant Routes', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		queueReceiptAnalysisMock.mockImplementation(async (req: Request, res: Response): Promise<void> => {
+			const files = req.files as Express.Multer.File[] | Record<string, Express.Multer.File[]> | undefined;
+			const fileCount = Array.isArray(files)
+				? files.length
+				: files
+					? Object.values(files).flat().length
+					: req.file
+						? 1
+						: 0;
+
+			res.status(200).json({ fileCount });
+		});
 	});
 
 	it('accepts bulk receipt uploads under the images field', async () => {

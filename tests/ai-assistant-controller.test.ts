@@ -1,41 +1,11 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Request, Response } from 'express';
-
-type MockOptimizedReceiptImage = {
-	buffer: Buffer;
-	mimeType: string;
-	compressionIterations: number;
-	compressionQuality: number | null;
-	targetMaxBytes: number | null;
-	targetReached: boolean;
-	originalBytes: number;
-	optimizedBytes: number;
-	originalWidth: number | null;
-	originalHeight: number | null;
-	optimizedWidth: number | null;
-	optimizedHeight: number | null;
-	originalFormat: string | null;
-	optimizedFormat: string | null;
-	didOptimize: boolean;
-};
-
-type MockStoredReceiptImage = {
-	publicUrl: string;
-	filePath: string;
-	fileName: string;
-};
-
-type MockQueuedJobSummary = {
-	id: string;
-	status: string;
-};
-
-const enqueueJobsMock = jest.fn<(userId: number, files: unknown[]) => Promise<MockQueuedJobSummary[]>>();
-const optimizeReceiptImageForOcrMock = jest.fn<(buffer: Buffer) => Promise<MockOptimizedReceiptImage>>();
-const saveReceiptProcessingImageMock = jest.fn<
-	(params: { requestId: string }) => Promise<MockStoredReceiptImage>
->();
-
+import { queueReceiptAnalysis } from '../controllers/ai-assistant/ai-assistant.controller';
+import { ReceiptOcrQueueService } from '../modules/ai-assistant/receipt-ocr-queue.service';
+import {
+	optimizeReceiptImageForOcr,
+	saveReceiptProcessingImage,
+} from '../src/lib/receipt-image-storage';
 jest.mock('../modules/ai-assistant/ai-assistant.module', () => ({
 	AISettingsService: {},
 	AIAssistantFactory: {},
@@ -47,21 +17,24 @@ jest.mock('../modules/database/database.module', () => ({
 
 jest.mock('../modules/ai-assistant/receipt-ocr-queue.service', () => ({
 	ReceiptOcrQueueService: {
-		enqueueJobs: enqueueJobsMock,
+		enqueueJobs: jest.fn(),
 	},
 }));
 
 jest.mock('../src/lib/receipt-image-storage', () => ({
 	getImageExtension: jest.fn(),
-	optimizeReceiptImageForOcr: optimizeReceiptImageForOcrMock,
-	saveReceiptProcessingImage: saveReceiptProcessingImageMock,
+	optimizeReceiptImageForOcr: jest.fn(),
+	saveReceiptProcessingImage: jest.fn(),
 }));
 
 jest.mock('../src/lib/sentry', () => ({
 	captureException: jest.fn(),
+	captureLog: jest.fn(),
 }));
 
-import { queueReceiptAnalysis } from '../controllers/ai-assistant/ai-assistant.controller';
+const optimizeReceiptImageForOcrMock = jest.mocked(optimizeReceiptImageForOcr);
+const saveReceiptProcessingImageMock = jest.mocked(saveReceiptProcessingImage);
+const enqueueJobsMock = jest.mocked(ReceiptOcrQueueService.enqueueJobs);
 
 function createResponse() {
 	const json = jest.fn();
@@ -101,7 +74,29 @@ describe('AI Assistant Controller', () => {
 			fileName: `${requestId}.jpg`,
 		}));
 
-		enqueueJobsMock.mockResolvedValue([{ id: 'job-1', status: 'queued' }]);
+		enqueueJobsMock.mockResolvedValue([
+			{
+				id: 'job-1',
+				status: 'queued',
+				attempts: 0,
+				maxAttempts: 3,
+				reviewStatus: 'pending_review',
+				reviewedAt: null,
+				createdAt: '2026-04-06T00:00:00.000Z',
+				updatedAt: '2026-04-06T00:00:00.000Z',
+				requestId: 'req-123',
+				timeZone: null,
+				image: {
+					publicUrl: 'https://api.zentra-app.pro/receipt-processing/req-123.jpg',
+					fileName: 'req-123.jpg',
+					originalName: 'WhatsApp Image 2026-04-02 at 15.26.02.jpeg',
+					mimeType: 'image/jpeg',
+					size: 12345,
+				},
+				error: null,
+				result: null,
+			},
+		]);
 	});
 
 	it('preserves the uploaded original filename when queueing receipts', async () => {
@@ -111,6 +106,7 @@ describe('AI Assistant Controller', () => {
 				firebaseId: 'firebase-user-1',
 				email: 'test@example.com',
 				createdAt: new Date('2026-04-06T00:00:00.000Z'),
+				dashboardBudgetPreferences: null,
 			},
 			body: {},
 			files: [

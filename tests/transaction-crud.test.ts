@@ -126,7 +126,11 @@ describe('Transaction API (CRUD)', () => {
 		});
 		expect(prismaMock.transaction.update).toHaveBeenCalledWith({
 			where: { id: 22 },
-			data: { categoryId: 2 },
+			data: expect.objectContaining({
+				categoryId: 2,
+				reviewed: true,
+				reviewedAt: expect.any(Date),
+			}),
 			include: {
 				category: true,
 				paymentMethod: true,
@@ -310,9 +314,11 @@ describe('Transaction API (CRUD)', () => {
 					in: [55, 56],
 				},
 			},
-			data: {
+			data: expect.objectContaining({
 				categoryId: 4,
-			},
+				reviewed: true,
+				reviewedAt: expect.any(Date),
+			}),
 		});
 	});
 });

@@ -13,6 +13,7 @@ model User {
   email                   String                    @unique @db.VarChar(255)
   createdAt               DateTime                  @default(now())
   aiSettings              AISettings?
+  dashboardBudgetPreferences Json?
   categories              Category[]
   keywords                Keyword[]
   notificationLogs        NotificationLog[]
