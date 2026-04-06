@@ -11,6 +11,11 @@ import { NotificationFactory } from '../modules/notifications/notification.modul
 import { NotificationPreferenceInput } from '../src/enums/notifications';
 import { config } from '../src/config';
 import logger from '../src/lib/logger';
+import {
+	DEFAULT_DASHBOARD_BUDGET_PREFERENCES,
+	normalizeDashboardBudgetPreferences,
+	resolveDashboardBudgetPreferences,
+} from '../src/lib/dashboard-budget-preferences';
 import { BaseTransactions, mapTransactionType } from '../modules/base-transactions/base-transactions.module';
 import { areSentryTestEndpointsEnabled } from '../src/lib/sentry-test';
 import { captureException, flushSentry, isSentryEnabled } from '../src/lib/sentry';
@@ -972,6 +977,51 @@ router.delete('/api/budgets/fallback-rules/:sourceCategoryId', requireAuth, asyn
 	} catch (error) {
 		logger.error('Failed to delete budget fallback rule', { error, userId: req.user.id });
 		res.status(500).json({ message: 'Failed to delete budget fallback rule' });
+	}
+});
+
+// ============================================
+// Dashboard Preferences API
+// ============================================
+
+router.get('/api/dashboard/budget-preferences', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const user = await prisma.user.findUnique({
+			where: { id: req.user.id },
+			select: { dashboardBudgetPreferences: true },
+		});
+
+		res.status(200).json(
+			user?.dashboardBudgetPreferences
+				? normalizeDashboardBudgetPreferences(user.dashboardBudgetPreferences)
+				: DEFAULT_DASHBOARD_BUDGET_PREFERENCES
+		);
+	} catch (error) {
+		logger.error('Failed to fetch dashboard budget preferences', { error, userId: req.user.id });
+		res.status(500).json({ message: 'Failed to fetch dashboard budget preferences' });
+	}
+});
+
+router.put('/api/dashboard/budget-preferences', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const user = await prisma.user.findUnique({
+			where: { id: req.user.id },
+			select: { dashboardBudgetPreferences: true },
+		});
+
+		const preferences = resolveDashboardBudgetPreferences(user?.dashboardBudgetPreferences, req.body);
+
+		await prisma.user.update({
+			where: { id: req.user.id },
+			data: {
+				dashboardBudgetPreferences: preferences as unknown as Prisma.InputJsonValue,
+			},
+		});
+
+		res.status(200).json(preferences);
+	} catch (error) {
+		logger.error('Failed to update dashboard budget preferences', { error, userId: req.user.id });
+		res.status(500).json({ message: 'Failed to update dashboard budget preferences' });
 	}
 });
 
