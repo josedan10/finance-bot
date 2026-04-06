@@ -40,6 +40,23 @@ type UploadFileLike = {
   size?: number;
 };
 
+function getRequestedTimeZone(req: Request): string | null {
+  const headerValue = req.get('x-user-timezone');
+  const bodyValue = typeof req.body?.timeZone === 'string' ? req.body.timeZone : null;
+  const candidate = (bodyValue || headerValue || '').trim();
+
+  if (!candidate) {
+    return null;
+  }
+
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 export async function scanReceipt(req: Request, res: Response): Promise<void> {
   try {
     const uploadedFile = req.file as UploadFileLike | undefined;
@@ -226,6 +243,7 @@ export async function queueReceiptAnalysis(req: Request, res: Response): Promise
 
     const limitedFiles = uploadedFiles.slice(0, config.RECEIPT_BULK_UPLOAD_MAX_FILES);
     const baseUrl = getPublicBaseUrl(req);
+    const timeZone = getRequestedTimeZone(req);
     const queuedFiles: Array<{
       publicUrl: string;
       filePath: string;
@@ -234,6 +252,7 @@ export async function queueReceiptAnalysis(req: Request, res: Response): Promise
       mimeType?: string;
       size: number;
       requestId?: string | null;
+      timeZone?: string | null;
     }> = [];
 
     for (let index = 0; index < limitedFiles.length; index += 1) {
@@ -254,6 +273,7 @@ export async function queueReceiptAnalysis(req: Request, res: Response): Promise
         mimeType,
         size: optimizedBytes,
         requestId,
+        timeZone,
       });
     }
 
@@ -331,6 +351,40 @@ export async function retryQueuedReceiptAnalysisJob(req: Request, res: Response)
     });
     logger.error('Failed to retry queued receipt OCR job', { userId: req.user.id, error, jobId: req.params?.jobId });
     res.status(500).json({ message: 'Failed to retry queued receipt OCR job' });
+  }
+}
+
+export async function markQueuedReceiptAnalysisJobReviewed(req: Request, res: Response): Promise<void> {
+  try {
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : '';
+    if (!jobId) {
+      res.status(400).json({ message: 'Job ID is required' });
+      return;
+    }
+
+    const requestedStatus =
+      req.body?.reviewStatus === 'reviewed'
+        ? 'reviewed'
+        : req.body?.reviewStatus === 'dismissed'
+          ? 'dismissed'
+          : 'pending_review';
+    const job = await ReceiptOcrQueueService.markReviewed(req.user.id, jobId, requestedStatus);
+
+    if (!job) {
+      res.status(404).json({ message: 'Job not found' });
+      return;
+    }
+
+    res.status(200).json({ job });
+  } catch (error) {
+    captureException(error, {
+      controller: 'markQueuedReceiptAnalysisJobReviewed',
+      userId: req.user.id,
+      requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : null,
+      jobId: req.params?.jobId ?? null,
+    });
+    logger.error('Failed to update queued receipt OCR job review status', { userId: req.user.id, error, jobId: req.params?.jobId });
+    res.status(500).json({ message: 'Failed to update queued receipt OCR job review status' });
   }
 }
 

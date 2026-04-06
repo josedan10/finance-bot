@@ -12,7 +12,7 @@ import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 import { cleanupOldReceiptProcessingImages } from '../../src/lib/receipt-image-storage';
 import { ReceiptOcrQueueService } from '../ai-assistant/receipt-ocr-queue.service';
-import { analyzeReceiptImageForUser } from '../ai-assistant/receipt-analysis.service';
+import { processReceiptOcrJob } from '../ai-assistant/receipt-ocr-job-processor.service';
 
 const CRON_EXPRESSIONS = {
 	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10 * * 1-5',
@@ -336,15 +336,7 @@ export class TaskQueueModule {
 				}
 
 				try {
-					const result = await analyzeReceiptImageForUser({
-						userId: job.userId,
-						requestId: job.requestId || job.id,
-						imageInput: {
-							type: 'image-source',
-							value: job.image.publicUrl,
-						},
-					});
-
+					const result = await processReceiptOcrJob(job);
 					await ReceiptOcrQueueService.markCompleted(job, result as unknown as Record<string, unknown>);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : 'Unexpected OCR queue processing error';

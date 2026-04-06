@@ -25,6 +25,37 @@ export type StructuredReceiptAnalysis = {
 	referenceId?: string | null;
 };
 
+function normalizeStructuredAmount(value: unknown): number | null {
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return value;
+	}
+
+	if (typeof value !== 'string') {
+		return null;
+	}
+
+	const normalized = value.trim().replace(/[^\d,.-]/g, '');
+	if (!normalized) {
+		return null;
+	}
+
+	const hasComma = normalized.includes(',');
+	const hasDot = normalized.includes('.');
+	let numeric = normalized;
+
+	if (hasComma && hasDot) {
+		numeric =
+			normalized.lastIndexOf(',') > normalized.lastIndexOf('.')
+				? normalized.replaceAll('.', '').replace(',', '.')
+				: normalized.replaceAll(',', '');
+	} else if (hasComma) {
+		numeric = normalized.replace(',', '.');
+	}
+
+	const parsed = Number(numeric);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
 export type OCRImageInput =
 	| {
 			type: 'image-source';
@@ -215,11 +246,15 @@ class Image2TextModule {
 			const normalizedCategoryMap = new Map(normalizedCategories.map((category) => [category.toLowerCase(), category]));
 			const prompt = [
 				'Analyze this receipt or transaction image and return only one JSON object.',
+				'Read the visible receipt content only. Do not use image metadata, EXIF data, filenames, or guessed values that are not visibly present in the receipt itself.',
 				'Extract the transaction amount, a short transaction description, the transaction date/time visible in the image, the currency, the transaction type, and the full raw text visible in the image.',
+				'When multiple monetary values appear, choose the final debited, discounted, charged, or settled transaction amount. Do not choose exchange-rate values, conversion rates, or informational ARS/USD reference quotes.',
+				'If both ARS and USD/USDT/USDC amounts appear, prefer the USD/USDT/USDC amount when it is the debited, discounted, or settled transaction value.',
 				`Classify the transaction using exactly one of these categories: ${normalizedCategories.join(', ')}.`,
 				'If you are not confident about the category, use "Other".',
 				'Return amount as a number without currency symbols or separators other than the decimal point.',
-				'Return dateTime in ISO 8601 format when possible (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss). If unavailable, return null.',
+				'Return dateTime in ISO 8601 format when possible (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss). Prefer the real transaction date shown in the receipt. If unavailable, return null instead of guessing.',
+				'If a visible transaction ID, operation ID, reference ID, or confirmation code exists in the receipt, return it in referenceId. If no visible ID exists, return null.',
 				'Return type as "expense" or "income". If unsure, use "expense".',
 				'Return description as a concise merchant or transaction summary.',
 				'Use this exact JSON shape:',
@@ -246,7 +281,7 @@ class Image2TextModule {
 
 					return {
 						rawText: typeof parsed.rawText === 'string' ? parsed.rawText.trim() : '',
-						amount: typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) ? parsed.amount : null,
+						amount: normalizeStructuredAmount(parsed.amount),
 						description: typeof parsed.description === 'string' ? parsed.description.trim() : null,
 						dateTime: typeof parsed.dateTime === 'string' ? parsed.dateTime.trim() : null,
 						category:

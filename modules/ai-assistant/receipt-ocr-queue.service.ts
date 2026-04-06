@@ -4,6 +4,7 @@ import { redisClient } from '../../src/lib/redis';
 import logger from '../../src/lib/logger';
 
 export type ReceiptOcrJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type ReceiptOcrJobReviewStatus = 'pending_review' | 'reviewed' | 'dismissed';
 
 export interface ReceiptOcrQueuedFile {
 	publicUrl: string;
@@ -13,6 +14,7 @@ export interface ReceiptOcrQueuedFile {
 	mimeType?: string;
 	size: number;
 	requestId?: string | null;
+	timeZone?: string | null;
 }
 
 export interface ReceiptOcrQueueJob {
@@ -23,7 +25,10 @@ export interface ReceiptOcrQueueJob {
 	updatedAt: string;
 	attempts: number;
 	maxAttempts: number;
+	reviewStatus: ReceiptOcrJobReviewStatus;
+	reviewedAt?: string | null;
 	requestId?: string | null;
+	timeZone?: string | null;
 	image: {
 		publicUrl: string;
 		filePath: string;
@@ -55,9 +60,12 @@ function toJobSummary(job: ReceiptOcrQueueJob) {
 		status: job.status,
 		attempts: job.attempts,
 		maxAttempts: job.maxAttempts,
+		reviewStatus: job.reviewStatus,
+		reviewedAt: job.reviewedAt || null,
 		createdAt: job.createdAt,
 		updatedAt: job.updatedAt,
 		requestId: job.requestId || null,
+		timeZone: job.timeZone || null,
 		image: {
 			publicUrl: job.image.publicUrl,
 			fileName: job.image.fileName,
@@ -94,7 +102,10 @@ class ReceiptOcrQueueServiceClass {
 				updatedAt: now,
 				attempts: 0,
 				maxAttempts: config.RECEIPT_OCR_JOB_MAX_ATTEMPTS,
+				reviewStatus: 'pending_review',
+				reviewedAt: null,
 				requestId: file.requestId || null,
+				timeZone: file.timeZone || null,
 				image: {
 					publicUrl: file.publicUrl,
 					filePath: file.filePath,
@@ -227,6 +238,23 @@ class ReceiptOcrQueueServiceClass {
 
 		const client = await redisClient.getClient();
 		await client.rPush(QUEUE_KEY, job.id);
+		return toJobSummary(job);
+	}
+
+	async markReviewed(
+		userId: number,
+		jobId: string,
+		reviewStatus: ReceiptOcrJobReviewStatus
+	): Promise<ReturnType<typeof toJobSummary> | null> {
+		const job = await this.getJob(jobId);
+		if (!job || job.userId !== userId) {
+			return null;
+		}
+
+		job.reviewStatus = reviewStatus;
+		job.reviewedAt = reviewStatus === 'reviewed' ? new Date().toISOString() : null;
+		await this.saveJob(job);
+
 		return toJobSummary(job);
 	}
 }

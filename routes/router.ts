@@ -29,7 +29,7 @@ function isIgnoredTransactionStatus(status?: string): boolean {
 router.use((req: Request, res: Response, next) => {
 	res.header('Access-Control-Allow-Origin', '*');
 	res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
-	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, Sentry-Trace, Baggage');
+	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, X-User-Timezone, Sentry-Trace, Baggage');
 	res.header('Access-Control-Expose-Headers', 'X-Request-Id');
 
 	if (req.method === 'OPTIONS') {
@@ -192,14 +192,18 @@ router.get('/api/transactions', requireAuth, async (req: Request, res: Response)
 
 		const mapped = transactions.map((tx) => ({
 			id: String(tx.id),
-			date: tx.date.toISOString().split('T')[0],
+			date: tx.date.toISOString(),
 			description: tx.description ?? 'No description',
 			amount: Number(tx.amount ?? 0),
+			originalCurrencyAmount: Number(tx.originalCurrencyAmount ?? 0),
 			category: tx.category?.name ?? 'Other',
 			paymentMethod: tx.paymentMethod?.name ?? 'Other',
 			paymentMethodId: tx.paymentMethodId,
 			type: tx.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
+			referenceId: tx.referenceId ?? undefined,
+			currency: tx.currency,
+			reviewed: tx.reviewed,
 		}));
 
 		res.status(200).json(mapped);
@@ -297,11 +301,12 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			type: normalizedType,
 			categoryId: matchedCategory?.id,
 			paymentMethodId: finalPaymentMethodId,
+			reviewed: true,
 		});
 
 		res.status(201).json({
 			id: String(transaction.id),
-			date: transaction.date.toISOString().split('T')[0],
+			date: transaction.date.toISOString(),
 			description: transaction.description ?? 'No description',
 			amount: Number(transaction.amount ?? 0),
 			originalCurrencyAmount: Number(transaction.originalCurrencyAmount ?? 0),
@@ -311,6 +316,8 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			paymentMethodId: transaction.paymentMethodId,
 			type,
 			source: 'manual',
+			referenceId: transaction.referenceId ?? undefined,
+			reviewed: transaction.reviewed,
 		});
 	} catch (error) {
 		logger.error('Failed to create transaction', { error, userId: req.user.id });
@@ -446,6 +453,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 					categoryId: categoryMap.get(t.category),
 					paymentMethodId: t.paymentMethod ? pmMap.get(t.paymentMethod) : defaultPmId,
 					referenceId: t.referenceId,
+					reviewed: true,
 					skipDuplicateCheck: true,
 				});
 
@@ -460,7 +468,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 
 		const mapped = createdTransactions.map(t => ({
 			id: String(t.id),
-			date: t.date.toISOString().split('T')[0],
+			date: t.date.toISOString(),
 			description: t.description,
 			amount: Number(t.amount),
 			category: t.category?.name,
@@ -469,6 +477,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			source: 'upload',
 			referenceId: t.referenceId,
 			currency: t.currency,
+			reviewed: t.reviewed,
 		}));
 
 		res.status(201).json(mapped);
@@ -492,6 +501,106 @@ router.delete('/api/transactions/:id', requireAuth, async (req: Request, res: Re
 		res.status(204).send();
 	} catch (error) {
 		res.status(500).json({ message: 'Failed to delete transaction' });
+	}
+});
+
+router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const id = Number(req.params.id);
+		const { date, description, amount, currency, category, paymentMethodId, type, referenceId } = req.body as {
+			date?: string;
+			description?: string;
+			amount?: number;
+			currency?: string;
+			category?: string;
+			paymentMethodId?: number;
+			type?: 'income' | 'expense';
+			referenceId?: string;
+		};
+
+		if (
+			Number.isNaN(id) ||
+			!date ||
+			!description?.trim() ||
+			!Number.isFinite(Number(amount)) ||
+			!currency?.trim() ||
+			!category?.trim() ||
+			!type
+		) {
+			return res.status(400).json({ message: 'Missing required fields' });
+		}
+
+		const existingTransaction = await prisma.transaction.findFirst({
+			where: { id, userId: req.user.id },
+		});
+
+		if (!existingTransaction) {
+			return res.status(404).json({ message: 'Transaction not found' });
+		}
+
+		let matchedCategory = await prisma.category.findFirst({
+			where: { name: category.trim(), userId: req.user.id },
+		});
+
+		if (!matchedCategory) {
+			matchedCategory = await prisma.category.create({
+				data: { name: category.trim(), userId: req.user.id },
+			});
+		}
+
+		const resolvedPaymentMethodId =
+			typeof paymentMethodId === 'number' && Number.isFinite(paymentMethodId) && paymentMethodId > 0
+				? paymentMethodId
+				: null;
+
+		if (resolvedPaymentMethodId) {
+			const paymentMethod = await prisma.paymentMethod.findFirst({
+				where: { id: resolvedPaymentMethodId, userId: req.user.id },
+			});
+
+			if (!paymentMethod) {
+				return res.status(404).json({ message: 'Payment method not found' });
+			}
+		}
+
+		const updated = await prisma.transaction.update({
+			where: { id: existingTransaction.id },
+			data: {
+				date: new Date(date),
+				description: description.trim(),
+				amount: Number(amount),
+				currency: currency.trim().toUpperCase(),
+				categoryId: matchedCategory.id,
+				paymentMethodId: resolvedPaymentMethodId,
+				type: type === 'income' ? 'credit' : 'debit',
+				referenceId: referenceId?.trim() || null,
+				reviewed: true,
+				reviewedAt: new Date(),
+			},
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+
+		return res.status(200).json({
+			id: String(updated.id),
+			date: updated.date.toISOString(),
+			description: updated.description ?? 'No description',
+			amount: Number(updated.amount ?? 0),
+			originalCurrencyAmount: Number(updated.originalCurrencyAmount ?? 0),
+			category: updated.category?.name ?? category,
+			paymentMethod: updated.paymentMethod?.name ?? 'Other',
+			paymentMethodId: updated.paymentMethodId,
+			type: updated.type === 'credit' ? 'income' : 'expense',
+			source: 'manual',
+			referenceId: updated.referenceId ?? undefined,
+			currency: updated.currency,
+			reviewed: updated.reviewed,
+		});
+	} catch (error) {
+		logger.error('Failed to update transaction', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to update transaction' });
 	}
 });
 
@@ -539,7 +648,7 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 		// Update the transaction
 		const updated = await prisma.transaction.update({
 			where: { id: existingTransaction.id },
-			data: { categoryId: matchedCategory.id },
+			data: { categoryId: matchedCategory.id, reviewed: true, reviewedAt: new Date() },
 			include: { 
 				category: true,
 				paymentMethod: true,
@@ -603,6 +712,8 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 						},
 						data: {
 							categoryId: matchedCategory.id,
+							reviewed: true,
+							reviewedAt: new Date(),
 						},
 					});
 
@@ -613,7 +724,7 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 
 		res.status(200).json({
 			id: String(updated.id),
-			date: updated.date.toISOString().split('T')[0],
+			date: updated.date.toISOString(),
 			description: updated.description ?? 'No description',
 			amount: Number(updated.amount ?? 0),
 			currency: updated.currency,
@@ -623,12 +734,65 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			type: updated.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
 			referenceId: updated.referenceId ?? undefined,
+			reviewed: updated.reviewed,
 			propagatedCount,
 			assignedKeyword: normalizedKeyword ?? undefined,
 		});
 	} catch (error) {
 		logger.error('Failed to categorize transaction', { error, userId: req.user.id });
 		res.status(500).json({ message: 'Failed to categorize transaction' });
+	}
+});
+
+router.patch('/api/transactions/:id/review', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const id = Number(req.params.id);
+		if (Number.isNaN(id)) {
+			return res.status(400).json({ message: 'Invalid transaction id' });
+		}
+
+		const existingTransaction = await prisma.transaction.findFirst({
+			where: { id, userId: req.user.id },
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+
+		if (!existingTransaction) {
+			return res.status(404).json({ message: 'Transaction not found' });
+		}
+
+		const updated = await prisma.transaction.update({
+			where: { id: existingTransaction.id },
+			data: {
+				reviewed: true,
+				reviewedAt: new Date(),
+			},
+			include: {
+				category: true,
+				paymentMethod: true,
+			},
+		});
+
+		return res.status(200).json({
+			id: String(updated.id),
+			date: updated.date.toISOString(),
+			description: updated.description ?? 'No description',
+			amount: Number(updated.amount ?? 0),
+			originalCurrencyAmount: Number(updated.originalCurrencyAmount ?? 0),
+			category: updated.category?.name ?? 'Other',
+			paymentMethod: updated.paymentMethod?.name ?? 'Other',
+			paymentMethodId: updated.paymentMethodId,
+			type: updated.type === 'credit' ? 'income' : 'expense',
+			source: 'manual',
+			referenceId: updated.referenceId ?? undefined,
+			currency: updated.currency,
+			reviewed: updated.reviewed,
+		});
+	} catch (error) {
+		logger.error('Failed to mark transaction as reviewed', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to mark transaction as reviewed' });
 	}
 });
 
