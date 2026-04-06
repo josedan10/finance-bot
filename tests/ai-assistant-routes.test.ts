@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { NextFunction, Request, Response } from 'express';
+import app from '../app';
 
 const queueReceiptAnalysisMock = jest.fn(
 	async (req: Request, res: Response): Promise<void> => {
@@ -41,8 +42,6 @@ jest.mock('../controllers/ai-assistant/ai-assistant.controller', () => ({
 	analyzeTransactions: jest.fn(),
 	getBudgetSuggestions: jest.fn(),
 }));
-
-import app from '../app';
 
 describe('AI Assistant Routes', () => {
 	beforeEach(() => {

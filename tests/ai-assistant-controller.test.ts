@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Request, Response } from 'express';
+import { queueReceiptAnalysis } from '../controllers/ai-assistant/ai-assistant.controller';
 
 type MockOptimizedReceiptImage = {
 	buffer: Buffer;
@@ -60,8 +61,6 @@ jest.mock('../src/lib/receipt-image-storage', () => ({
 jest.mock('../src/lib/sentry', () => ({
 	captureException: jest.fn(),
 }));
-
-import { queueReceiptAnalysis } from '../controllers/ai-assistant/ai-assistant.controller';
 
 function createResponse() {
 	const json = jest.fn();
