@@ -39,7 +39,7 @@ const receiptUploadMiddleware: express.RequestHandler = (req, res, next) => {
 const receiptBulkUploadMiddleware: express.RequestHandler = (req, res, next) => {
 	receiptUpload.fields([
 		{ name: 'images', maxCount: config.RECEIPT_BULK_UPLOAD_MAX_FILES },
-		{ name: 'image', maxCount: 1 },
+		{ name: 'image', maxCount: config.RECEIPT_BULK_UPLOAD_MAX_FILES },
 	])(req, res, (error: unknown) => {
 		const uploadError = error as { code?: string } | undefined;
 		if (uploadError?.code === 'LIMIT_FILE_SIZE') {

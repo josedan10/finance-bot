@@ -69,4 +69,15 @@ describe('AI Assistant Routes', () => {
 		expect(response.body.fileCount).toBe(1);
 		expect(queueReceiptAnalysisMock).toHaveBeenCalledTimes(1);
 	});
+
+	it('accepts multiple queued receipt uploads under the legacy image field', async () => {
+		const response = await request(app)
+			.post('/api/ai/receipt-analysis/queue')
+			.attach('image', Buffer.from('file-1'), { filename: 'one.jpg', contentType: 'image/jpeg' })
+			.attach('image', Buffer.from('file-2'), { filename: 'two.jpg', contentType: 'image/jpeg' });
+
+		expect(response.status).toBe(200);
+		expect(response.body.fileCount).toBe(2);
+		expect(queueReceiptAnalysisMock).toHaveBeenCalledTimes(1);
+	});
 });
