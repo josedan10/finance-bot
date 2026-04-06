@@ -14,3 +14,7 @@ service-account.json
 __pycache__/
 /dist
 /pending-transaction-assignments
+/public/receipt-processing/
+/traefik/acme.json
+/modules/image-2-text/*.jpeg
+/modules/image-2-text/*.jpg
