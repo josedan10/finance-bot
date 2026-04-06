@@ -193,21 +193,24 @@ jobs:
               APP_ROOT="/home/${{ env.DO_USERNAME }}/apps/zentra"
             fi
 
-            BACKEND_DIR="$APP_ROOT/zentra-backend"
+            SHARED_DIR="$APP_ROOT/shared"
+            RELEASES_DIR="$APP_ROOT/releases"
+            BACKEND_DIR="$RELEASES_DIR/${{ github.sha }}"
 
-            mkdir -p "$APP_ROOT"
+            mkdir -p "$APP_ROOT" "$SHARED_DIR/public" "$SHARED_DIR/secrets" "$RELEASES_DIR"
 
             if [ ! -d "$BACKEND_DIR/.git" ]; then
               git clone https://github.com/josedan10/finance-bot.git "$BACKEND_DIR"
             fi
 
             cd "$BACKEND_DIR"
-            git reset --hard
-            git clean -fd
             git fetch --prune origin
             git checkout --detach "${{ github.sha }}"
 
-            mkdir -p "$BACKEND_DIR/secrets"
+            rm -rf "$BACKEND_DIR/public" "$BACKEND_DIR/secrets"
+            ln -sfn "$SHARED_DIR/public" "$BACKEND_DIR/public"
+            ln -sfn "$SHARED_DIR/secrets" "$BACKEND_DIR/secrets"
+
             cp /tmp/.github/zentra.env.production "$BACKEND_DIR/.env.production"
             cp /tmp/.github/firebase-service-account.json "$BACKEND_DIR/secrets/firebase-service-account.json"
             printf '\nSENTRY_RELEASE=%s\n' '${{ github.sha }}' >> "$BACKEND_DIR/.env.production"
