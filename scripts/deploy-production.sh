@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.prod.yml}"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.production}"
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-zentra-production}"
 RESOLVED_ENV_FILE=""
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -98,17 +99,17 @@ docker volume prune -f || true
 docker network prune -f || true
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pulling API image..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull zentra-api-production
+docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull zentra-api-production
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Traefik and Redis..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans \
+docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans \
 	traefik \
 	redis-zentra-production
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running Prisma migrations in one-off API container..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --no-deps zentra-api-production npx prisma migrate deploy
+docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --no-deps zentra-api-production npx prisma migrate deploy
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting API service..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans zentra-api-production
+docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans zentra-api-production
 
 echo "Production deployment completed successfully."
