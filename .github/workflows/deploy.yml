@@ -195,9 +195,15 @@ jobs:
 
             SHARED_DIR="$APP_ROOT/shared"
             RELEASES_DIR="$APP_ROOT/releases"
+            LEGACY_DIR="$APP_ROOT/zentra-backend"
             BACKEND_DIR="$RELEASES_DIR/${{ github.sha }}"
 
             mkdir -p "$APP_ROOT" "$SHARED_DIR/public" "$SHARED_DIR/secrets" "$RELEASES_DIR"
+
+            if [ -d "$LEGACY_DIR/public" ] && [ ! -f "$SHARED_DIR/.legacy-public-migrated" ]; then
+              cp -R "$LEGACY_DIR/public/." "$SHARED_DIR/public/" || true
+              touch "$SHARED_DIR/.legacy-public-migrated"
+            fi
 
             if [ ! -d "$BACKEND_DIR/.git" ]; then
               git clone https://github.com/josedan10/finance-bot.git "$BACKEND_DIR"

@@ -37,10 +37,18 @@ const receiptUploadMiddleware: express.RequestHandler = (req, res, next) => {
 };
 
 const receiptBulkUploadMiddleware: express.RequestHandler = (req, res, next) => {
-	receiptUpload.array('images', config.RECEIPT_BULK_UPLOAD_MAX_FILES)(req, res, (error: unknown) => {
+	receiptUpload.fields([
+		{ name: 'images', maxCount: config.RECEIPT_BULK_UPLOAD_MAX_FILES },
+		{ name: 'image', maxCount: 1 },
+	])(req, res, (error: unknown) => {
 		const uploadError = error as { code?: string } | undefined;
 		if (uploadError?.code === 'LIMIT_FILE_SIZE') {
 			next(new AppError('One or more receipt images are too large. Please upload smaller images.', 413));
+			return;
+		}
+
+		if (uploadError?.code === 'LIMIT_UNEXPECTED_FILE') {
+			next(new AppError('Unexpected receipt upload field. Please upload receipt images again.', 400));
 			return;
 		}
 
