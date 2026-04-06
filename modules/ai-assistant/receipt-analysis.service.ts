@@ -21,6 +21,7 @@ export interface OcrReceiptMatch {
 
 export interface ReceiptAnalysisOutput {
 	date: string;
+	dateTime: string;
 	description: string;
 	amount: number;
 	category: string;
@@ -44,6 +45,7 @@ export interface ReceiptAnalysisOutput {
 
 type ParsedReceiptFields = {
 	date: string;
+	dateTime?: string;
 	amount: number;
 	originalAmount: number;
 	currency: string;
@@ -165,22 +167,301 @@ function mapParsedTypeToApiType(type: string | null | undefined): 'income' | 'ex
 	return 'expense';
 }
 
-function normalizeAiReceiptDate(value: string | null | undefined): string | null {
+type NormalizedReceiptDateTime = {
+	date: string;
+	dateTime: string;
+};
+
+type PreferredReceiptAmount = {
+	amount: number;
+	currency: string;
+};
+
+type PreferredReceiptAmountCandidate = PreferredReceiptAmount & {
+	score: number;
+};
+
+const englishMonthMap: Record<string, string> = {
+	january: '01',
+	february: '02',
+	march: '03',
+	april: '04',
+	may: '05',
+	june: '06',
+	july: '07',
+	august: '08',
+	september: '09',
+	october: '10',
+	november: '11',
+	december: '12',
+};
+
+function extractReferenceIdFromReceiptText(rawText: string): string | null {
+	const lines = rawText
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
+
+	for (const line of lines) {
+		const labeledMatch = line.match(
+			/\b(?:operation(?:\s+id)?|transaction(?:\s+id)?|reference(?:\s+id)?|operation|transacci[oó]n|operaci[oó]n|id)\b[\s#:.-]*([A-Z0-9-]{5,})/i
+		);
+		if (labeledMatch?.[1]) {
+			return labeledMatch[1].trim();
+		}
+
+		const looseMatch = line.match(/\b[A-Z0-9]{3,}-[A-Z0-9-]{3,}\b/i);
+		if (looseMatch?.[0]) {
+			return looseMatch[0].trim();
+		}
+	}
+
+	return null;
+}
+
+function normalizeReceiptCurrency(value: string | null | undefined): string {
+	const normalized = value?.trim().toUpperCase() || 'USD';
+
+	if (
+		normalized === 'USDC' ||
+		normalized === 'USDT' ||
+		normalized === 'U$D' ||
+		normalized === 'U$S' ||
+		normalized === 'DOLAR' ||
+		normalized === 'DÓLAR' ||
+		normalized === 'DOLARES' ||
+		normalized === 'DÓLARES'
+	) {
+		return 'USD';
+	}
+
+	if (normalized === 'EURO' || normalized === 'EUROS') {
+		return 'EUR';
+	}
+
+	return normalized;
+}
+
+function normalizeAiReceiptDateTime(value: string | null | undefined): NormalizedReceiptDateTime | null {
 	if (!value) return null;
 
 	const normalized = value.trim();
 	if (!normalized) return null;
+
+	const isoDateOnly = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+	if (isoDateOnly) {
+		const [, year, month, day] = isoDateOnly;
+		return {
+			date: `${year}-${month}-${day}`,
+			dateTime: `${year}-${month}-${day}T12:00:00`,
+		};
+	}
+
+	const isoDateTime = normalized.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+	if (isoDateTime) {
+		const [, year, month, day, hour, minute, second = '00'] = isoDateTime;
+		return {
+			date: `${year}-${month}-${day}`,
+			dateTime: `${year}-${month}-${day}T${hour}:${minute}:${second}`,
+		};
+	}
+
+	const latinDateTime = normalized.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?)?$/i);
+	if (latinDateTime) {
+		const [, day, month, year, rawHour = '12', minute = '00', second = '00', meridiem] = latinDateTime;
+		let hour = Number.parseInt(rawHour, 10);
+		if (meridiem) {
+			hour %= 12;
+			if (meridiem.toLowerCase() === 'pm') {
+				hour += 12;
+			}
+		}
+
+		const normalizedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+		return {
+			date: normalizedDate,
+			dateTime: `${normalizedDate}T${String(hour).padStart(2, '0')}:${minute}:${second}`,
+		};
+	}
 
 	const parsed = new Date(normalized);
 	if (Number.isNaN(parsed.getTime())) {
 		return null;
 	}
 
-	if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-		return normalized;
+	const year = parsed.getUTCFullYear();
+	const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+	const day = String(parsed.getUTCDate()).padStart(2, '0');
+	const hours = String(parsed.getUTCHours()).padStart(2, '0');
+	const minutes = String(parsed.getUTCMinutes()).padStart(2, '0');
+	const seconds = String(parsed.getUTCSeconds()).padStart(2, '0');
+
+	return {
+		date: `${year}-${month}-${day}`,
+		dateTime: `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`,
+	};
+}
+
+function extractPreferredSettlementAmount(rawText: string): PreferredReceiptAmount | null {
+	const lines = rawText
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
+
+	const stableCurrencyPattern =
+		/(USDC|USDT|USD|U\$D|U\$S|DOLARES?|DÓLARES?|EUR|EUROS?)\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2})?)|(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2})?)\s*(USDC|USDT|USD|U\$D|U\$S|DOLARES?|DÓLARES?|EUR|EUROS?)/gi;
+	const candidates: PreferredReceiptAmountCandidate[] = [];
+
+	for (const [index, line] of lines.entries()) {
+		const lowered = line.toLowerCase();
+		const previousLine = index > 0 ? lines[index - 1]?.toLowerCase() || '' : '';
+		const nextLine = index < lines.length - 1 ? lines[index + 1]?.toLowerCase() || '' : '';
+		const looksLikeExchangeRate =
+			lowered.includes('exchange rate') ||
+			lowered.includes('tipo de cambio') ||
+			lowered.includes('tasa') ||
+			lowered.includes('cotizacion') ||
+			lowered.includes('cotización') ||
+			(lowered.includes(' ars') && lowered.includes(' usd')) ||
+			(lowered.includes(' ars') && lowered.includes(' usdc')) ||
+			(lowered.includes(' ars') && lowered.includes(' usdt')) ||
+			line.includes('=') ||
+			line.includes('/');
+
+		if (looksLikeExchangeRate) {
+			continue;
+		}
+
+		const hasSettlementKeywords = (value: string) =>
+			value.includes('discounted') ||
+			value.includes('debited') ||
+			value.includes('charged') ||
+			value.includes('descont') ||
+			value.includes('cobrado') ||
+			value.includes('charged to balance') ||
+			value.includes('you paid') ||
+			value.includes('pay with');
+
+		const settlementScore =
+			lowered.includes('discounted') ||
+			lowered.includes('debited') ||
+			lowered.includes('charged') ||
+			lowered.includes('descont') ||
+			lowered.includes('cobrado') ||
+			lowered.includes('charged to balance') ||
+			lowered.includes('you paid') ||
+			lowered.includes('pay with');
+		const nearbySettlementScore = hasSettlementKeywords(previousLine) || hasSettlementKeywords(nextLine);
+
+		for (const match of line.matchAll(stableCurrencyPattern)) {
+			const leadingCurrency = match[1]?.toUpperCase();
+			const leadingAmount = match[2];
+			const trailingAmount = match[3];
+			const trailingCurrency = match[4]?.toUpperCase();
+			const currency = leadingCurrency || trailingCurrency;
+			const rawAmount = leadingAmount || trailingAmount;
+
+			if (!currency || !rawAmount) {
+				continue;
+			}
+
+			const normalizedAmount = rawAmount.includes(',') && rawAmount.includes('.')
+				? rawAmount.lastIndexOf(',') > rawAmount.lastIndexOf('.')
+					? rawAmount.replaceAll('.', '').replace(',', '.')
+					: rawAmount.replaceAll(',', '')
+				: rawAmount.replace(',', '.');
+			const amount = Number(normalizedAmount);
+
+			if (!Number.isFinite(amount) || amount <= 0) {
+				continue;
+			}
+
+			let score = settlementScore ? 10 : nearbySettlementScore ? 8 : 1;
+			if (
+				currency === 'USDC' ||
+				currency === 'USDT' ||
+				currency === 'USD' ||
+				currency === 'U$D' ||
+				currency === 'U$S' ||
+				currency === 'DOLARES' ||
+				currency === 'DÓLARES'
+			) {
+				score += 5;
+			}
+			if (lowered.includes('balance') || lowered.includes('wallet')) {
+				score += 2;
+			}
+			if (lowered.includes('discounted') || lowered.includes('debited') || lowered.includes('charged to balance')) {
+				score += 3;
+			}
+			if (nearbySettlementScore) {
+				score += 2;
+			}
+
+			candidates.push({
+				amount,
+				currency: normalizeReceiptCurrency(currency),
+				score,
+			});
+		}
 	}
 
-	return parsed.toISOString();
+	if (candidates.length === 0) {
+		return null;
+	}
+
+	const bestCandidate = candidates.sort((left, right) => right.score - left.score || right.amount - left.amount)[0];
+	return bestCandidate ? { amount: bestCandidate.amount, currency: bestCandidate.currency } : null;
+}
+
+function extractVisibleReceiptDateTime(rawText: string): NormalizedReceiptDateTime | null {
+	const lines = rawText
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
+
+	for (const line of lines) {
+		const normalizedFromDirectLine = normalizeAiReceiptDateTime(line);
+		if (normalizedFromDirectLine) {
+			return normalizedFromDirectLine;
+		}
+
+			const latinMatch = line.match(/(\d{1,2}[/.-]\d{1,2}[/.-]\d{4}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?)?)/i);
+		if (latinMatch) {
+			const normalizedLatin = normalizeAiReceiptDateTime(latinMatch[1]);
+			if (normalizedLatin) {
+				return normalizedLatin;
+			}
+		}
+
+		const englishMatch = line.match(
+				/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})(?:\s+(?:at\s+)?(\d{1,2}):(\d{2})\s*(am|pm))?/i
+			);
+		if (englishMatch) {
+			const [, monthName, rawDay, year, rawHour = '12', minute = '00', meridiem] = englishMatch;
+			let hour = Number.parseInt(rawHour, 10);
+			if (meridiem) {
+				hour %= 12;
+				if (meridiem.toLowerCase() === 'pm') {
+					hour += 12;
+				}
+			}
+
+			const month = englishMonthMap[monthName.toLowerCase()];
+			if (!month) {
+				continue;
+			}
+
+			const day = rawDay.padStart(2, '0');
+			const normalizedDate = `${year}-${month}-${day}`;
+			return {
+				date: normalizedDate,
+				dateTime: `${normalizedDate}T${String(hour).padStart(2, '0')}:${minute}:00`,
+			};
+		}
+	}
+
+	return null;
 }
 
 export async function analyzeReceiptImageForUser(params: {
@@ -247,25 +528,32 @@ export async function analyzeReceiptImageForUser(params: {
 			aiStructuredResult?.category && aiStructuredResult.category !== 'Other'
 				? categoryMap.get(aiStructuredResult.category.toLowerCase())
 				: null;
-		const structuredDate = normalizeAiReceiptDate(aiStructuredResult?.dateTime);
+		const structuredDateTime =
+			normalizeAiReceiptDateTime(aiStructuredResult?.dateTime) ||
+			extractVisibleReceiptDateTime(aiStructuredResult?.rawText || rawText);
+		const extractedReferenceId = aiStructuredResult?.referenceId?.trim() || extractReferenceIdFromReceiptText(aiStructuredResult?.rawText || rawText);
+		const preferredSettlementAmount = aiStructuredResult?.rawText
+			? extractPreferredSettlementAmount(aiStructuredResult.rawText)
+			: null;
 
 		if (
 			aiStructuredResult &&
 			typeof aiStructuredResult.amount === 'number' &&
 			Number.isFinite(aiStructuredResult.amount) &&
 			aiStructuredResult.description &&
-			structuredDate
+			structuredDateTime
 		) {
 			parsed = {
-				date: structuredDate,
-				amount: aiStructuredResult.amount,
-				originalAmount: aiStructuredResult.amount,
-				currency: aiStructuredResult.currency || 'USD',
+				date: structuredDateTime.date,
+				dateTime: structuredDateTime.dateTime,
+				amount: preferredSettlementAmount?.amount ?? aiStructuredResult.amount,
+				originalAmount: preferredSettlementAmount?.amount ?? aiStructuredResult.amount,
+				currency: normalizeReceiptCurrency(preferredSettlementAmount?.currency ?? aiStructuredResult.currency ?? 'USD'),
 				description: aiStructuredResult.description,
 				category: structuredCategory?.name || 'Other',
 				categoryId: structuredCategory?.id,
 				type: aiStructuredResult.type === 'income' ? 'credit' : 'debit',
-				referenceId: aiStructuredResult.referenceId || undefined,
+				referenceId: extractedReferenceId || undefined,
 			};
 		} else {
 			parsed = await BaseTransactions.parseTransactionFromText(textLines, params.userId);
@@ -302,14 +590,18 @@ export async function analyzeReceiptImageForUser(params: {
 	}
 
 	const fallback = buildManualReviewFallback(rawText);
+	const parsedDateTime = parsed?.dateTime || (parsed?.date ? `${parsed.date}T12:00:00` : null);
+	const finalDate = parsed?.date || fallback.date;
+	const finalDateTime = parsedDateTime || `${fallback.date}T12:00:00`;
 
 	return {
-		date: parsed?.date || fallback.date,
+		date: finalDate,
+		dateTime: finalDateTime,
 		description: parsed?.description || fallback.description,
 		amount: parsed?.amount || fallback.amount,
 		category: parsed?.category || fallback.category,
 		type: mapParsedTypeToApiType(parsed?.type || fallback.type),
-		currency: parsed?.currency || fallback.currency,
+		currency: normalizeReceiptCurrency(parsed?.currency || fallback.currency),
 		referenceId: parsed?.referenceId ?? fallback.referenceId,
 		isDuplicate: Boolean(duplicate),
 		duplicateId: duplicate?.id,

@@ -205,4 +205,211 @@ describe('receipt-analysis.service', () => {
 			'req-structured'
 		);
 	});
+
+	it('normalizes latin receipt date formats returned by Gemini', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'Supermarket Purchase\n04/03/2026 14:30',
+			amount: 14.5,
+			description: 'Supermarket purchase',
+			dateTime: '04/03/2026 14:30',
+			category: 'Food',
+			currency: 'USD',
+			type: 'expense',
+			referenceId: 'ref-2',
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-latin-date',
+		});
+
+		expect(result.date).toBe('2026-03-04');
+		expect(result.dateTime).toBe('2026-03-04T14:30:00');
+		expect(result.requiresManualReview).toBe(false);
+		expect(mockedImage2Text.extractTextFromImages).not.toHaveBeenCalled();
+	});
+
+	it('prefers the settled USDC amount when the receipt includes both fiat and discounted crypto values', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'QR payment\n3,100 ARS\nWere discounted 2.17 USDC',
+			amount: 3100,
+			description: 'QR payment',
+			dateTime: '2026-04-04T20:27:00',
+			category: 'Food',
+			currency: 'ARS',
+			type: 'expense',
+			referenceId: 'ref-3',
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-usdc-amount',
+		});
+
+		expect(result.amount).toBe(2.17);
+		expect(result.currency).toBe('USD');
+		expect(result.dateTime).toBe('2026-04-04T20:27:00');
+	});
+
+	it('extracts the visible receipt date when Gemini misses dateTime but raw text includes an english timestamp', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'QR payment\nApril 2nd, 2026 at 2:07 am\nWere discounted 2.17 USDC',
+			amount: 3100,
+			description: 'QR payment',
+			dateTime: null,
+			category: 'Food',
+			currency: 'ARS',
+			type: 'expense',
+			referenceId: 'ref-4',
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-visible-date',
+		});
+
+		expect(result.date).toBe('2026-04-02');
+		expect(result.dateTime).toBe('2026-04-02T02:07:00');
+		expect(result.amount).toBe(2.17);
+		expect(result.currency).toBe('USD');
+		expect(result.requiresManualReview).toBe(false);
+	});
+
+	it('prefers stable settlement amounts even when the receipt lists the currency before the amount', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'QR payment\n3,100 ARS\nCharged to balance: USDT 2.17',
+			amount: 3100,
+			description: 'QR payment',
+			dateTime: '2026-04-04T20:27:00',
+			category: 'Food',
+			currency: 'ARS',
+			type: 'expense',
+			referenceId: 'ref-5',
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-usdt-amount',
+		});
+
+		expect(result.amount).toBe(2.17);
+		expect(result.currency).toBe('USD');
+		expect(result.dateTime).toBe('2026-04-04T20:27:00');
+	});
+
+	it('ignores exchange-rate lines and keeps the discounted stable amount', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'QR payment\nExchange rate 1 USD = 1430 ARS\nWere discounted 2.17 USDC',
+			amount: 1430,
+			description: 'QR payment',
+			dateTime: '2026-04-04T20:27:00',
+			category: 'Food',
+			currency: 'ARS',
+			type: 'expense',
+			referenceId: 'ref-6',
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-ignore-exchange-rate',
+		});
+
+		expect(result.amount).toBe(2.17);
+		expect(result.currency).toBe('USD');
+	});
+
+	it('extracts the reference id from visible receipt text when Gemini misses it', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'QR payment\nOperation ID: ABC-12345-ZX\nWere discounted 2.17 USDC',
+			amount: 2.17,
+			description: 'QR payment',
+			dateTime: '2026-04-04T20:27:00',
+			category: 'Food',
+			currency: 'USD',
+			type: 'expense',
+			referenceId: null,
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-reference-id',
+		});
+
+		expect(result.referenceId).toBe('ABC-12345-ZX');
+		expect(result.amount).toBe(2.17);
+	});
+
+	it('prefers the discounted stable amount when the keyword and amount are split across adjacent lines', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'QR payment\nExchange rate\n1 USD\nWere discounted\n2.17 USDC',
+			amount: 1,
+			description: 'QR payment',
+			dateTime: '2026-04-04T20:27:00',
+			category: 'Food',
+			currency: 'USD',
+			type: 'expense',
+			referenceId: 'ref-7',
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-split-discounted-amount',
+		});
+
+		expect(result.amount).toBe(2.17);
+		expect(result.currency).toBe('USD');
+	});
+
+	it('overrides an ARS structured amount when a visible discounted USD amount exists in raw text', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-google-key';
+		mockedPrisma.category.findMany.mockResolvedValue([{ id: 9, name: 'Food' }]);
+		mockedImage2Text.analyzeReceiptWithGemini.mockResolvedValue({
+			rawText: 'Total 2.345,00 ARS\nSe descontaron USD 2.17\nQR payment to Cremolatti',
+			amount: 2345,
+			description: 'QR payment to Cremolatti',
+			dateTime: '2026-04-04T20:27:00',
+			category: 'Food',
+			currency: 'ARS',
+			type: 'expense',
+			referenceId: 'ref-8',
+		});
+		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
+
+		const result = await analyzeReceiptImageForUser({
+			userId: 2,
+			imageInput: { type: 'image-source', value: 'https://example.com/r.jpg' },
+			requestId: 'req-prefer-usd-over-ars',
+		});
+
+		expect(result.amount).toBe(2.17);
+		expect(result.currency).toBe('USD');
+	});
 });

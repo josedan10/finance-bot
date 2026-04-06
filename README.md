@@ -196,6 +196,31 @@ npm run deploy:test-ssh
 
 This runs a non-interactive SSH connectivity check and logs the remote hostname/user if the connection succeeds.
 
+## AI receipt review flow
+
+The receipt upload flow now runs in the background and creates transactions automatically.
+
+- `POST /api/ai/receipt-analysis/queue` stores uploaded receipt images and queues OCR/AI processing.
+- Each queued job keeps a persistent review status in Redis:
+  - `pending_review`
+  - `reviewed`
+  - `dismissed`
+- When a receipt is parsed successfully, the backend creates a real transaction immediately and sends it to the `Other` category until the user reviews it.
+- The AI review UI can:
+  - mark queued items as reviewed
+  - dismiss deleted AI-created transactions
+  - update the transaction category and optionally save a keyword for future matching
+
+### Receipt timezone handling
+
+Receipt timestamps are treated as **the user's current browser timezone at upload time**.
+
+- the frontend sends the browser IANA timezone with each queued receipt upload
+- the backend interprets the AI-extracted wall-clock receipt time in that timezone
+- the backend then converts that timestamp to **UTC** before storing it in the database
+
+If the receipt timezone assumption is wrong, the user can edit the transaction later from the transactions list or AI review.
+
 ## API Endpoints
 
 | Method | Path | Description |

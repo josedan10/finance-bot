@@ -63,6 +63,7 @@ router.post('/receipt-analysis', receiptUploadMiddleware, AIController.scanRecei
 router.post('/receipt-analysis/queue', receiptBulkUploadMiddleware, AIController.queueReceiptAnalysis);
 router.get('/receipt-analysis/jobs', AIController.getQueuedReceiptAnalysisJobs);
 router.post('/receipt-analysis/jobs/:jobId/retry', AIController.retryQueuedReceiptAnalysisJob);
+router.patch('/receipt-analysis/jobs/:jobId/review', AIController.markQueuedReceiptAnalysisJobReviewed);
 router.post('/receipt-samples', receiptUploadMiddleware, AIController.uploadReceiptSample);
 router.post('/analyze', AIController.analyzeTransactions);
 router.post('/suggest-budget', AIController.getBudgetSuggestions);

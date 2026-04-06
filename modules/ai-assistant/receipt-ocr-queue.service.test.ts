@@ -43,6 +43,7 @@ describe('receipt-ocr-queue.service', () => {
 
 		expect(jobs).toHaveLength(2);
 		expect(jobs[0].status).toBe('queued');
+		expect(jobs[0].reviewStatus).toBe('pending_review');
 		expect(jobs[0].image.publicUrl).toContain('receipt-1.jpg');
 		expect(mockRedisOps.rPush).toHaveBeenCalledTimes(2);
 		expect(mockRedisOps.lPush).toHaveBeenCalledTimes(2);
@@ -73,6 +74,8 @@ describe('receipt-ocr-queue.service', () => {
 			updatedAt: new Date().toISOString(),
 			attempts: 0,
 			maxAttempts: 2,
+			reviewStatus: 'pending_review' as const,
+			reviewedAt: null,
 			requestId: 'req-1',
 			image: {
 				publicUrl: 'https://example.com/r.jpg',
@@ -111,6 +114,8 @@ describe('receipt-ocr-queue.service', () => {
 				updatedAt: new Date().toISOString(),
 				attempts: 1,
 				maxAttempts: 2,
+				reviewStatus: 'pending_review' as const,
+				reviewedAt: null,
 				image: {
 					publicUrl: 'u',
 					filePath: 'p',
@@ -132,6 +137,8 @@ describe('receipt-ocr-queue.service', () => {
 			updatedAt: new Date().toISOString(),
 			attempts: 0,
 			maxAttempts: 2,
+			reviewStatus: 'pending_review' as const,
+			reviewedAt: null,
 			image: {
 				publicUrl: 'u1',
 				filePath: 'p1',
@@ -168,6 +175,8 @@ describe('receipt-ocr-queue.service', () => {
 			updatedAt: new Date().toISOString(),
 			attempts: 1,
 			maxAttempts: 2,
+			reviewStatus: 'pending_review' as const,
+			reviewedAt: null,
 			image: {
 				publicUrl: 'u',
 				filePath: 'p',
@@ -183,7 +192,7 @@ describe('receipt-ocr-queue.service', () => {
 	});
 
 	it('marks failed jobs and requeues only when attempts remain', async () => {
-		const retryableJob = {
+		const retryableJob: ReceiptOcrQueueJob = {
 			id: 'job-retry',
 			userId: 5,
 			status: 'processing' as const,
@@ -191,6 +200,8 @@ describe('receipt-ocr-queue.service', () => {
 			updatedAt: new Date().toISOString(),
 			attempts: 1,
 			maxAttempts: 2,
+			reviewStatus: 'pending_review',
+			reviewedAt: null,
 			image: {
 				publicUrl: 'https://example.com/r.jpg',
 				filePath: '/tmp/r.jpg',
@@ -203,7 +214,7 @@ describe('receipt-ocr-queue.service', () => {
 		expect(retryableJob.status).toBe('queued');
 		expect(mockRedisOps.rPush).toHaveBeenCalledWith('receipt:ocr:queue', 'job-retry');
 
-		const terminalJob = {
+		const terminalJob: ReceiptOcrQueueJob = {
 			...retryableJob,
 			id: 'job-terminal',
 			attempts: 2,
@@ -219,11 +230,13 @@ describe('receipt-ocr-queue.service', () => {
 		const baseJob = {
 			id: 'job-1',
 			userId: 5,
-			status: 'failed',
+			status: 'failed' as const,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString(),
 			attempts: 2,
 			maxAttempts: 2,
+			reviewStatus: 'pending_review' as const,
+			reviewedAt: null,
 			image: {
 				publicUrl: 'https://example.com/r.jpg',
 				filePath: '/tmp/r.jpg',
@@ -248,5 +261,39 @@ describe('receipt-ocr-queue.service', () => {
 		(redisClient.get as jest.Mock).mockResolvedValueOnce(JSON.stringify({ ...baseJob, status: 'processing' }));
 		const processingRetry = await ReceiptOcrQueueService.retryJob(5, 'job-1');
 		expect(processingRetry?.status).toBe('processing');
+	});
+
+	it('marks review status only for matching user jobs', async () => {
+		const baseJob = {
+			id: 'job-review',
+			userId: 5,
+			status: 'completed',
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			attempts: 1,
+			maxAttempts: 2,
+			reviewStatus: 'pending_review' as const,
+			reviewedAt: null,
+			image: {
+				publicUrl: 'https://example.com/r.jpg',
+				filePath: '/tmp/r.jpg',
+				fileName: 'r.jpg',
+				size: 100,
+			},
+		};
+
+		(redisClient.get as jest.Mock).mockResolvedValueOnce(JSON.stringify(baseJob));
+		const reviewed = await ReceiptOcrQueueService.markReviewed(5, 'job-review', 'reviewed');
+		expect(reviewed?.reviewStatus).toBe('reviewed');
+		expect(reviewed?.reviewedAt).toBeTruthy();
+
+		(redisClient.get as jest.Mock).mockResolvedValueOnce(JSON.stringify(baseJob));
+		const dismissed = await ReceiptOcrQueueService.markReviewed(5, 'job-review', 'dismissed');
+		expect(dismissed?.reviewStatus).toBe('dismissed');
+		expect(dismissed?.reviewedAt).toBeNull();
+
+		(redisClient.get as jest.Mock).mockResolvedValueOnce(JSON.stringify({ ...baseJob, userId: 6 }));
+		const unauthorized = await ReceiptOcrQueueService.markReviewed(5, 'job-review', 'reviewed');
+		expect(unauthorized).toBeNull();
 	});
 });

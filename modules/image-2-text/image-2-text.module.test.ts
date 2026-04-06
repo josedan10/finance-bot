@@ -396,6 +396,43 @@ describe('Image2TextModule', () => {
 		config.GOOGLE_AI_API_KEY = previousApiKey;
 	});
 
+	it('should normalize string amounts returned by Gemini structured receipt analysis', async () => {
+		config.GOOGLE_AI_API_KEY = 'test-key';
+		const model: MockGenerativeModel = {
+			generateContent: jest.fn().mockResolvedValue({
+				response: {
+					text: () =>
+						JSON.stringify({
+							amount: '1,234.50',
+							description: 'Flight ticket',
+							dateTime: '2026-04-04',
+							category: 'Travel',
+							currency: 'USD',
+							type: 'expense',
+							referenceId: null,
+							rawText: 'Flight ticket\n1,234.50',
+						}),
+				},
+			}),
+		};
+		MockGoogleAI.prototype.getGenerativeModel.mockReturnValue(model as unknown as ReturnType<
+			GoogleGenerativeAI['getGenerativeModel']
+		>);
+		spyGet.resolves({
+			data: Buffer.from('fake-image-binary'),
+			headers: { 'content-type': 'image/jpeg' },
+		});
+
+		const result = await image2TextModule.analyzeReceiptWithGemini(
+			{ type: 'image-source', value: 'https://example.com/image.jpg' },
+			['Other', 'Travel'],
+			'req-string-amount'
+		);
+
+		expect(result.amount).toBe(1234.5);
+		expect(result.category).toBe('Travel');
+	});
+
 	it('should throw generic extraction error when Gemini generation fails unexpectedly', async () => {
 		config.RECEIPT_TEXT_PROVIDER = 'gemini';
 		spyGet.resolves({
