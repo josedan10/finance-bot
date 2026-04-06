@@ -29,6 +29,7 @@ jest.mock('../src/lib/receipt-image-storage', () => ({
 
 jest.mock('../src/lib/sentry', () => ({
 	captureException: jest.fn(),
+	captureLog: jest.fn(),
 }));
 
 const optimizeReceiptImageForOcrMock = jest.mocked(optimizeReceiptImageForOcr);
