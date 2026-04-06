@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.prod.yml}"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.production}"
-COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-zentra-production}"
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-zentra-backend}"
 RESOLVED_ENV_FILE=""
 
 if [[ ! -f "$ENV_FILE" ]]; then
