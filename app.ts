@@ -24,7 +24,7 @@ const apiRateLimitMiddleware = createRateLimitMiddleware({
 });
 
 const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
-app.set('trust proxy', true);
+app.set('trust proxy', config.TRUSTED_PROXIES);
 app.use(morgan(morganFormat));
 app.use(securityHeadersMiddleware);
 app.use(blockSuspiciousPathsMiddleware);
