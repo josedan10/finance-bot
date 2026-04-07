@@ -69,7 +69,7 @@ describe('Security hardening', () => {
 			},
 		} as never);
 
-		expect(details.ip).toBe('198.51.100.50');
+		expect(details.ip).toBe('203.0.113.99');
 		expect(details.browser).toBe('Chrome');
 		expect(details.os).toBe('Android');
 		expect(details.device).toBe('Mobile');

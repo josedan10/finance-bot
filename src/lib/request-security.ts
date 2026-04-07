@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import axios from 'axios';
 import * as nodemailer from 'nodemailer';
@@ -19,11 +20,13 @@ export function isBlockedPath(pathname: string): boolean {
 }
 
 export function extractClientIp(req: Pick<Request, 'ip' | 'headers' | 'socket'>): string {
-	const forwardedFor = req.headers['x-forwarded-for'];
-	const headerValue = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-	const rawIp = headerValue?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress || 'unknown';
+	const rawIp = req.ip || req.socket.remoteAddress || 'unknown';
 
 	return rawIp.replace(/^::ffff:/, '');
+}
+
+function hashIp(ip: string): string {
+	return createHash('sha256').update(ip).digest('hex').slice(0, 12);
 }
 
 export function applySecurityHeaders(res: Response): void {
@@ -303,6 +306,7 @@ async function sendSecurityAlert(alert: SecurityAlert): Promise<void> {
 
 	const dedupeTtlSeconds = Number(process.env.SECURITY_ALERT_TTL_SECONDS || 900);
 	const alertKey = `security-alert:${alert.kind}:${alert.ip}:${alert.path}`;
+	const alertId = `${alert.kind}:${hashIp(alert.ip)}:${alert.path}`;
 
 	try {
 		const dedupeResult = await redisClient.set(alertKey, '1', {
@@ -310,13 +314,20 @@ async function sendSecurityAlert(alert: SecurityAlert): Promise<void> {
 			NX: true,
 		});
 
-		if (dedupeResult !== 'OK') {
+		if (dedupeResult === 'OK') {
+			// continue
+		} else if (dedupeResult == null) {
+			logger.warn('Security alert dedupe unavailable; sending alert', {
+				alertId,
+				error: 'Redis set returned no result',
+			});
+		} else {
 			return;
 		}
 	} catch (error) {
 		logger.warn('Security alert dedupe failed open', {
+			alertId,
 			error: error instanceof Error ? error.message : String(error),
-			alertKey,
 		});
 	}
 
@@ -370,8 +381,8 @@ async function sendSecurityAlert(alert: SecurityAlert): Promise<void> {
 		});
 	} catch (error) {
 		logger.error('Failed to send security alert', {
+			alertId,
 			error: error instanceof Error ? error.message : String(error),
-			alert,
 		});
 	}
 }
@@ -389,7 +400,7 @@ export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next
 
 	logger.warn('Blocked suspicious request path', {
 		path: req.path,
-		ip: extractClientIp(req),
+		ipHash: hashIp(extractClientIp(req)),
 		method: req.method,
 	});
 	const requestDetails = collectSecurityRequestDetails(req);
@@ -518,7 +529,7 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 
 			if (requestCount > options.maxRequests) {
 				logger.warn('Rate limit exceeded', {
-					ip,
+					ipHash: hashIp(ip),
 					path: req.path,
 					method: req.method,
 					requestCount,
@@ -536,7 +547,7 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 					logger.error('Failed to schedule rate-limit security alert', {
 						error: error instanceof Error ? error.message : String(error),
 						path: req.path,
-						ip,
+						ipHash: hashIp(ip),
 					});
 				});
 				const remainingMs = Math.max(0, resetAt - Date.now());
