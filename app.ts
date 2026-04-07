@@ -9,13 +9,25 @@ import logger from './src/lib/logger';
 import { AppError } from './src/lib/appError';
 import { config } from './src/config';
 import { captureRequestException } from './src/lib/sentry';
+import {
+	blockSuspiciousPathsMiddleware,
+	createRateLimitMiddleware,
+	securityHeadersMiddleware,
+} from './src/lib/request-security';
 
 const app = express();
 const runtimePublicDir = path.resolve(process.cwd(), 'public');
 const bundledPublicDir = path.join(__dirname, 'public');
+const apiRateLimitMiddleware = createRateLimitMiddleware({
+	windowMs: config.API_RATE_LIMIT_WINDOW_MS,
+	maxRequests: config.API_RATE_LIMIT_MAX_REQUESTS,
+});
 
 const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
+app.set('trust proxy', true);
 app.use(morgan(morganFormat));
+app.use(securityHeadersMiddleware);
+app.use(blockSuspiciousPathsMiddleware);
 app.use(express.json({ limit: config.REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: false, limit: config.REQUEST_BODY_LIMIT }));
 app.use(cookieParser());
@@ -28,6 +40,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 	res.setHeader('x-request-id', requestId);
 	next();
 });
+app.use(apiRateLimitMiddleware);
 
 app.use('/', indexRouter);
 

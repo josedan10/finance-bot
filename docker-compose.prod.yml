@@ -79,6 +79,14 @@ services:
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       SENTRY_PROFILES_SAMPLE_RATE: ${SENTRY_PROFILES_SAMPLE_RATE:-0}
+      API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-1000}
+      API_RATE_LIMIT_MAX_REQUESTS: ${API_RATE_LIMIT_MAX_REQUESTS:-30}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_API_URL: ${MAILGUN_API_URL:-}
+      MAILGUN_SANDBOX_EMAIL: ${MAILGUN_SANDBOX_EMAIL:-}
+      SECURITY_ALERT_EMAIL_TO: ${SECURITY_ALERT_EMAIL_TO:-}
+      SECURITY_ALERT_EMAIL_FROM: ${SECURITY_ALERT_EMAIL_FROM:-}
+      SECURITY_ALERT_TTL_SECONDS: ${SECURITY_ALERT_TTL_SECONDS:-900}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@zentra-app.pro}
@@ -91,6 +99,13 @@ services:
       - traefik.http.routers.zentra-api.entrypoints=websecure
       - traefik.http.routers.zentra-api.tls=true
       - traefik.http.routers.zentra-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.zentra-api.middlewares=zentra-api-ratelimit,zentra-api-security
+      - traefik.http.middlewares.zentra-api-ratelimit.ratelimit.period=1s
+      - traefik.http.middlewares.zentra-api-ratelimit.ratelimit.average=${TRAEFIK_API_RATE_LIMIT_AVERAGE:-30}
+      - traefik.http.middlewares.zentra-api-ratelimit.ratelimit.burst=${TRAEFIK_API_RATE_LIMIT_BURST:-15}
+      - traefik.http.middlewares.zentra-api-security.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.zentra-api-security.headers.frameDeny=true
+      - traefik.http.middlewares.zentra-api-security.headers.referrerPolicy=same-origin
       - traefik.http.services.zentra-api.loadbalancer.server.port=5000
     healthcheck:
       test:
