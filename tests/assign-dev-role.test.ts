@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { parseAssignDevRoleArgs } from './assign-dev-role';
+import { parseAssignDevRoleArgs } from '../scripts/assign-dev-role';
 
 describe('assign-dev-role script', () => {
 	it('parses emails and flags', () => {

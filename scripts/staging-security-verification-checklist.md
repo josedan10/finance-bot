@@ -41,12 +41,33 @@ Use `scripts/assign-dev-role.example.sql` as a template: run the `SELECT` steps,
 
 Obtain a **staging** Firebase ID token for a user who should have `dev` in the database (same account you updated above). Common options: browser devtools on the staging app (network tab on an authenticated API call), or a short-lived test harness using the Firebase client SDK.
 
-Set variables (zsh/bash):
+**Token hygiene (recommended):** Putting `export STAGING_ID_TOKEN="eyJ..."` on one line saves the bearer token to your shell history (`~/.zsh_history` / `~/.bash_history`) and can expose it in process listings. Prefer one of:
+
+- Paste the token without echoing it:
+
+  ```bash
+  read -rs STAGING_ID_TOKEN && export STAGING_ID_TOKEN
+  ```
+
+  (`-s` hides input; press Enter after pasting.)
+
+- Or prefix the line with a space **and** ensure `HISTCONTROL=ignorespace` (or `ignoreboth`) is set so that line is not saved to history—then:
+
+  ```bash
+  export STAGING_ID_TOKEN="eyJ..."
+  ```
+
+Only `API_BASE` needs to be a normal `export` if you like; it is not a secret like the ID token.
+
+**Response files:** The `curl` examples below use `-o` to write **response bodies** only (JSON). They do **not** store the `Authorization` header. Do not add `-v` / `--trace-ascii` and redirect that output to a shared log, and do not `tee` a trace that includes request headers—those can leak the bearer token.
+
+Set `API_BASE` (zsh/bash):
 
 ```bash
 export API_BASE="https://your-staging-api.example.com"
-export STAGING_ID_TOKEN="eyJ..."
 ```
+
+Set `STAGING_ID_TOKEN` using `read -rs` (or the space-prefixed `export` pattern above), then continue.
 
 - [ ] **Authorized dev** — expect `200` and JSON with `totals`:
 
@@ -80,7 +101,7 @@ export STAGING_ID_TOKEN="eyJ..."
 
 ## 3) Auth profile reflects `role`
 
-With the **dev** user’s token:
+With the **dev** user’s token (same hygiene as above—do not log full `curl -v` output):
 
 ```bash
 curl -sS -H "Authorization: Bearer ${STAGING_ID_TOKEN}" "${API_BASE}/api/auth/me"
