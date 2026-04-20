@@ -31,6 +31,7 @@
 		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --coverage --watchAll=false",
 		"gmail:auth": "ts-node scripts/gmail-auth.ts",
 		"transactions:delete-all": "ts-node scripts/delete-all-transactions.ts",
+		"roles:assign-dev": "ts-node scripts/assign-dev-role.ts",
 		"deploy:test-ssh": "ts-node scripts/test-digitalocean-ssh.ts"
 	},
 	"dependencies": {
