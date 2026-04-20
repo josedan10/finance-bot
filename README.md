@@ -114,6 +114,8 @@ Files involved:
 - `.github/workflows/deploy.yml`
 - `scripts/deploy-production.sh`
 - `.env.production.example`
+- `../docs/security-monitor-rollout.md`
+- `scripts/security-monitor-smoke.sh`
 
 Typical server flow:
 
@@ -121,6 +123,22 @@ Typical server flow:
 cp .env.production.example .env.production
 chmod +x scripts/deploy-production.sh
 ./scripts/deploy-production.sh
+```
+
+### Security monitor rollout and smoke validation
+
+If you are enabling the internal suspicious-traffic dashboard and automatic temporary blocking, use:
+
+- `../docs/security-monitor-rollout.md` for the production rollout checklist
+- `scripts/security-monitor-smoke.sh` for authenticated API/path smoke checks against a deployed environment
+
+Example:
+
+```bash
+BASE_URL=https://api.zentra-app.pro \
+DEV_TOKEN='<firebase-id-token-for-dev-user>' \
+USER_TOKEN='<firebase-id-token-for-normal-user>' \
+bash scripts/security-monitor-smoke.sh
 ```
 
 ### Using 1Password as the production secrets manager

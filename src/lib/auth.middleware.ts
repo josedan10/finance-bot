@@ -7,7 +7,9 @@ import OnboardingService from '../services/onboarding.service';
 import logger from './logger';
 
 const prisma = new PrismaClient();
-export type AuthenticatedUser = User & { role?: string };
+const DEFAULT_USER_ROLE = 'user';
+
+export type AuthenticatedUser = User;
 
 declare module 'express-serve-static-core' {
   interface Request {
@@ -56,6 +58,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
           data: {
             firebaseId: uid,
             email: email || `${uid}@zentra.local`, // Fallback email if not present
+            role: DEFAULT_USER_ROLE,
           },
         });
         
@@ -104,11 +107,13 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 
 export const requireRole = (roles: string[]) => {
   return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.user || !req.user.role) {
+    const normalizedRole = req.user?.role?.trim();
+
+    if (!req.user || !normalizedRole) {
       return next(new AppError('Unauthorized: Role not found', 403));
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(normalizedRole)) {
       return next(new AppError('Forbidden: You do not have permission to perform this action', 403));
     }
 

@@ -14,12 +14,58 @@ function parseIntegerInRange(value: string | undefined, fallback: number, min: n
 	return Math.min(max, Math.max(min, parsed));
 }
 
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+	if (!value) {
+		return fallback;
+	}
+
+	const normalized = value.trim().toLowerCase();
+
+	if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+		return true;
+	}
+
+	if (['0', 'false', 'no', 'off'].includes(normalized)) {
+		return false;
+	}
+
+	return fallback;
+}
+
 function parseReceiptTextProvider(value: string | undefined): 'ocr' | 'gemini' | 'auto' {
 	const normalized = value?.trim().toLowerCase();
 	if (normalized === 'ocr' || normalized === 'gemini' || normalized === 'auto') {
 		return normalized;
 	}
 	return 'auto';
+}
+
+function parseCsvList(value: string | undefined, fallback: string[]): string[] {
+	const normalizedValues = value
+		?.split(',')
+		.map((item) => item.trim())
+		.filter(Boolean);
+
+	if (!normalizedValues || normalizedValues.length === 0) {
+		return fallback;
+	}
+
+	return [...new Set(normalizedValues)];
+}
+
+function parseRoutePath(value: string | undefined, fallback: string): string {
+	const normalized = value?.trim();
+
+	if (!normalized) {
+		return fallback;
+	}
+
+	const withoutLeadingSlash = normalized.replace(/^\/+/, '');
+	if (!withoutLeadingSlash) {
+		return fallback;
+	}
+
+	return `/${withoutLeadingSlash}`;
 }
 
 export const config = {
@@ -48,6 +94,13 @@ export const config = {
 	API_RATE_LIMIT_WINDOW_MS: parseIntegerInRange(process.env.API_RATE_LIMIT_WINDOW_MS, 1000, 100, 60_000),
 	API_RATE_LIMIT_MAX_REQUESTS: parseIntegerInRange(process.env.API_RATE_LIMIT_MAX_REQUESTS, 30, 1, 10_000),
 	TRUSTED_PROXIES: process.env.TRUSTED_PROXIES || 'loopback',
+	SECURITY_DASHBOARD_ALLOWED_ROLES: parseCsvList(process.env.SECURITY_DASHBOARD_ALLOWED_ROLES, ['dev']),
+	SECURITY_DASHBOARD_ROUTE: parseRoutePath(process.env.SECURITY_DASHBOARD_ROUTE, '/ops/security-monitor'),
+	SECURITY_SUSPICIOUS_WINDOW_MS: parseIntegerInRange(process.env.SECURITY_SUSPICIOUS_WINDOW_MS, 300_000, 1_000, 86_400_000),
+	SECURITY_SUSPICIOUS_MAX_EVENTS: parseIntegerInRange(process.env.SECURITY_SUSPICIOUS_MAX_EVENTS, 3, 1, 1_000),
+	SECURITY_AUTO_BLOCK_TTL_MINUTES: parseIntegerInRange(process.env.SECURITY_AUTO_BLOCK_TTL_MINUTES, 60, 1, 43_200),
+	SECURITY_EVENT_RETENTION_DAYS: parseIntegerInRange(process.env.SECURITY_EVENT_RETENTION_DAYS, 30, 1, 3_650),
+	SECURITY_GEO_ENRICHMENT_ENABLED: parseBoolean(process.env.SECURITY_GEO_ENRICHMENT_ENABLED, false),
 	RATE_AVAILABLE_START_HOUR: 9,
 	RATE_AVAILABLE_END_HOUR: 11,
 	MAX_DESCRIPTION_LENGTH: 100,

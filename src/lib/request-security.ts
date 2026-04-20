@@ -1,12 +1,18 @@
-import { createHash } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import axios from 'axios';
 import * as nodemailer from 'nodemailer';
 import logger from './logger';
 import { redisClient } from './redis';
+import {
+	checkActiveSecurityBlock,
+	persistSecurityEvent,
+	registerSuspiciousActivity,
+} from './security-events';
+import { collectSecurityFingerprint, extractClientIp, hashSecurityIp, type SecurityFingerprint } from './security-fingerprint';
 
 export const BLOCKED_PATH_PATTERNS = [
 	/^\/\.env(?:$|[/.])/i,
+	/^\/appsettings(?:\.[^/]+)*\.json$/i,
 	/^\/wp-login\.php$/i,
 	/^\/wp-admin(?:\/|$)/i,
 	/^\/xmlrpc\.php$/i,
@@ -17,16 +23,6 @@ export const BLOCKED_PATH_PATTERNS = [
 
 export function isBlockedPath(pathname: string): boolean {
 	return BLOCKED_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
-}
-
-export function extractClientIp(req: Pick<Request, 'ip' | 'headers' | 'socket'>): string {
-	const rawIp = req.ip || req.socket.remoteAddress || 'unknown';
-
-	return rawIp.replace(/^::ffff:/, '');
-}
-
-function hashIp(ip: string): string {
-	return createHash('sha256').update(ip).digest('hex').slice(0, 12);
 }
 
 export function applySecurityHeaders(res: Response): void {
@@ -51,8 +47,12 @@ type SecurityAlert = {
 	method: string;
 	userAgent?: string;
 	browser?: string;
+	browserVersion?: string;
 	os?: string;
+	osVersion?: string;
 	device?: string;
+	deviceBrand?: string;
+	deviceModel?: string;
 	referer?: string;
 	origin?: string;
 	host?: string;
@@ -60,6 +60,8 @@ type SecurityAlert = {
 	realIp?: string;
 	forwardedProto?: string;
 	forwardedHost?: string;
+	forwardedPort?: string;
+	forwardedServer?: string;
 	acceptLanguage?: string;
 	secChUa?: string;
 	secChUaPlatform?: string;
@@ -67,6 +69,8 @@ type SecurityAlert = {
 	country?: string;
 	region?: string;
 	city?: string;
+	attributionSource?: string;
+	attributionTrusted?: boolean;
 	requestCount?: number;
 	windowMs?: number;
 };
@@ -118,13 +122,25 @@ function formatSecurityAlertMessage(alert: SecurityAlert): string {
 	if (alert.browser) {
 		baseLines.push(`Browser: ${alert.browser}`);
 	}
+	if (alert.browserVersion) {
+		baseLines.push(`Browser Version: ${alert.browserVersion}`);
+	}
 
 	if (alert.os) {
 		baseLines.push(`OS: ${alert.os}`);
 	}
+	if (alert.osVersion) {
+		baseLines.push(`OS Version: ${alert.osVersion}`);
+	}
 
 	if (alert.device) {
 		baseLines.push(`Device: ${alert.device}`);
+	}
+	if (alert.deviceBrand) {
+		baseLines.push(`Device Brand: ${alert.deviceBrand}`);
+	}
+	if (alert.deviceModel) {
+		baseLines.push(`Device Model: ${alert.deviceModel}`);
 	}
 
 	if (alert.acceptLanguage) {
@@ -158,6 +174,12 @@ function formatSecurityAlertMessage(alert: SecurityAlert): string {
 	if (alert.forwardedHost) {
 		baseLines.push(`X-Forwarded-Host: ${alert.forwardedHost}`);
 	}
+	if (alert.forwardedPort) {
+		baseLines.push(`X-Forwarded-Port: ${alert.forwardedPort}`);
+	}
+	if (alert.forwardedServer) {
+		baseLines.push(`X-Forwarded-Server: ${alert.forwardedServer}`);
+	}
 
 	if (alert.secChUa) {
 		baseLines.push(`Sec-CH-UA: ${alert.secChUa}`);
@@ -175,123 +197,73 @@ function formatSecurityAlertMessage(alert: SecurityAlert): string {
 	if (locationParts.length > 0) {
 		baseLines.push(`Location: ${locationParts.join(', ')}`);
 	}
+	if (alert.attributionSource) {
+		baseLines.push(`Attribution Source: ${alert.attributionSource}`);
+	}
+	if (typeof alert.attributionTrusted === 'boolean') {
+		baseLines.push(`Trusted Attribution: ${alert.attributionTrusted ? 'yes' : 'no'}`);
+	}
 
 	return baseLines.join('\n');
 }
 
-function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
-	if (!value) {
-		return undefined;
-	}
-
-	return Array.isArray(value) ? value[0] : value;
-}
-
-function detectBrowser(userAgent: string | undefined): string | undefined {
-	if (!userAgent) {
-		return undefined;
-	}
-
-	if (/edg\//i.test(userAgent)) {
-		return 'Edge';
-	}
-	if (/opr\//i.test(userAgent) || /opera/i.test(userAgent)) {
-		return 'Opera';
-	}
-	if (/chrome\//i.test(userAgent) && !/edg\//i.test(userAgent) && !/opr\//i.test(userAgent)) {
-		return 'Chrome';
-	}
-	if (/firefox\//i.test(userAgent)) {
-		return 'Firefox';
-	}
-	if (/safari\//i.test(userAgent) && !/chrome\//i.test(userAgent)) {
-		return 'Safari';
-	}
-	if (/curl\//i.test(userAgent)) {
-		return 'curl';
-	}
-	if (/python-requests/i.test(userAgent)) {
-		return 'python-requests';
-	}
-
-	return undefined;
-}
-
-function detectOperatingSystem(userAgent: string | undefined, platformHint: string | undefined): string | undefined {
-	const normalizedPlatformHint = platformHint?.replace(/"/g, '');
-	if (normalizedPlatformHint) {
-		return normalizedPlatformHint;
-	}
-
-	if (!userAgent) {
-		return undefined;
-	}
-
-	if (/windows/i.test(userAgent)) {
-		return 'Windows';
-	}
-	if (/android/i.test(userAgent)) {
-		return 'Android';
-	}
-	if (/(iphone|ipad|ios)/i.test(userAgent)) {
-		return 'iOS';
-	}
-	if (/mac os x|macintosh/i.test(userAgent)) {
-		return 'macOS';
-	}
-	if (/linux/i.test(userAgent)) {
-		return 'Linux';
-	}
-
-	return undefined;
-}
-
-function detectDevice(userAgent: string | undefined, mobileHint: string | undefined): string | undefined {
-	if (mobileHint === '?1') {
-		return 'Mobile';
-	}
-	if (mobileHint === '?0') {
-		return 'Desktop';
-	}
-	if (!userAgent) {
-		return undefined;
-	}
-	if (/(tablet|ipad)/i.test(userAgent)) {
-		return 'Tablet';
-	}
-	if (/(mobile|iphone|android)/i.test(userAgent)) {
-		return 'Mobile';
-	}
-
-	return 'Desktop';
-}
-
 export function collectSecurityRequestDetails(req: Request): SecurityRequestDetails {
-	const userAgent = req.get('user-agent') ?? undefined;
-	const secChUaPlatform = req.get('sec-ch-ua-platform') ?? undefined;
-	const secChUaMobile = req.get('sec-ch-ua-mobile') ?? undefined;
+	const fingerprint = collectSecurityFingerprint(req);
 
 	return {
-		ip: extractClientIp(req),
-		userAgent,
-		browser: detectBrowser(userAgent),
-		os: detectOperatingSystem(userAgent, secChUaPlatform),
-		device: detectDevice(userAgent, secChUaMobile),
-		referer: req.get('referer') ?? undefined,
-		origin: req.get('origin') ?? undefined,
-		host: req.get('host') ?? undefined,
-		forwardedFor: normalizeHeaderValue(req.headers['x-forwarded-for']),
-		realIp: req.get('x-real-ip') ?? undefined,
-		forwardedProto: req.get('x-forwarded-proto') ?? undefined,
-		forwardedHost: req.get('x-forwarded-host') ?? undefined,
-		acceptLanguage: req.get('accept-language') ?? undefined,
-		secChUa: req.get('sec-ch-ua') ?? undefined,
-		secChUaPlatform,
-		secChUaMobile,
-		country: req.get('cf-ipcountry') ?? req.get('x-vercel-ip-country') ?? undefined,
-		region: req.get('x-vercel-ip-country-region') ?? undefined,
-		city: req.get('x-vercel-ip-city') ?? undefined,
+		ip: fingerprint.ip,
+		userAgent: fingerprint.userAgent,
+		browser: fingerprint.browserName,
+		browserVersion: fingerprint.browserVersion,
+		os: fingerprint.osName,
+		osVersion: fingerprint.osVersion,
+		device: fingerprint.deviceType,
+		deviceBrand: fingerprint.deviceBrand,
+		deviceModel: fingerprint.deviceModel,
+		referer: fingerprint.referer,
+		origin: fingerprint.origin,
+		host: fingerprint.host,
+		forwardedFor: fingerprint.forwardedFor,
+		realIp: fingerprint.realIp,
+		forwardedProto: fingerprint.forwardedProto,
+		forwardedHost: fingerprint.forwardedHost,
+		forwardedPort: fingerprint.forwardedPort,
+		forwardedServer: fingerprint.forwardedServer,
+		acceptLanguage: fingerprint.acceptLanguage,
+		secChUa: fingerprint.secChUa,
+		secChUaPlatform: fingerprint.secChUaPlatform,
+		secChUaMobile: fingerprint.secChUaMobile,
+		country: fingerprint.country,
+		region: fingerprint.region,
+		city: fingerprint.city,
+		attributionSource: fingerprint.attributionSource,
+		attributionTrusted: fingerprint.attributionTrusted,
 	};
+}
+
+async function handleSuspiciousActivity(
+	req: Request,
+	fingerprint: SecurityFingerprint,
+	input: {
+		kind: 'blocked_path' | 'rate_limit';
+		action: 'blocked' | 'rate_limited';
+		statusCode: number;
+		matchedRule: string;
+		requestCount?: number;
+		windowMs?: number;
+	}
+): Promise<void> {
+	await registerSuspiciousActivity({
+		kind: input.kind,
+		action: input.action,
+		method: req.method,
+		path: req.path,
+		statusCode: input.statusCode,
+		matchedRule: input.matchedRule,
+		requestCount: input.requestCount,
+		windowMs: input.windowMs,
+		fingerprint,
+	});
 }
 
 async function sendSecurityAlert(alert: SecurityAlert): Promise<void> {
@@ -306,7 +278,7 @@ async function sendSecurityAlert(alert: SecurityAlert): Promise<void> {
 
 	const dedupeTtlSeconds = Number(process.env.SECURITY_ALERT_TTL_SECONDS || 900);
 	const alertKey = `security-alert:${alert.kind}:${alert.ip}:${alert.path}`;
-	const alertId = `${alert.kind}:${hashIp(alert.ip)}:${alert.path}`;
+	const alertId = `${alert.kind}:${hashSecurityIp(alert.ip)}:${alert.path}`;
 
 	try {
 		const dedupeResult = await redisClient.set(alertKey, '1', {
@@ -400,10 +372,23 @@ export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next
 
 	logger.warn('Blocked suspicious request path', {
 		path: req.path,
-		ipHash: hashIp(extractClientIp(req)),
+		ipHash: hashSecurityIp(extractClientIp(req)),
 		method: req.method,
 	});
 	const requestDetails = collectSecurityRequestDetails(req);
+	const fingerprint = collectSecurityFingerprint(req);
+	void handleSuspiciousActivity(req, fingerprint, {
+		kind: 'blocked_path',
+		action: 'blocked',
+		statusCode: 403,
+		matchedRule: 'blocked-path',
+	}).catch((error) => {
+		logger.error('Failed to persist blocked-path security activity', {
+			error: error instanceof Error ? error.message : String(error),
+			path: req.path,
+			ipHash: fingerprint.ipHash,
+		});
+	});
 	sendSecurityAlert({
 		kind: 'blocked_path',
 		path: req.path,
@@ -416,6 +401,47 @@ export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next
 		});
 	});
 	res.status(403).type('text/plain').send('Forbidden');
+}
+
+export function activeSecurityBlockMiddleware(req: Request, res: Response, next: NextFunction): void {
+	if (req.method === 'OPTIONS' || req.path === '/health') {
+		next();
+		return;
+	}
+
+	const fingerprint = collectSecurityFingerprint(req);
+	checkActiveSecurityBlock(fingerprint.ip)
+		.then(async ({ blocked, blockId }) => {
+			if (!blocked) {
+				next();
+				return;
+			}
+
+			logger.warn('Blocked request from active security block', {
+				path: req.path,
+				ipHash: fingerprint.ipHash,
+				method: req.method,
+				blockId,
+			});
+			await persistSecurityEvent({
+				kind: 'active_block_denied',
+				action: 'active_block_denied',
+				method: req.method,
+				path: req.path,
+				statusCode: 403,
+				matchedRule: 'active-security-block',
+				blockId,
+				fingerprint,
+			});
+			res.status(403).type('text/plain').send('Forbidden');
+		})
+		.catch((error) => {
+			logger.warn('Active security block check failed open', {
+				error: error instanceof Error ? error.message : String(error),
+				path: req.path,
+			});
+			next();
+		});
 }
 
 export interface RateLimitStore {
@@ -529,7 +555,7 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 
 			if (requestCount > options.maxRequests) {
 				logger.warn('Rate limit exceeded', {
-					ipHash: hashIp(ip),
+					ipHash: hashSecurityIp(ip),
 					path: req.path,
 					method: req.method,
 					requestCount,
@@ -547,8 +573,16 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 					logger.error('Failed to schedule rate-limit security alert', {
 						error: error instanceof Error ? error.message : String(error),
 						path: req.path,
-						ipHash: hashIp(ip),
+						ipHash: hashSecurityIp(ip),
 					});
+				});
+				await handleSuspiciousActivity(req, collectSecurityFingerprint(req), {
+					kind: 'rate_limit',
+					action: 'rate_limited',
+					statusCode: 429,
+					matchedRule: 'api-rate-limit',
+					requestCount,
+					windowMs: options.windowMs,
 				});
 				const remainingMs = Math.max(0, resetAt - Date.now());
 				res.setHeader('Retry-After', Math.max(1, Math.ceil(remainingMs / 1000)));
