@@ -1,0 +1,66 @@
+ALTER TABLE `User`
+ADD COLUMN `role` VARCHAR(20) NOT NULL DEFAULT 'user';
+
+CREATE TABLE `SecurityEvent` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `kind` VARCHAR(40) NOT NULL,
+    `action` VARCHAR(40) NOT NULL,
+    `method` VARCHAR(10) NOT NULL,
+    `path` VARCHAR(255) NOT NULL,
+    `statusCode` INTEGER NULL,
+    `ip` VARCHAR(64) NOT NULL,
+    `ipHash` VARCHAR(64) NOT NULL,
+    `forwardedFor` TEXT NULL,
+    `realIp` VARCHAR(64) NULL,
+    `host` VARCHAR(255) NULL,
+    `origin` VARCHAR(255) NULL,
+    `referer` VARCHAR(500) NULL,
+    `userAgent` TEXT NULL,
+    `browserName` VARCHAR(50) NULL,
+    `browserVersion` VARCHAR(50) NULL,
+    `osName` VARCHAR(50) NULL,
+    `osVersion` VARCHAR(50) NULL,
+    `deviceType` VARCHAR(30) NULL,
+    `deviceBrand` VARCHAR(50) NULL,
+    `deviceModel` VARCHAR(80) NULL,
+    `acceptLanguage` VARCHAR(120) NULL,
+    `country` VARCHAR(10) NULL,
+    `region` VARCHAR(80) NULL,
+    `city` VARCHAR(80) NULL,
+    `asn` VARCHAR(40) NULL,
+    `isp` VARCHAR(120) NULL,
+    `attributionSource` VARCHAR(40) NULL,
+    `attributionTrusted` BOOLEAN NOT NULL DEFAULT false,
+    `matchedRule` VARCHAR(80) NULL,
+    `requestCount` INTEGER NULL,
+    `windowMs` INTEGER NULL,
+    `blockId` INTEGER NULL,
+    `metadataJson` JSON NULL,
+
+    INDEX `SecurityEvent_createdAt_idx`(`createdAt`),
+    INDEX `SecurityEvent_ip_createdAt_idx`(`ip`, `createdAt`),
+    INDEX `SecurityEvent_kind_createdAt_idx`(`kind`, `createdAt`),
+    INDEX `SecurityEvent_action_createdAt_idx`(`action`, `createdAt`),
+    INDEX `SecurityEvent_path_createdAt_idx`(`path`, `createdAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `SecurityBlock` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+    `ip` VARCHAR(64) NOT NULL,
+    `ipHash` VARCHAR(64) NOT NULL,
+    `source` VARCHAR(20) NOT NULL,
+    `reason` VARCHAR(255) NULL,
+    `active` BOOLEAN NOT NULL DEFAULT true,
+    `expiresAt` DATETIME(3) NULL,
+    `removedAt` DATETIME(3) NULL,
+    `removedBy` INTEGER NULL,
+    `metadataJson` JSON NULL,
+
+    INDEX `SecurityBlock_ip_active_idx`(`ip`, `active`),
+    INDEX `SecurityBlock_active_expiresAt_idx`(`active`, `expiresAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

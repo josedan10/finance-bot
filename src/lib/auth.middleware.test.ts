@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { requireAuth } from './auth.middleware';
+import { requireAuth, requireRole } from './auth.middleware';
 import { firebaseAdmin } from './firebase';
 import { PrismaClient } from '@prisma/client';
 import OnboardingService from '../services/onboarding.service';
@@ -90,9 +90,42 @@ describe('Auth Middleware', () => {
 
     await requireAuth(req as Request, res as Response, next);
 
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        firebaseId: 'new-uid',
+        email: 'new@example.com',
+        role: 'user',
+      },
+    });
     expect(prisma.user.create).toHaveBeenCalled();
     expect(OnboardingService.setupUserDefaultCategories).toHaveBeenCalledWith(2);
     expect(req.user).toEqual(mockCreatedUser);
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('should reject role-protected access when user role is missing', () => {
+    req.user = { id: 1, firebaseId: 'uid', email: 'test@example.com' } as Request['user'];
+
+    requireRole(['dev'])(req as Request, res as Response, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403, message: 'Unauthorized: Role not found' }));
+  });
+
+  it('should reject role-protected access when user role is not allowed', () => {
+    req.user = { id: 1, firebaseId: 'uid', email: 'test@example.com', role: 'user' } as Request['user'];
+
+    requireRole(['dev'])(req as Request, res as Response, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 403, message: 'Forbidden: You do not have permission to perform this action' })
+    );
+  });
+
+  it('should allow role-protected access when user role is allowed', () => {
+    req.user = { id: 1, firebaseId: 'uid', email: 'test@example.com', role: 'dev' } as Request['user'];
+
+    requireRole(['dev'])(req as Request, res as Response, next);
+
     expect(next).toHaveBeenCalledWith();
   });
 });

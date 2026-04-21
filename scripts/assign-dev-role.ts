@@ -197,7 +197,7 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-	void main()
+	main()
 		.catch((error: unknown) => {
 			console.error('[assign-dev-role] Failed:', error);
 			printUsage();
