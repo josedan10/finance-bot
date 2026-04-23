@@ -68,7 +68,6 @@ export API_BASE="https://your-staging-api.example.com"
 ```
 
 Set `STAGING_ID_TOKEN` using `read -rs` (or the space-prefixed `export` pattern above), then continue.
-
 - [ ] **Authorized dev** — expect `200` and JSON with `totals`:
 
   ```bash

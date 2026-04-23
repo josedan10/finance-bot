@@ -15,6 +15,8 @@ import {
 	createRateLimitMiddleware,
 	securityHeadersMiddleware,
 } from './src/lib/request-security';
+import { collectSecurityFingerprint } from './src/lib/security-fingerprint';
+import { persistNotFoundSecurityEvent } from './src/lib/security-path-blocks';
 
 const app = express();
 const runtimePublicDir = path.resolve(process.cwd(), 'public');
@@ -47,6 +49,20 @@ app.use(apiRateLimitMiddleware);
 app.use('/', indexRouter);
 
 app.use('*', (req: Request, res: Response, next: NextFunction) => {
+	const fingerprint = collectSecurityFingerprint(req);
+	void persistNotFoundSecurityEvent({
+		method: req.method,
+		path: req.path,
+		statusCode: 404,
+		fingerprint,
+	}).catch((error) => {
+		logger.error('Failed to persist not-found security event', {
+			error: error instanceof Error ? error.message : String(error),
+			path: req.path,
+			ipHash: fingerprint.ipHash,
+		});
+	});
+
 	next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 

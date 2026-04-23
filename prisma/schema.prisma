@@ -335,6 +335,23 @@ model SecurityBlock {
   @@index([active, expiresAt])
 }
 
+model SecurityPathBlock {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  path         String   @db.VarChar(255)
+  normalizedPath String @db.VarChar(255)
+  matchType    String   @default("exact") @db.VarChar(20)
+  reason       String?  @db.VarChar(255)
+  active       Boolean  @default(true)
+  removedAt    DateTime?
+  removedBy    Int?
+  metadataJson Json?
+
+  @@unique([normalizedPath, matchType])
+  @@index([active, updatedAt])
+}
+
 model AISettings {
   id         Int        @id @default(autoincrement())
   userId     Int        @unique

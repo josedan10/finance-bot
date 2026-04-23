@@ -8,6 +8,7 @@ import {
 	persistSecurityEvent,
 	registerSuspiciousActivity,
 } from './security-events';
+import { matchActiveSecurityPathBlock } from './security-path-blocks';
 import { collectSecurityFingerprint, extractClientIp, hashSecurityIp, type SecurityFingerprint } from './security-fingerprint';
 
 export const BLOCKED_PATH_PATTERNS = [
@@ -63,6 +64,7 @@ type SecurityAlert = {
 	forwardedPort?: string;
 	forwardedServer?: string;
 	acceptLanguage?: string;
+	timezone?: string;
 	secChUa?: string;
 	secChUaPlatform?: string;
 	secChUaMobile?: string;
@@ -145,6 +147,9 @@ function formatSecurityAlertMessage(alert: SecurityAlert): string {
 
 	if (alert.acceptLanguage) {
 		baseLines.push(`Accept-Language: ${alert.acceptLanguage}`);
+	}
+	if (alert.timezone) {
+		baseLines.push(`Timezone: ${alert.timezone}`);
 	}
 
 	if (alert.referer) {
@@ -230,6 +235,7 @@ export function collectSecurityRequestDetails(req: Request): SecurityRequestDeta
 		forwardedPort: fingerprint.forwardedPort,
 		forwardedServer: fingerprint.forwardedServer,
 		acceptLanguage: fingerprint.acceptLanguage,
+		timezone: fingerprint.timezone,
 		secChUa: fingerprint.secChUa,
 		secChUaPlatform: fingerprint.secChUaPlatform,
 		secChUaMobile: fingerprint.secChUaMobile,
@@ -365,42 +371,62 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
 }
 
 export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next: NextFunction): void {
-	if (!isBlockedPath(req.path)) {
-		next();
+	const blockRequest = (matchedRule: string): void => {
+		logger.warn('Blocked suspicious request path', {
+			path: req.path,
+			ipHash: hashSecurityIp(extractClientIp(req)),
+			method: req.method,
+			matchedRule,
+		});
+		const requestDetails = collectSecurityRequestDetails(req);
+		const fingerprint = collectSecurityFingerprint(req);
+		void handleSuspiciousActivity(req, fingerprint, {
+			kind: 'blocked_path',
+			action: 'blocked',
+			statusCode: 403,
+			matchedRule,
+		}).catch((error) => {
+			logger.error('Failed to persist blocked-path security activity', {
+				error: error instanceof Error ? error.message : String(error),
+				path: req.path,
+				ipHash: fingerprint.ipHash,
+			});
+		});
+		sendSecurityAlert({
+			kind: 'blocked_path',
+			path: req.path,
+			method: req.method,
+			...requestDetails,
+		}).catch((error) => {
+			logger.error('Failed to schedule blocked-path security alert', {
+				error: error instanceof Error ? error.message : String(error),
+				path: req.path,
+			});
+		});
+		res.status(403).type('text/plain').send('Forbidden');
+	};
+
+	if (isBlockedPath(req.path)) {
+		blockRequest('blocked-path-pattern');
 		return;
 	}
 
-	logger.warn('Blocked suspicious request path', {
-		path: req.path,
-		ipHash: hashSecurityIp(extractClientIp(req)),
-		method: req.method,
-	});
-	const requestDetails = collectSecurityRequestDetails(req);
-	const fingerprint = collectSecurityFingerprint(req);
-	void handleSuspiciousActivity(req, fingerprint, {
-		kind: 'blocked_path',
-		action: 'blocked',
-		statusCode: 403,
-		matchedRule: 'blocked-path',
-	}).catch((error) => {
-		logger.error('Failed to persist blocked-path security activity', {
-			error: error instanceof Error ? error.message : String(error),
-			path: req.path,
-			ipHash: fingerprint.ipHash,
+	matchActiveSecurityPathBlock(req.path)
+		.then((match) => {
+			if (!match.blocked) {
+				next();
+				return;
+			}
+
+			blockRequest(`manual-path-block:${match.pathBlockId}`);
+		})
+		.catch((error) => {
+			logger.warn('Manual blocked path lookup failed open', {
+				error: error instanceof Error ? error.message : String(error),
+				path: req.path,
+			});
+			next();
 		});
-	});
-	sendSecurityAlert({
-		kind: 'blocked_path',
-		path: req.path,
-		method: req.method,
-		...requestDetails,
-	}).catch((error) => {
-		logger.error('Failed to schedule blocked-path security alert', {
-			error: error instanceof Error ? error.message : String(error),
-			path: req.path,
-		});
-	});
-	res.status(403).type('text/plain').send('Forbidden');
 }
 
 export function activeSecurityBlockMiddleware(req: Request, res: Response, next: NextFunction): void {

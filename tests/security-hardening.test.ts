@@ -83,6 +83,7 @@ describe('Security hardening', () => {
 					'sec-ch-ua-mobile': '?1',
 					'sec-ch-ua': '"Chromium";v="124", "Not.A/Brand";v="8"',
 					'accept-language': 'en-US,en;q=0.9',
+					'cf-timezone': 'America/Los_Angeles',
 					referer: 'https://evil.example/login',
 					origin: 'https://evil.example',
 					host: 'api.zentra-app.pro',
@@ -107,6 +108,7 @@ describe('Security hardening', () => {
 		expect(details.country).toBe('US');
 		expect(details.region).toBe('CA');
 		expect(details.city).toBe('San Francisco');
+		expect(details.timezone).toBe('America/Los_Angeles');
 		expect(details.referer).toBe('https://evil.example/login');
 		expect(details.forwardedFor).toBe('198.51.100.50, 10.0.0.1');
 		expect(details.forwardedPort).toBeUndefined();

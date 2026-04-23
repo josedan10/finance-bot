@@ -7,6 +7,7 @@ import { hashSecurityIp, type SecurityFingerprint } from './security-fingerprint
 
 export type SecurityEventKind =
 	| 'blocked_path'
+	| 'not_found'
 	| 'rate_limit'
 	| 'auto_block_created'
 	| 'active_block_denied'
@@ -15,6 +16,7 @@ export type SecurityEventKind =
 
 export type SecurityEventAction =
 	| 'blocked'
+	| 'not_found'
 	| 'rate_limited'
 	| 'auto_block_created'
 	| 'active_block_denied'
@@ -58,6 +60,7 @@ export type SecurityEventRecord = {
 	deviceBrand?: string;
 	deviceModel?: string;
 	acceptLanguage?: string;
+	timezone?: string;
 	country?: string;
 	region?: string;
 	city?: string;
@@ -232,9 +235,22 @@ function fingerprintMetadata(fingerprint: SecurityFingerprint): Prisma.InputJson
 		secChUa: fingerprint.secChUa ?? null,
 		secChUaPlatform: fingerprint.secChUaPlatform ?? null,
 		secChUaMobile: fingerprint.secChUaMobile ?? null,
+		timezone: fingerprint.timezone ?? null,
 		deviceBrand: fingerprint.deviceBrand ?? null,
 		deviceModel: fingerprint.deviceModel ?? null,
 	} as Prisma.InputJsonValue;
+}
+
+function extractMetadataString(
+	metadata: Prisma.JsonValue | null | undefined,
+	key: string
+): string | undefined {
+	if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+		return undefined;
+	}
+
+	const value = (metadata as Record<string, Prisma.JsonValue>)[key];
+	return typeof value === 'string' ? value : undefined;
 }
 
 function buildSecurityEventRecord(input: PersistSecurityEventInput, id: number, createdAt = new Date()): SecurityEventRecord {
@@ -262,6 +278,7 @@ function buildSecurityEventRecord(input: PersistSecurityEventInput, id: number, 
 		deviceBrand: input.fingerprint.deviceBrand,
 		deviceModel: input.fingerprint.deviceModel,
 		acceptLanguage: input.fingerprint.acceptLanguage,
+		timezone: input.fingerprint.timezone,
 		country: input.fingerprint.country,
 		region: input.fingerprint.region,
 		city: input.fingerprint.city,
@@ -758,6 +775,7 @@ export async function listSecurityEvents(filters: SecurityEventQueryInput = {}):
 			deviceBrand: event.deviceBrand ?? undefined,
 			deviceModel: event.deviceModel ?? undefined,
 			acceptLanguage: event.acceptLanguage ?? undefined,
+			timezone: extractMetadataString(event.metadataJson, 'timezone'),
 			country: event.country ?? undefined,
 			region: event.region ?? undefined,
 			city: event.city ?? undefined,
@@ -892,6 +910,7 @@ export async function getSecuritySummary(input: SecuritySummaryInput = {}): Prom
 			deviceBrand: event.deviceBrand ?? undefined,
 			deviceModel: event.deviceModel ?? undefined,
 			acceptLanguage: event.acceptLanguage ?? undefined,
+			timezone: extractMetadataString(event.metadataJson, 'timezone'),
 			country: event.country ?? undefined,
 			region: event.region ?? undefined,
 			city: event.city ?? undefined,

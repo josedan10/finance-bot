@@ -27,6 +27,11 @@ import {
 	listSecurityEvents,
 	removeSecurityBlock,
 } from '../src/lib/security-events';
+import {
+	createSecurityPathBlock,
+	listSecurityPathBlocks,
+	removeSecurityPathBlock,
+} from '../src/lib/security-path-blocks';
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
@@ -345,6 +350,91 @@ router.delete(
 		} catch (error) {
 			logger.error('Failed to remove security block', { error, userId: req.user.id, blockId });
 			return res.status(500).json({ message: 'Failed to remove security block' });
+		}
+	}
+);
+
+router.get(
+	'/api/security/path-blocks',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const active = parseOptionalBooleanQuery(req.query.active);
+
+		if (active === null) {
+			return res.status(400).json({ message: 'Invalid active filter' });
+		}
+
+		try {
+			const blocks = await listSecurityPathBlocks({
+				active,
+				path: typeof req.query.path === 'string' ? req.query.path : undefined,
+				page: parsePositiveIntegerQuery(req.query.page, 1),
+				pageSize: parsePositiveIntegerQuery(req.query.pageSize, 25),
+			});
+
+			return res.status(200).json(blocks);
+		} catch (error) {
+			logger.error('Failed to fetch security path blocks', { error, userId: req.user.id });
+			return res.status(500).json({ message: 'Failed to fetch security path blocks' });
+		}
+	}
+);
+
+router.post(
+	'/api/security/path-blocks',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const path = typeof req.body?.path === 'string' ? req.body.path.trim() : '';
+		const matchType = typeof req.body?.matchType === 'string' ? req.body.matchType.trim().toLowerCase() : 'exact';
+		const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+		if (!path) {
+			return res.status(400).json({ message: 'path is required' });
+		}
+		if (matchType !== 'exact' && matchType !== 'prefix') {
+			return res.status(400).json({ message: 'matchType must be exact or prefix when provided' });
+		}
+
+		try {
+			const block = await createSecurityPathBlock({
+				path,
+				matchType,
+				reason: reason || undefined,
+				actorUserId: req.user.id,
+			});
+
+			return res.status(201).json(block);
+		} catch (error) {
+			logger.error('Failed to create security path block', { error, userId: req.user.id, path });
+			return res.status(500).json({ message: 'Failed to create security path block' });
+		}
+	}
+);
+
+router.delete(
+	'/api/security/path-blocks/:id',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const blockId = Number.parseInt(req.params.id, 10);
+
+		if (!Number.isFinite(blockId) || blockId <= 0) {
+			return res.status(400).json({ message: 'Invalid security path block id' });
+		}
+
+		try {
+			const removedBlock = await removeSecurityPathBlock(blockId, req.user.id);
+
+			if (!removedBlock) {
+				return res.status(404).json({ message: 'Security path block not found' });
+			}
+
+			return res.status(200).json(removedBlock);
+		} catch (error) {
+			logger.error('Failed to remove security path block', { error, userId: req.user.id, blockId });
+			return res.status(500).json({ message: 'Failed to remove security path block' });
 		}
 	}
 );

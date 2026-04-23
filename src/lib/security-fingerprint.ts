@@ -22,6 +22,7 @@ export type SecurityFingerprint = {
 	forwardedPort?: string;
 	forwardedServer?: string;
 	acceptLanguage?: string;
+	timezone?: string;
 	secChUa?: string;
 	secChUaPlatform?: string;
 	secChUaMobile?: string;
@@ -210,6 +211,7 @@ export function collectSecurityFingerprint(req: Request): SecurityFingerprint {
 		forwardedPort: req.get('x-forwarded-port') ?? undefined,
 		forwardedServer: req.get('x-forwarded-server') ?? undefined,
 		acceptLanguage: req.get('accept-language') ?? undefined,
+		timezone: req.get('cf-timezone') ?? req.get('x-vercel-ip-timezone') ?? req.get('x-timezone') ?? undefined,
 		secChUa: req.get('sec-ch-ua') ?? undefined,
 		secChUaPlatform,
 		secChUaMobile,
