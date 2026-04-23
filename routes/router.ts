@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import { TelegramRouter as telegramRouter } from './telegram';
 import { AIAssistantRouter as aiAssistantRouter } from './ai-assistant';
-import { requireAuth } from '../src/lib/auth.middleware';
+import { requireAuth, requireRole } from '../src/lib/auth.middleware';
 import { firebaseAdmin } from '../src/lib/firebase';
 import * as CategoryController from '../controllers/categories.controller';
 import * as PaymentMethodController from '../controllers/paymentMethods.controller';
@@ -19,9 +19,23 @@ import {
 import { BaseTransactions, mapTransactionType } from '../modules/base-transactions/base-transactions.module';
 import { areSentryTestEndpointsEnabled } from '../src/lib/sentry-test';
 import { captureException, flushSentry, isSentryEnabled } from '../src/lib/sentry';
+import { getSecurityDashboardAllowedRoles } from '../src/lib/security-access';
+import {
+	createManualSecurityBlock,
+	getSecuritySummary,
+	listSecurityBlocks,
+	listSecurityEvents,
+	removeSecurityBlock,
+} from '../src/lib/security-events';
+import {
+	createSecurityPathBlock,
+	listSecurityPathBlocks,
+	removeSecurityPathBlock,
+} from '../src/lib/security-path-blocks';
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
+const securityDashboardAllowedRoles = getSecurityDashboardAllowedRoles();
 
 function normalizeTransactionStatus(status?: string): string {
 	return status?.trim().toLowerCase() ?? '';
@@ -29,6 +43,40 @@ function normalizeTransactionStatus(status?: string): string {
 
 function isIgnoredTransactionStatus(status?: string): boolean {
 	return ignoredTransactionStatuses.has(normalizeTransactionStatus(status));
+}
+
+function parseOptionalDateQuery(value: unknown): Date | undefined | null {
+	if (typeof value !== 'string' || !value.trim()) {
+		return undefined;
+	}
+
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parsePositiveIntegerQuery(value: unknown, fallback: number): number {
+	if (typeof value !== 'string' || !value.trim()) {
+		return fallback;
+	}
+
+	const parsed = Number.parseInt(value, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseOptionalBooleanQuery(value: unknown): boolean | undefined | null {
+	if (typeof value !== 'string' || !value.trim()) {
+		return undefined;
+	}
+
+	const normalized = value.trim().toLowerCase();
+	if (normalized === 'true') {
+		return true;
+	}
+	if (normalized === 'false') {
+		return false;
+	}
+
+	return null;
 }
 
 router.use((req: Request, res: Response, next) => {
@@ -127,7 +175,7 @@ router.post('/api/auth/signup', requireAuth, async (req: Request, res: Response)
 			user: {
 				id: user.id,
 				email: user.email,
-				role: user.role,
+				role: user.role || 'user',
 				firebaseId: user.firebaseId,
 			}
 		});
@@ -145,11 +193,251 @@ router.get('/api/auth/me', requireAuth, async (req: Request, res: Response) => {
 		user: {
 			id: req.user.id,
 			email: req.user.email,
-			role: req.user.role,
+			role: req.user.role || 'user',
 			firebaseId: req.user.firebaseId,
 		}
 	});
 });
+
+// ============================================
+// Security Monitoring API
+// ============================================
+
+router.get(
+	'/api/security/summary',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const from = parseOptionalDateQuery(req.query.from);
+		const to = parseOptionalDateQuery(req.query.to);
+
+		if (from === null || to === null) {
+			return res.status(400).json({ message: 'Invalid from/to date range' });
+		}
+
+		if (from && to && from > to) {
+			return res.status(400).json({ message: '`from` must be before `to`' });
+		}
+
+		try {
+			const summary = await getSecuritySummary({ from, to });
+			return res.status(200).json(summary);
+		} catch (error) {
+			logger.error('Failed to fetch security summary', { error, userId: req.user.id });
+			return res.status(500).json({ message: 'Failed to fetch security summary' });
+		}
+	}
+);
+
+router.get(
+	'/api/security/events',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const from = parseOptionalDateQuery(req.query.from);
+		const to = parseOptionalDateQuery(req.query.to);
+
+		if (from === null || to === null) {
+			return res.status(400).json({ message: 'Invalid from/to date range' });
+		}
+
+		if (from && to && from > to) {
+			return res.status(400).json({ message: '`from` must be before `to`' });
+		}
+
+		try {
+			const events = await listSecurityEvents({
+				from,
+				to,
+				path: typeof req.query.path === 'string' ? req.query.path : undefined,
+				action: typeof req.query.action === 'string' ? req.query.action : undefined,
+				ip: typeof req.query.ip === 'string' ? req.query.ip : undefined,
+				page: parsePositiveIntegerQuery(req.query.page, 1),
+				pageSize: parsePositiveIntegerQuery(req.query.pageSize, 25),
+			});
+
+			return res.status(200).json(events);
+		} catch (error) {
+			logger.error('Failed to fetch security events', { error, userId: req.user.id });
+			return res.status(500).json({ message: 'Failed to fetch security events' });
+		}
+	}
+);
+
+router.get(
+	'/api/security/blocks',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const active = parseOptionalBooleanQuery(req.query.active);
+
+		if (active === null) {
+			return res.status(400).json({ message: 'Invalid active filter' });
+		}
+
+		try {
+			const blocks = await listSecurityBlocks({
+				active,
+				ip: typeof req.query.ip === 'string' ? req.query.ip : undefined,
+				page: parsePositiveIntegerQuery(req.query.page, 1),
+				pageSize: parsePositiveIntegerQuery(req.query.pageSize, 25),
+			});
+
+			return res.status(200).json(blocks);
+		} catch (error) {
+			logger.error('Failed to fetch security blocks', { error, userId: req.user.id });
+			return res.status(500).json({ message: 'Failed to fetch security blocks' });
+		}
+	}
+);
+
+router.post(
+	'/api/security/blocks',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const ip = typeof req.body?.ip === 'string' ? req.body.ip.trim() : '';
+		const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+		const rawExpiresInMinutes = req.body?.expiresInMinutes;
+		const expiresInMinutes =
+			rawExpiresInMinutes === undefined || rawExpiresInMinutes === null || rawExpiresInMinutes === ''
+				? undefined
+				: Number(rawExpiresInMinutes);
+
+		if (!ip) {
+			return res.status(400).json({ message: 'ip is required' });
+		}
+
+		if (expiresInMinutes !== undefined && (!Number.isFinite(expiresInMinutes) || expiresInMinutes <= 0)) {
+			return res.status(400).json({ message: 'expiresInMinutes must be a positive number when provided' });
+		}
+
+		try {
+			const block = await createManualSecurityBlock({
+				ip,
+				reason: reason || undefined,
+				expiresInMinutes,
+				actorUserId: req.user.id,
+			});
+
+			return res.status(201).json(block);
+		} catch (error) {
+			logger.error('Failed to create manual security block', { error, userId: req.user.id, ip });
+			return res.status(500).json({ message: 'Failed to create manual security block' });
+		}
+	}
+);
+
+router.delete(
+	'/api/security/blocks/:id',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const blockId = Number.parseInt(req.params.id, 10);
+
+		if (!Number.isFinite(blockId) || blockId <= 0) {
+			return res.status(400).json({ message: 'Invalid security block id' });
+		}
+
+		try {
+			const removedBlock = await removeSecurityBlock(blockId, req.user.id);
+
+			if (!removedBlock) {
+				return res.status(404).json({ message: 'Security block not found' });
+			}
+
+			return res.status(200).json(removedBlock);
+		} catch (error) {
+			logger.error('Failed to remove security block', { error, userId: req.user.id, blockId });
+			return res.status(500).json({ message: 'Failed to remove security block' });
+		}
+	}
+);
+
+router.get(
+	'/api/security/path-blocks',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const active = parseOptionalBooleanQuery(req.query.active);
+
+		if (active === null) {
+			return res.status(400).json({ message: 'Invalid active filter' });
+		}
+
+		try {
+			const blocks = await listSecurityPathBlocks({
+				active,
+				path: typeof req.query.path === 'string' ? req.query.path : undefined,
+				page: parsePositiveIntegerQuery(req.query.page, 1),
+				pageSize: parsePositiveIntegerQuery(req.query.pageSize, 25),
+			});
+
+			return res.status(200).json(blocks);
+		} catch (error) {
+			logger.error('Failed to fetch security path blocks', { error, userId: req.user.id });
+			return res.status(500).json({ message: 'Failed to fetch security path blocks' });
+		}
+	}
+);
+
+router.post(
+	'/api/security/path-blocks',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const path = typeof req.body?.path === 'string' ? req.body.path.trim() : '';
+		const matchType = typeof req.body?.matchType === 'string' ? req.body.matchType.trim().toLowerCase() : 'exact';
+		const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+		if (!path) {
+			return res.status(400).json({ message: 'path is required' });
+		}
+		if (matchType !== 'exact' && matchType !== 'prefix') {
+			return res.status(400).json({ message: 'matchType must be exact or prefix when provided' });
+		}
+
+		try {
+			const block = await createSecurityPathBlock({
+				path,
+				matchType,
+				reason: reason || undefined,
+				actorUserId: req.user.id,
+			});
+
+			return res.status(201).json(block);
+		} catch (error) {
+			logger.error('Failed to create security path block', { error, userId: req.user.id, path });
+			return res.status(500).json({ message: 'Failed to create security path block' });
+		}
+	}
+);
+
+router.delete(
+	'/api/security/path-blocks/:id',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const blockId = Number.parseInt(req.params.id, 10);
+
+		if (!Number.isFinite(blockId) || blockId <= 0) {
+			return res.status(400).json({ message: 'Invalid security path block id' });
+		}
+
+		try {
+			const removedBlock = await removeSecurityPathBlock(blockId, req.user.id);
+
+			if (!removedBlock) {
+				return res.status(404).json({ message: 'Security path block not found' });
+			}
+
+			return res.status(200).json(removedBlock);
+		} catch (error) {
+			logger.error('Failed to remove security path block', { error, userId: req.user.id, blockId });
+			return res.status(500).json({ message: 'Failed to remove security path block' });
+		}
+	}
+);
 
 /**
  * CLEANUP ENDPOINT FOR E2E TESTS

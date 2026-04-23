@@ -1,11 +1,24 @@
 import request from 'supertest';
-import { describe, expect, it } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 import app from '../app';
 import { collectSecurityRequestDetails, resetRateLimitStoreForTesting } from '../src/lib/request-security';
+import { getRecordedSecurityEventsForTesting, resetSecurityStateForTesting } from '../src/lib/security-events';
 
 describe('Security hardening', () => {
+	beforeEach(() => {
+		resetRateLimitStoreForTesting();
+		resetSecurityStateForTesting();
+	});
+
 	it('blocks suspicious scanner paths immediately', async () => {
 		const response = await request(app).get('/.env').set('X-Forwarded-For', '198.51.100.10');
+
+		expect(response.status).toBe(403);
+		expect(response.text).toBe('Forbidden');
+	});
+
+	it('blocks appsettings probes immediately', async () => {
+		const response = await request(app).get('/appsettings.json').set('X-Forwarded-For', '198.51.100.11');
 
 		expect(response.status).toBe(403);
 		expect(response.text).toBe('Forbidden');
@@ -22,8 +35,6 @@ describe('Security hardening', () => {
 	});
 
 	it('rate limits burst traffic from the same IP', async () => {
-		resetRateLimitStoreForTesting();
-
 		const ip = '203.0.113.50';
 		let finalResponse = await request(app).get('/').set('X-Forwarded-For', ip);
 
@@ -37,6 +48,24 @@ describe('Security hardening', () => {
 			message: 'Too many requests, please try again later.',
 		});
 		expect(finalResponse.headers['retry-after']).toBe('1');
+	});
+
+	it('creates in-memory security events and auto-blocks after repeated suspicious probes', async () => {
+		const ip = '198.51.100.77';
+
+		await request(app).get('/.env').set('X-Forwarded-For', ip);
+		await request(app).get('/appsettings.json').set('X-Forwarded-For', ip);
+		await request(app).get('/.git/config').set('X-Forwarded-For', ip);
+
+		const blockedResponse = await request(app).get('/').set('X-Forwarded-For', ip);
+
+		expect(blockedResponse.status).toBe(403);
+		expect(blockedResponse.text).toBe('Forbidden');
+
+		const events = getRecordedSecurityEventsForTesting();
+		expect(events.some((event) => event.kind === 'blocked_path' && event.path === '/appsettings.json')).toBe(true);
+		expect(events.some((event) => event.kind === 'auto_block_created')).toBe(true);
+		expect(events.some((event) => event.kind === 'active_block_denied' && event.path === '/')).toBe(true);
 	});
 
 	it('collects enriched attacker context from headers', () => {
@@ -54,6 +83,7 @@ describe('Security hardening', () => {
 					'sec-ch-ua-mobile': '?1',
 					'sec-ch-ua': '"Chromium";v="124", "Not.A/Brand";v="8"',
 					'accept-language': 'en-US,en;q=0.9',
+					'cf-timezone': 'America/Los_Angeles',
 					referer: 'https://evil.example/login',
 					origin: 'https://evil.example',
 					host: 'api.zentra-app.pro',
@@ -71,12 +101,18 @@ describe('Security hardening', () => {
 
 		expect(details.ip).toBe('203.0.113.99');
 		expect(details.browser).toBe('Chrome');
+		expect(details.browserVersion).toBe('124.0.0.0');
 		expect(details.os).toBe('Android');
+		expect(details.osVersion).toBe('14');
 		expect(details.device).toBe('Mobile');
 		expect(details.country).toBe('US');
 		expect(details.region).toBe('CA');
 		expect(details.city).toBe('San Francisco');
+		expect(details.timezone).toBe('America/Los_Angeles');
 		expect(details.referer).toBe('https://evil.example/login');
 		expect(details.forwardedFor).toBe('198.51.100.50, 10.0.0.1');
+		expect(details.forwardedPort).toBeUndefined();
+		expect(details.attributionSource).toBe('x-forwarded-for');
+		expect(details.attributionTrusted).toBe(true);
 	});
 });

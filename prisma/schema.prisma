@@ -11,6 +11,7 @@ model User {
   id                      Int                       @id @default(autoincrement())
   firebaseId              String                    @unique @db.VarChar(128)
   email                   String                    @unique @db.VarChar(255)
+  role                    String                    @default("user") @db.VarChar(20)
   createdAt               DateTime                  @default(now())
   aiSettings              AISettings?
   dashboardBudgetPreferences Json?
@@ -270,6 +271,85 @@ model PushSubscription {
 
   @@index([userId])
   @@unique([userId, endpoint(length: 191)])
+}
+
+model SecurityEvent {
+  id                 Int      @id @default(autoincrement())
+  createdAt          DateTime @default(now())
+  kind               String   @db.VarChar(40)
+  action             String   @db.VarChar(40)
+  method             String   @db.VarChar(10)
+  path               String   @db.VarChar(255)
+  statusCode         Int?
+  ip                 String   @db.VarChar(64)
+  ipHash             String   @db.VarChar(64)
+  forwardedFor       String?  @db.Text
+  realIp             String?  @db.VarChar(64)
+  host               String?  @db.VarChar(255)
+  origin             String?  @db.VarChar(255)
+  referer            String?  @db.VarChar(500)
+  userAgent          String?  @db.Text
+  browserName        String?  @db.VarChar(50)
+  browserVersion     String?  @db.VarChar(50)
+  osName             String?  @db.VarChar(50)
+  osVersion          String?  @db.VarChar(50)
+  deviceType         String?  @db.VarChar(30)
+  deviceBrand        String?  @db.VarChar(50)
+  deviceModel        String?  @db.VarChar(80)
+  acceptLanguage     String?  @db.VarChar(120)
+  country            String?  @db.VarChar(10)
+  region             String?  @db.VarChar(80)
+  city               String?  @db.VarChar(80)
+  asn                String?  @db.VarChar(40)
+  isp                String?  @db.VarChar(120)
+  attributionSource  String?  @db.VarChar(40)
+  attributionTrusted Boolean  @default(false)
+  matchedRule        String?  @db.VarChar(80)
+  requestCount       Int?
+  windowMs           Int?
+  blockId            Int?
+  metadataJson       Json?
+
+  @@index([createdAt])
+  @@index([ip, createdAt])
+  @@index([kind, createdAt])
+  @@index([action, createdAt])
+  @@index([path, createdAt])
+}
+
+model SecurityBlock {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  ip           String   @db.VarChar(64)
+  ipHash       String   @db.VarChar(64)
+  source       String   @db.VarChar(20)
+  reason       String?  @db.VarChar(255)
+  active       Boolean  @default(true)
+  expiresAt    DateTime?
+  removedAt    DateTime?
+  removedBy    Int?
+  metadataJson Json?
+
+  @@index([ip, active])
+  @@index([active, expiresAt])
+}
+
+model SecurityPathBlock {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  path         String   @db.VarChar(255)
+  normalizedPath String @db.VarChar(255)
+  matchType    String   @default("exact") @db.VarChar(20)
+  reason       String?  @db.VarChar(255)
+  active       Boolean  @default(true)
+  removedAt    DateTime?
+  removedBy    Int?
+  metadataJson Json?
+
+  @@unique([normalizedPath, matchType])
+  @@index([active, updatedAt])
 }
 
 model AISettings {
