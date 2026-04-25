@@ -16,6 +16,9 @@ jest.mock('../src/lib/auth.middleware', () => ({
 		};
 		next();
 	},
+	requireRole: (_roles: string[]) => (_req: Request, _res: Response, next: NextFunction) => {
+		next();
+	},
 }));
 
 jest.mock('../controllers/ai-assistant/ai-assistant.controller', () => ({
