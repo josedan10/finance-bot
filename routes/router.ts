@@ -367,11 +367,13 @@ router.delete(
 
 		try {
 			const result = await removeActiveSecurityBlocksByIp(ip, req.user.id);
-			if (result.removedCount === 0) {
-				return res.status(404).json({ message: 'No active security blocks found for this IP' });
-			}
-
-			return res.status(200).json(result);
+			return res.status(200).json({
+				...result,
+				message:
+					result.removedCount > 0
+						? `Removed ${result.removedCount} active security block(s) for IP ${ip}`
+						: `No active security blocks were found for IP ${ip}`,
+			});
 		} catch (error) {
 			logger.error('Failed to remove security blocks by ip', { error, userId: req.user.id, ip });
 			return res.status(500).json({ message: 'Failed to remove security blocks by ip' });

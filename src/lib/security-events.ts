@@ -135,6 +135,8 @@ export type SecuritySummary = {
 	topOrigins: Array<{ ip: string; ipHash: string; count: number }>;
 };
 
+const SUSPICIOUS_PATH_SUMMARY_KINDS: SecurityEventKind[] = ['blocked_path', 'not_found', 'rate_limit'];
+
 type SuspiciousActivityResult = {
 	requestCount: number;
 	autoBlockCreated: boolean;
@@ -1032,7 +1034,9 @@ export async function getSecuritySummary(input: SecuritySummaryInput = {}): Prom
 	const originCounts = new Map<string, { ip: string; ipHash: string; count: number }>();
 
 	for (const event of events) {
-		pathCounts.set(event.path, (pathCounts.get(event.path) ?? 0) + 1);
+		if (SUSPICIOUS_PATH_SUMMARY_KINDS.includes(event.kind)) {
+			pathCounts.set(event.path, (pathCounts.get(event.path) ?? 0) + 1);
+		}
 
 		const existingOrigin = originCounts.get(event.ip);
 		if (existingOrigin) {
