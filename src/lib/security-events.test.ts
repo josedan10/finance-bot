@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test } from '@jest/globals';
 import {
 	checkActiveSecurityBlock,
 	getRecordedSecurityEventsForTesting,
+	getSecuritySummary,
+	persistSecurityEvent,
 	listSecurityBlocks,
 	registerSuspiciousActivity,
 	resetSecurityStateForTesting,
@@ -66,5 +68,30 @@ describe('security-events', () => {
 
 		const blocks = await listSecurityBlocks({ active: true });
 		expect(blocks.items[0]?.relatedAuthenticatedUserEmail).toBe('blocked-user@zentra.local');
+	});
+
+	test('excludes active block denials from top suspicious paths summary', async () => {
+		await persistSecurityEvent({
+			kind: 'active_block_denied',
+			action: 'active_block_denied',
+			method: 'GET',
+			path: '/api/transactions',
+			statusCode: 403,
+			fingerprint: baseFingerprint,
+		});
+
+		await persistSecurityEvent({
+			kind: 'not_found',
+			action: 'not_found',
+			method: 'GET',
+			path: '/.cursor/mcp.json',
+			statusCode: 404,
+			fingerprint: baseFingerprint,
+		});
+
+		const summary = await getSecuritySummary();
+
+		expect(summary.topPaths.some((item) => item.path === '/api/transactions')).toBe(false);
+		expect(summary.topPaths.some((item) => item.path === '/.cursor/mcp.json')).toBe(true);
 	});
 });
