@@ -4,6 +4,9 @@ import type { Request } from 'express';
 export type SecurityFingerprint = {
 	ip: string;
 	ipHash: string;
+	authenticatedUserId?: number;
+	authenticatedUserEmail?: string;
+	authenticatedFirebaseId?: string;
 	userAgent?: string;
 	browserName?: string;
 	browserVersion?: string;

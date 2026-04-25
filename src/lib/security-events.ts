@@ -70,6 +70,8 @@ export type SecurityEventRecord = {
 	requestCount?: number;
 	windowMs?: number;
 	blockId?: number | null;
+	authenticatedUserId?: number | null;
+	authenticatedUserEmail?: string;
 	metadataJson?: Prisma.JsonValue | null;
 };
 
@@ -85,6 +87,8 @@ export type SecurityBlockRecord = {
 	expiresAt: string | null;
 	removedAt: string | null;
 	removedBy: number | null;
+	relatedAuthenticatedUserId?: number | null;
+	relatedAuthenticatedUserEmail?: string;
 	metadataJson?: Prisma.JsonValue | null;
 };
 
@@ -238,6 +242,9 @@ function fingerprintMetadata(fingerprint: SecurityFingerprint): Prisma.InputJson
 		timezone: fingerprint.timezone ?? null,
 		deviceBrand: fingerprint.deviceBrand ?? null,
 		deviceModel: fingerprint.deviceModel ?? null,
+		authenticatedUserId: fingerprint.authenticatedUserId ?? null,
+		authenticatedUserEmail: fingerprint.authenticatedUserEmail ?? null,
+		authenticatedFirebaseId: fingerprint.authenticatedFirebaseId ?? null,
 	} as Prisma.InputJsonValue;
 }
 
@@ -288,6 +295,8 @@ function buildSecurityEventRecord(input: PersistSecurityEventInput, id: number, 
 		requestCount: input.requestCount,
 		windowMs: input.windowMs,
 		blockId: input.blockId ?? null,
+		authenticatedUserId: input.fingerprint.authenticatedUserId ?? null,
+		authenticatedUserEmail: input.fingerprint.authenticatedUserEmail,
 		metadataJson: fingerprintMetadata(input.fingerprint) as Prisma.JsonValue,
 	};
 }
@@ -627,6 +636,8 @@ export async function persistSecurityEvent(input: PersistSecurityEventInput): Pr
 				requestCount: input.requestCount,
 				windowMs: input.windowMs,
 				blockId: input.blockId,
+				authenticatedUserId: input.fingerprint.authenticatedUserId,
+				authenticatedUserEmail: input.fingerprint.authenticatedUserEmail,
 				metadataJson: fingerprintMetadata(input.fingerprint),
 			},
 		});
@@ -782,11 +793,13 @@ export async function listSecurityEvents(filters: SecurityEventQueryInput = {}):
 			attributionSource: event.attributionSource ?? undefined,
 			attributionTrusted: event.attributionTrusted,
 			matchedRule: event.matchedRule ?? undefined,
-			requestCount: event.requestCount ?? undefined,
-			windowMs: event.windowMs ?? undefined,
-			blockId: event.blockId ?? null,
-			metadataJson: event.metadataJson,
-		})),
+				requestCount: event.requestCount ?? undefined,
+				windowMs: event.windowMs ?? undefined,
+				blockId: event.blockId ?? null,
+				authenticatedUserId: event.authenticatedUserId ?? null,
+				authenticatedUserEmail: event.authenticatedUserEmail ?? undefined,
+				metadataJson: event.metadataJson,
+			})),
 		total,
 		page,
 		pageSize,
@@ -794,10 +807,82 @@ export async function listSecurityEvents(filters: SecurityEventQueryInput = {}):
 	};
 }
 
+function buildRelatedAuthenticatedUsersByIpForTest(
+	ips: string[]
+): Map<string, { authenticatedUserId: number | null; authenticatedUserEmail: string }> {
+	const uniqueIps = [...new Set(ips)];
+	const result = new Map<string, { authenticatedUserId: number | null; authenticatedUserEmail: string }>();
+
+	for (const ip of uniqueIps) {
+		const relatedEvent = sortByCreatedAtDesc(recordedSecurityEvents).find(
+			(event) => event.ip === ip && Boolean(event.authenticatedUserEmail)
+		);
+
+		if (relatedEvent?.authenticatedUserEmail) {
+			result.set(ip, {
+				authenticatedUserId: relatedEvent.authenticatedUserId ?? null,
+				authenticatedUserEmail: relatedEvent.authenticatedUserEmail,
+			});
+		}
+	}
+
+	return result;
+}
+
+async function buildRelatedAuthenticatedUsersByIp(
+	ips: string[]
+): Promise<Map<string, { authenticatedUserId: number | null; authenticatedUserEmail: string }>> {
+	const uniqueIps = [...new Set(ips)];
+	const result = new Map<string, { authenticatedUserId: number | null; authenticatedUserEmail: string }>();
+
+	if (uniqueIps.length === 0) {
+		return result;
+	}
+
+	const relatedEvents = await prisma.securityEvent.findMany({
+		where: {
+			ip: { in: uniqueIps },
+			authenticatedUserEmail: { not: null },
+		},
+		select: {
+			ip: true,
+			authenticatedUserId: true,
+			authenticatedUserEmail: true,
+			createdAt: true,
+		},
+		orderBy: {
+			createdAt: 'desc',
+		},
+	});
+
+	for (const event of relatedEvents) {
+		if (!event.authenticatedUserEmail || result.has(event.ip)) {
+			continue;
+		}
+
+		result.set(event.ip, {
+			authenticatedUserId: event.authenticatedUserId ?? null,
+			authenticatedUserEmail: event.authenticatedUserEmail,
+		});
+	}
+
+	return result;
+}
+
 export async function listSecurityBlocks(filters: SecurityBlockQueryInput = {}): Promise<PaginatedSecurityResult<SecurityBlockRecord>> {
 	if (process.env.NODE_ENV === 'test') {
 		const filtered = sortByCreatedAtDesc(recordedSecurityBlocks.filter((block) => matchBlockFilters(block, filters)));
-		return paginate(filtered, filters.page, filters.pageSize);
+		const paginated = paginate(filtered, filters.page, filters.pageSize);
+		const relatedUsersByIp = buildRelatedAuthenticatedUsersByIpForTest(paginated.items.map((block) => block.ip));
+
+		return {
+			...paginated,
+			items: paginated.items.map((block) => ({
+				...block,
+				relatedAuthenticatedUserId: relatedUsersByIp.get(block.ip)?.authenticatedUserId ?? null,
+				relatedAuthenticatedUserEmail: relatedUsersByIp.get(block.ip)?.authenticatedUserEmail,
+			})),
+		};
 	}
 
 	const now = new Date();
@@ -832,6 +917,7 @@ export async function listSecurityBlocks(filters: SecurityBlockQueryInput = {}):
 		}),
 		prisma.securityBlock.count({ where }),
 	]);
+	const relatedUsersByIp = await buildRelatedAuthenticatedUsersByIp(items.map((block) => block.ip));
 
 	return {
 		items: items.map((block) => ({
@@ -846,6 +932,8 @@ export async function listSecurityBlocks(filters: SecurityBlockQueryInput = {}):
 			expiresAt: block.expiresAt?.toISOString() ?? null,
 			removedAt: block.removedAt?.toISOString() ?? null,
 			removedBy: block.removedBy ?? null,
+			relatedAuthenticatedUserId: relatedUsersByIp.get(block.ip)?.authenticatedUserId ?? null,
+			relatedAuthenticatedUserEmail: relatedUsersByIp.get(block.ip)?.authenticatedUserEmail,
 			metadataJson: block.metadataJson,
 		})),
 		total,
@@ -917,11 +1005,13 @@ export async function getSecuritySummary(input: SecuritySummaryInput = {}): Prom
 			attributionSource: event.attributionSource ?? undefined,
 			attributionTrusted: event.attributionTrusted,
 			matchedRule: event.matchedRule ?? undefined,
-			requestCount: event.requestCount ?? undefined,
-			windowMs: event.windowMs ?? undefined,
-			blockId: event.blockId ?? null,
-			metadataJson: event.metadataJson,
-		}));
+				requestCount: event.requestCount ?? undefined,
+				windowMs: event.windowMs ?? undefined,
+				blockId: event.blockId ?? null,
+				authenticatedUserId: event.authenticatedUserId ?? null,
+				authenticatedUserEmail: event.authenticatedUserEmail ?? undefined,
+				metadataJson: event.metadataJson,
+			}));
 		blocks = blockRows.map((block) => ({
 			id: block.id,
 			createdAt: block.createdAt.toISOString(),
@@ -1126,6 +1216,29 @@ export async function removeSecurityBlock(blockId: number, actorUserId?: number 
 		removedAt: updatedBlock.removedAt?.toISOString() ?? null,
 		removedBy: updatedBlock.removedBy ?? null,
 		metadataJson: updatedBlock.metadataJson,
+	};
+}
+
+export async function removeActiveSecurityBlocksByIp(
+	ip: string,
+	actorUserId?: number | null
+): Promise<{ removedCount: number; removedBlocks: SecurityBlockRecord[] }> {
+	const activeBlocks = await listSecurityBlocks({ active: true, ip, page: 1, pageSize: 100 });
+	if (activeBlocks.items.length === 0) {
+		return { removedCount: 0, removedBlocks: [] };
+	}
+
+	const removedBlocks: SecurityBlockRecord[] = [];
+	for (const block of activeBlocks.items) {
+		const removed = await removeSecurityBlock(block.id, actorUserId);
+		if (removed) {
+			removedBlocks.push(removed);
+		}
+	}
+
+	return {
+		removedCount: removedBlocks.length,
+		removedBlocks,
 	};
 }
 
