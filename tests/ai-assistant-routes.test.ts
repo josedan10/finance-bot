@@ -10,6 +10,7 @@ jest.mock('../src/lib/auth.middleware', () => ({
 			id: 1,
 			firebaseId: 'firebase-user-1',
 			email: 'test@example.com',
+			role: 'dev',
 			createdAt: new Date('2026-04-06T00:00:00.000Z'),
 			dashboardBudgetPreferences: null,
 		};
