@@ -421,14 +421,14 @@ export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next
 			ipHash: hashSecurityIp(extractClientIp(req)),
 			method: req.method,
 			matchedRule,
-		});
-		const requestDetails = collectSecurityRequestDetails(req);
-		const baseFingerprint = collectSecurityFingerprint(req);
-		void collectSecurityFingerprintWithAuthContext(req, baseFingerprint)
-			.then((fingerprint) => handleSuspiciousActivity(req, fingerprint, {
-				kind: 'blocked_path',
-				action: 'blocked',
-				statusCode: 403,
+			});
+			const requestDetails = collectSecurityRequestDetails(req);
+			const baseFingerprint = collectSecurityFingerprint(req);
+			collectSecurityFingerprintWithAuthContext(req, baseFingerprint)
+				.then((fingerprint) => handleSuspiciousActivity(req, fingerprint, {
+					kind: 'blocked_path',
+					action: 'blocked',
+					statusCode: 403,
 				matchedRule,
 			}))
 			.catch((error) => {

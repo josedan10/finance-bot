@@ -62,7 +62,7 @@ app.use(apiRateLimitMiddleware);
 app.use('/', indexRouter);
 
 app.use('*', (req: Request, res: Response, next: NextFunction) => {
-	void collectSecurityFingerprintWithAuthContext(req)
+	collectSecurityFingerprintWithAuthContext(req)
 		.then((fingerprint) => persistNotFoundSecurityEvent({
 			method: req.method,
 			path: req.path,
