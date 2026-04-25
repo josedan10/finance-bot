@@ -610,6 +610,8 @@ type RateLimitOptions = {
 	windowMs: number;
 	maxRequests: number;
 	store?: RateLimitStore;
+	resolveMaxRequests?: (req: Request, defaults: { maxRequests: number; windowMs: number }) => number;
+	shouldSkipSuspiciousTracking?: (req: Request) => boolean;
 };
 
 export function createRateLimitMiddleware(options: RateLimitOptions) {
@@ -625,16 +627,24 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 			const requestDetails = collectSecurityRequestDetails(req);
 			const ip = requestDetails.ip;
 			const key = `api-rate-limit:${ip}`;
+			const resolvedMaxRequestsRaw = options.resolveMaxRequests?.(req, {
+				maxRequests: options.maxRequests,
+				windowMs: options.windowMs,
+			});
+			const effectiveMaxRequests = Number.isFinite(resolvedMaxRequestsRaw)
+				? Math.max(1, Math.floor(resolvedMaxRequestsRaw as number))
+				: options.maxRequests;
+			const shouldSkipSuspiciousTracking = options.shouldSkipSuspiciousTracking?.(req) ?? false;
 			const { count: requestCount, resetAt } = await store.increment(key, options.windowMs);
 
-			if (requestCount > options.maxRequests) {
+			if (requestCount > effectiveMaxRequests) {
 				logger.warn('Rate limit exceeded', {
 					ipHash: hashSecurityIp(ip),
 					path: req.path,
 					method: req.method,
 					requestCount,
 					windowMs: options.windowMs,
-					maxRequests: options.maxRequests,
+					maxRequests: effectiveMaxRequests,
 				});
 				sendSecurityAlert({
 					kind: 'rate_limit',
@@ -650,18 +660,20 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 						ipHash: hashSecurityIp(ip),
 					});
 				});
-				await handleSuspiciousActivity(
-					req,
-					await collectSecurityFingerprintWithAuthContext(req, collectSecurityFingerprint(req)),
-					{
-						kind: 'rate_limit',
-						action: 'rate_limited',
-						statusCode: 429,
-						matchedRule: 'api-rate-limit',
-						requestCount,
-						windowMs: options.windowMs,
-					}
-				);
+				if (!shouldSkipSuspiciousTracking) {
+					await handleSuspiciousActivity(
+						req,
+						await collectSecurityFingerprintWithAuthContext(req, collectSecurityFingerprint(req)),
+						{
+							kind: 'rate_limit',
+							action: 'rate_limited',
+							statusCode: 429,
+							matchedRule: 'api-rate-limit',
+							requestCount,
+							windowMs: options.windowMs,
+						}
+					);
+				}
 				const remainingMs = Math.max(0, resetAt - Date.now());
 				res.setHeader('Retry-After', Math.max(1, Math.ceil(remainingMs / 1000)));
 				res.status(429).json({
