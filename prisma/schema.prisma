@@ -308,10 +308,13 @@ model SecurityEvent {
   requestCount       Int?
   windowMs           Int?
   blockId            Int?
+  authenticatedUserId Int?
+  authenticatedUserEmail String? @db.VarChar(255)
   metadataJson       Json?
 
   @@index([createdAt])
   @@index([ip, createdAt])
+  @@index([authenticatedUserEmail, createdAt])
   @@index([kind, createdAt])
   @@index([action, createdAt])
   @@index([path, createdAt])

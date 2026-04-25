@@ -5,7 +5,10 @@ import { prismaMock } from '../modules/database/database.module.mock';
 
 jest.mock('../src/lib/auth.middleware', () => ({
 	requireAuth: (req: any, _res: any, next: any) => {
-		req.user = { id: 1, email: 'test@example.com' };
+		req.user = { id: 1, email: 'test@example.com', role: 'dev' };
+		next();
+	},
+	requireRole: (_roles: string[]) => (_req: any, _res: any, next: any) => {
 		next();
 	},
 }));

@@ -26,6 +26,7 @@ jest.mock('../src/lib/auth.middleware', () => ({
 	},
 }));
 
+// eslint-disable-next-line import/first
 import app from '../app';
 
 function buildFingerprint(ip: string) {

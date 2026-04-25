@@ -12,18 +12,31 @@ import { captureRequestException } from './src/lib/sentry';
 import {
 	activeSecurityBlockMiddleware,
 	blockSuspiciousPathsMiddleware,
+	collectSecurityFingerprintWithAuthContext,
 	createRateLimitMiddleware,
 	securityHeadersMiddleware,
 } from './src/lib/request-security';
-import { collectSecurityFingerprint } from './src/lib/security-fingerprint';
 import { persistNotFoundSecurityEvent } from './src/lib/security-path-blocks';
 
 const app = express();
 const runtimePublicDir = path.resolve(process.cwd(), 'public');
 const bundledPublicDir = path.join(__dirname, 'public');
+const highThroughputReceiptPaths = [
+	'/api/ai/receipt-analysis',
+	'/api/ai/receipt-analysis/queue',
+	'/api/ai/scan-receipt',
+	'/api/ai/receipt-samples',
+];
+const isHighThroughputReceiptPath = (pathValue: string): boolean =>
+	highThroughputReceiptPaths.some((prefix) => pathValue === prefix || pathValue.startsWith(`${prefix}/`));
 const apiRateLimitMiddleware = createRateLimitMiddleware({
 	windowMs: config.API_RATE_LIMIT_WINDOW_MS,
 	maxRequests: config.API_RATE_LIMIT_MAX_REQUESTS,
+	resolveMaxRequests: (req, defaults) =>
+		isHighThroughputReceiptPath(req.path)
+			? Math.max(defaults.maxRequests, config.API_RATE_LIMIT_RECEIPT_MAX_REQUESTS)
+			: defaults.maxRequests,
+	shouldSkipSuspiciousTracking: (req) => isHighThroughputReceiptPath(req.path),
 });
 
 const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
@@ -49,19 +62,19 @@ app.use(apiRateLimitMiddleware);
 app.use('/', indexRouter);
 
 app.use('*', (req: Request, res: Response, next: NextFunction) => {
-	const fingerprint = collectSecurityFingerprint(req);
-	void persistNotFoundSecurityEvent({
-		method: req.method,
-		path: req.path,
-		statusCode: 404,
-		fingerprint,
-	}).catch((error) => {
-		logger.error('Failed to persist not-found security event', {
-			error: error instanceof Error ? error.message : String(error),
+	collectSecurityFingerprintWithAuthContext(req)
+		.then((fingerprint) => persistNotFoundSecurityEvent({
+			method: req.method,
 			path: req.path,
-			ipHash: fingerprint.ipHash,
+			statusCode: 404,
+			fingerprint,
+		}))
+		.catch((error) => {
+			logger.error('Failed to persist not-found security event', {
+				error: error instanceof Error ? error.message : String(error),
+				path: req.path,
+			});
 		});
-	});
 
 	next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });

@@ -25,6 +25,7 @@ import {
 	getSecuritySummary,
 	listSecurityBlocks,
 	listSecurityEvents,
+	removeActiveSecurityBlocksByIp,
 	removeSecurityBlock,
 } from '../src/lib/security-events';
 import {
@@ -350,6 +351,30 @@ router.delete(
 		} catch (error) {
 			logger.error('Failed to remove security block', { error, userId: req.user.id, blockId });
 			return res.status(500).json({ message: 'Failed to remove security block' });
+		}
+	}
+);
+
+router.delete(
+	'/api/security/blocks/by-ip/:ip',
+	requireAuth,
+	requireRole(securityDashboardAllowedRoles),
+	async (req: Request, res: Response) => {
+		const ip = decodeURIComponent(req.params.ip || '').trim();
+		if (!ip) {
+			return res.status(400).json({ message: 'Invalid ip value' });
+		}
+
+		try {
+			const result = await removeActiveSecurityBlocksByIp(ip, req.user.id);
+			if (result.removedCount === 0) {
+				return res.status(404).json({ message: 'No active security blocks found for this IP' });
+			}
+
+			return res.status(200).json(result);
+		} catch (error) {
+			logger.error('Failed to remove security blocks by ip', { error, userId: req.user.id, ip });
+			return res.status(500).json({ message: 'Failed to remove security blocks by ip' });
 		}
 	}
 );

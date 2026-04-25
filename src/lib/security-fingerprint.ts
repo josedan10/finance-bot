@@ -4,6 +4,9 @@ import type { Request } from 'express';
 export type SecurityFingerprint = {
 	ip: string;
 	ipHash: string;
+	authenticatedUserId?: number;
+	authenticatedUserEmail?: string;
+	authenticatedFirebaseId?: string;
 	userAgent?: string;
 	browserName?: string;
 	browserVersion?: string;
@@ -43,6 +46,39 @@ function normalizeHeaderValue(value: string | string[] | undefined): string | un
 	}
 
 	return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeGeoHeaderValue(value: string | undefined): string | undefined {
+	if (!value) {
+		return undefined;
+	}
+
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	const normalized = trimmed.toLowerCase();
+	if (normalized === 'unknown' || normalized === 'undefined' || normalized === 'null' || normalized === '-') {
+		return undefined;
+	}
+
+	if (normalized === 'xx' || normalized === 'zz') {
+		return undefined;
+	}
+
+	return trimmed;
+}
+
+function getHeaderValue(req: Request, headerNames: string[]): string | undefined {
+	for (const headerName of headerNames) {
+		const value = normalizeGeoHeaderValue(req.get(headerName) ?? undefined);
+		if (value) {
+			return value;
+		}
+	}
+
+	return undefined;
 }
 
 export function extractClientIp(req: Pick<Request, 'ip' | 'headers' | 'socket'>): string {
@@ -189,6 +225,24 @@ export function collectSecurityFingerprint(req: Request): SecurityFingerprint {
 	const device = detectDevice(userAgent, secChUaMobile);
 	const attribution = resolveAttributionSource(req);
 	const ip = extractClientIp(req);
+	const timezone = getHeaderValue(req, ['cf-timezone', 'x-vercel-ip-timezone', 'x-timezone', 'x-geo-timezone']);
+	const country = getHeaderValue(req, [
+		'cf-ipcountry',
+		'x-vercel-ip-country',
+		'x-country-code',
+		'x-country',
+		'cloudfront-viewer-country',
+		'fly-client-country',
+	]);
+	const region = getHeaderValue(req, [
+		'x-vercel-ip-country-region',
+		'x-vercel-ip-region',
+		'cf-region',
+		'cf-region-code',
+		'x-region',
+		'cloudfront-viewer-country-region',
+	]);
+	const city = getHeaderValue(req, ['x-vercel-ip-city', 'x-vercel-ip-country-city', 'cf-ipcity', 'x-city', 'x-geo-city']);
 
 	return {
 		ip,
@@ -211,13 +265,13 @@ export function collectSecurityFingerprint(req: Request): SecurityFingerprint {
 		forwardedPort: req.get('x-forwarded-port') ?? undefined,
 		forwardedServer: req.get('x-forwarded-server') ?? undefined,
 		acceptLanguage: req.get('accept-language') ?? undefined,
-		timezone: req.get('cf-timezone') ?? req.get('x-vercel-ip-timezone') ?? req.get('x-timezone') ?? undefined,
+		timezone,
 		secChUa: req.get('sec-ch-ua') ?? undefined,
 		secChUaPlatform,
 		secChUaMobile,
-		country: req.get('cf-ipcountry') ?? req.get('x-vercel-ip-country') ?? undefined,
-		region: req.get('x-vercel-ip-country-region') ?? undefined,
-		city: req.get('x-vercel-ip-city') ?? undefined,
+		country,
+		region,
+		city,
 		attributionSource: attribution.source,
 		attributionTrusted: attribution.trusted,
 	};

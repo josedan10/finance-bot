@@ -3,7 +3,7 @@ import { config } from '../config';
 const DEFAULT_SECURITY_ALLOWED_ROLES = ['dev'];
 
 function normalizeRoleList(roles: string[]): string[] {
-	const normalized = roles
+	const normalized = (roles ?? [])
 		.map((role) => role.trim())
 		.filter(Boolean);
 

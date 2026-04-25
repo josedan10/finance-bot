@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import axios from 'axios';
 import * as nodemailer from 'nodemailer';
+import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from './logger';
 import { redisClient } from './redis';
 import {
@@ -10,6 +11,7 @@ import {
 } from './security-events';
 import { matchActiveSecurityPathBlock } from './security-path-blocks';
 import { collectSecurityFingerprint, extractClientIp, hashSecurityIp, type SecurityFingerprint } from './security-fingerprint';
+import { firebaseAdmin } from './firebase';
 
 export const BLOCKED_PATH_PATTERNS = [
 	/^\/\.env(?:$|[/.])/i,
@@ -247,6 +249,48 @@ export function collectSecurityRequestDetails(req: Request): SecurityRequestDeta
 	};
 }
 
+function getBearerTokenFromRequest(req: Request): string | null {
+	const authorizationHeader = req.get('authorization');
+	if (!authorizationHeader) {
+		return null;
+	}
+
+	const [scheme, token] = authorizationHeader.split(' ');
+	if (!scheme || !token || scheme.toLowerCase() !== 'bearer') {
+		return null;
+	}
+
+	return token.trim();
+}
+
+export async function collectSecurityFingerprintWithAuthContext(
+	req: Request,
+	baseFingerprint?: SecurityFingerprint
+): Promise<SecurityFingerprint> {
+	const fingerprint = baseFingerprint ?? collectSecurityFingerprint(req);
+	const bearerToken = getBearerTokenFromRequest(req);
+	if (!bearerToken) {
+		return fingerprint;
+	}
+
+	try {
+		const decoded = await firebaseAdmin.auth().verifyIdToken(bearerToken);
+		const matchedUser = await prisma.user.findUnique({
+			where: { firebaseId: decoded.uid },
+			select: { id: true, email: true },
+		});
+
+		return {
+			...fingerprint,
+			authenticatedUserId: matchedUser?.id,
+			authenticatedUserEmail: matchedUser?.email ?? decoded.email,
+			authenticatedFirebaseId: decoded.uid,
+		};
+	} catch {
+		return fingerprint;
+	}
+}
+
 async function handleSuspiciousActivity(
 	req: Request,
 	fingerprint: SecurityFingerprint,
@@ -377,21 +421,23 @@ export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next
 			ipHash: hashSecurityIp(extractClientIp(req)),
 			method: req.method,
 			matchedRule,
-		});
-		const requestDetails = collectSecurityRequestDetails(req);
-		const fingerprint = collectSecurityFingerprint(req);
-		void handleSuspiciousActivity(req, fingerprint, {
-			kind: 'blocked_path',
-			action: 'blocked',
-			statusCode: 403,
-			matchedRule,
-		}).catch((error) => {
-			logger.error('Failed to persist blocked-path security activity', {
-				error: error instanceof Error ? error.message : String(error),
-				path: req.path,
-				ipHash: fingerprint.ipHash,
 			});
-		});
+			const requestDetails = collectSecurityRequestDetails(req);
+			const baseFingerprint = collectSecurityFingerprint(req);
+			collectSecurityFingerprintWithAuthContext(req, baseFingerprint)
+				.then((fingerprint) => handleSuspiciousActivity(req, fingerprint, {
+					kind: 'blocked_path',
+					action: 'blocked',
+					statusCode: 403,
+				matchedRule,
+			}))
+			.catch((error) => {
+				logger.error('Failed to persist blocked-path security activity', {
+					error: error instanceof Error ? error.message : String(error),
+					path: req.path,
+					ipHash: baseFingerprint.ipHash,
+				});
+			});
 		sendSecurityAlert({
 			kind: 'blocked_path',
 			path: req.path,
@@ -435,8 +481,8 @@ export function activeSecurityBlockMiddleware(req: Request, res: Response, next:
 		return;
 	}
 
-	const fingerprint = collectSecurityFingerprint(req);
-	checkActiveSecurityBlock(fingerprint.ip)
+	const baseFingerprint = collectSecurityFingerprint(req);
+	checkActiveSecurityBlock(baseFingerprint.ip)
 		.then(async ({ blocked, blockId }) => {
 			if (!blocked) {
 				next();
@@ -445,10 +491,12 @@ export function activeSecurityBlockMiddleware(req: Request, res: Response, next:
 
 			logger.warn('Blocked request from active security block', {
 				path: req.path,
-				ipHash: fingerprint.ipHash,
+				ipHash: baseFingerprint.ipHash,
 				method: req.method,
 				blockId,
 			});
+
+			const fingerprint = await collectSecurityFingerprintWithAuthContext(req, baseFingerprint);
 			await persistSecurityEvent({
 				kind: 'active_block_denied',
 				action: 'active_block_denied',
@@ -562,6 +610,8 @@ type RateLimitOptions = {
 	windowMs: number;
 	maxRequests: number;
 	store?: RateLimitStore;
+	resolveMaxRequests?: (req: Request, defaults: { maxRequests: number; windowMs: number }) => number;
+	shouldSkipSuspiciousTracking?: (req: Request) => boolean;
 };
 
 export function createRateLimitMiddleware(options: RateLimitOptions) {
@@ -577,16 +627,24 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 			const requestDetails = collectSecurityRequestDetails(req);
 			const ip = requestDetails.ip;
 			const key = `api-rate-limit:${ip}`;
+			const resolvedMaxRequestsRaw = options.resolveMaxRequests?.(req, {
+				maxRequests: options.maxRequests,
+				windowMs: options.windowMs,
+			});
+			const effectiveMaxRequests = Number.isFinite(resolvedMaxRequestsRaw)
+				? Math.max(1, Math.floor(resolvedMaxRequestsRaw as number))
+				: options.maxRequests;
+			const shouldSkipSuspiciousTracking = options.shouldSkipSuspiciousTracking?.(req) ?? false;
 			const { count: requestCount, resetAt } = await store.increment(key, options.windowMs);
 
-			if (requestCount > options.maxRequests) {
+			if (requestCount > effectiveMaxRequests) {
 				logger.warn('Rate limit exceeded', {
 					ipHash: hashSecurityIp(ip),
 					path: req.path,
 					method: req.method,
 					requestCount,
 					windowMs: options.windowMs,
-					maxRequests: options.maxRequests,
+					maxRequests: effectiveMaxRequests,
 				});
 				sendSecurityAlert({
 					kind: 'rate_limit',
@@ -602,14 +660,20 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
 						ipHash: hashSecurityIp(ip),
 					});
 				});
-				await handleSuspiciousActivity(req, collectSecurityFingerprint(req), {
-					kind: 'rate_limit',
-					action: 'rate_limited',
-					statusCode: 429,
-					matchedRule: 'api-rate-limit',
-					requestCount,
-					windowMs: options.windowMs,
-				});
+				if (!shouldSkipSuspiciousTracking) {
+					await handleSuspiciousActivity(
+						req,
+						await collectSecurityFingerprintWithAuthContext(req, collectSecurityFingerprint(req)),
+						{
+							kind: 'rate_limit',
+							action: 'rate_limited',
+							statusCode: 429,
+							matchedRule: 'api-rate-limit',
+							requestCount,
+							windowMs: options.windowMs,
+						}
+					);
+				}
 				const remainingMs = Math.max(0, resetAt - Date.now());
 				res.setHeader('Retry-After', Math.max(1, Math.ceil(remainingMs / 1000)));
 				res.status(429).json({

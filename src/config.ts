@@ -93,6 +93,12 @@ export const config = {
 	RECEIPT_OCR_QUEUE_BATCH_SIZE: parseIntegerInRange(process.env.RECEIPT_OCR_QUEUE_BATCH_SIZE, 1, 1, 10),
 	API_RATE_LIMIT_WINDOW_MS: parseIntegerInRange(process.env.API_RATE_LIMIT_WINDOW_MS, 1000, 100, 60_000),
 	API_RATE_LIMIT_MAX_REQUESTS: parseIntegerInRange(process.env.API_RATE_LIMIT_MAX_REQUESTS, 30, 1, 10_000),
+	API_RATE_LIMIT_RECEIPT_MAX_REQUESTS: parseIntegerInRange(
+		process.env.API_RATE_LIMIT_RECEIPT_MAX_REQUESTS,
+		120,
+		1,
+		10_000
+	),
 	TRUSTED_PROXIES: process.env.TRUSTED_PROXIES || 'loopback',
 	SECURITY_DASHBOARD_ALLOWED_ROLES: parseCsvList(process.env.SECURITY_DASHBOARD_ALLOWED_ROLES, ['dev']),
 	SECURITY_DASHBOARD_ROUTE: parseRoutePath(process.env.SECURITY_DASHBOARD_ROUTE, '/ops/security-monitor'),
