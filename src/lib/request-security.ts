@@ -476,11 +476,6 @@ export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next
 }
 
 export function activeSecurityBlockMiddleware(req: Request, res: Response, next: NextFunction): void {
-	if (req.method === 'OPTIONS' || req.path === '/health') {
-		next();
-		return;
-	}
-
 	const baseFingerprint = collectSecurityFingerprint(req);
 	checkActiveSecurityBlock(baseFingerprint.ip)
 		.then(async ({ blocked, blockId }) => {

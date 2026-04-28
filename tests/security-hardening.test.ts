@@ -68,6 +68,32 @@ describe('Security hardening', () => {
 		expect(events.some((event) => event.kind === 'active_block_denied' && event.path === '/')).toBe(true);
 	});
 
+	it('applies active security block to /health checks', async () => {
+		const ip = '198.51.100.78';
+
+		await request(app).get('/.env').set('X-Forwarded-For', ip);
+		await request(app).get('/appsettings.json').set('X-Forwarded-For', ip);
+		await request(app).get('/.git/config').set('X-Forwarded-For', ip);
+
+		const blockedHealth = await request(app).get('/health').set('X-Forwarded-For', ip);
+
+		expect(blockedHealth.status).toBe(403);
+		expect(blockedHealth.text).toBe('Forbidden');
+	});
+
+	it('applies active security block to OPTIONS requests', async () => {
+		const ip = '198.51.100.79';
+
+		await request(app).get('/.env').set('X-Forwarded-For', ip);
+		await request(app).get('/appsettings.json').set('X-Forwarded-For', ip);
+		await request(app).get('/.git/config').set('X-Forwarded-For', ip);
+
+		const blockedOptions = await request(app).options('/').set('X-Forwarded-For', ip);
+
+		expect(blockedOptions.status).toBe(403);
+		expect(blockedOptions.text).toBe('Forbidden');
+	});
+
 	it('collects enriched attacker context from headers', () => {
 		const details = collectSecurityRequestDetails({
 			ip: '::ffff:203.0.113.99',
