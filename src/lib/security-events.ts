@@ -4,6 +4,7 @@ import logger from './logger';
 import { config } from '../config';
 import { redisClient } from './redis';
 import { hashSecurityIp, type SecurityFingerprint } from './security-fingerprint';
+import { enrichSecurityFingerprintLocation, lookupIpGeolocation } from './ip-geolocation';
 
 export type SecurityEventKind =
 	| 'blocked_path'
@@ -600,8 +601,13 @@ async function persistSecurityBlock(ip: string, reason: string): Promise<Securit
 }
 
 export async function persistSecurityEvent(input: PersistSecurityEventInput): Promise<number | null> {
+	const enrichedInput = {
+		...input,
+		fingerprint: await enrichSecurityFingerprintLocation(input.fingerprint),
+	};
+
 	if (process.env.NODE_ENV === 'test') {
-		recordedSecurityEvents.push(buildSecurityEventRecord(input, nextRecordedEventId));
+		recordedSecurityEvents.push(buildSecurityEventRecord(enrichedInput, nextRecordedEventId));
 		nextRecordedEventId += 1;
 		return nextRecordedEventId - 1;
 	}
@@ -609,39 +615,39 @@ export async function persistSecurityEvent(input: PersistSecurityEventInput): Pr
 	try {
 		const event = await prisma.securityEvent.create({
 			data: {
-				kind: input.kind,
-				action: input.action,
-				method: input.method,
-				path: input.path,
-				statusCode: input.statusCode,
-				ip: input.fingerprint.ip,
-				ipHash: input.fingerprint.ipHash,
-				forwardedFor: input.fingerprint.forwardedFor,
-				realIp: input.fingerprint.realIp,
-				host: input.fingerprint.host,
-				origin: input.fingerprint.origin,
-				referer: input.fingerprint.referer,
-				userAgent: input.fingerprint.userAgent,
-				browserName: input.fingerprint.browserName,
-				browserVersion: input.fingerprint.browserVersion,
-				osName: input.fingerprint.osName,
-				osVersion: input.fingerprint.osVersion,
-				deviceType: input.fingerprint.deviceType,
-				deviceBrand: input.fingerprint.deviceBrand,
-				deviceModel: input.fingerprint.deviceModel,
-				acceptLanguage: input.fingerprint.acceptLanguage,
-				country: input.fingerprint.country,
-				region: input.fingerprint.region,
-				city: input.fingerprint.city,
-				attributionSource: input.fingerprint.attributionSource,
-				attributionTrusted: input.fingerprint.attributionTrusted,
-				matchedRule: input.matchedRule,
-				requestCount: input.requestCount,
-				windowMs: input.windowMs,
-				blockId: input.blockId,
-				authenticatedUserId: input.fingerprint.authenticatedUserId,
-				authenticatedUserEmail: input.fingerprint.authenticatedUserEmail,
-				metadataJson: fingerprintMetadata(input.fingerprint),
+				kind: enrichedInput.kind,
+				action: enrichedInput.action,
+				method: enrichedInput.method,
+				path: enrichedInput.path,
+				statusCode: enrichedInput.statusCode,
+				ip: enrichedInput.fingerprint.ip,
+				ipHash: enrichedInput.fingerprint.ipHash,
+				forwardedFor: enrichedInput.fingerprint.forwardedFor,
+				realIp: enrichedInput.fingerprint.realIp,
+				host: enrichedInput.fingerprint.host,
+				origin: enrichedInput.fingerprint.origin,
+				referer: enrichedInput.fingerprint.referer,
+				userAgent: enrichedInput.fingerprint.userAgent,
+				browserName: enrichedInput.fingerprint.browserName,
+				browserVersion: enrichedInput.fingerprint.browserVersion,
+				osName: enrichedInput.fingerprint.osName,
+				osVersion: enrichedInput.fingerprint.osVersion,
+				deviceType: enrichedInput.fingerprint.deviceType,
+				deviceBrand: enrichedInput.fingerprint.deviceBrand,
+				deviceModel: enrichedInput.fingerprint.deviceModel,
+				acceptLanguage: enrichedInput.fingerprint.acceptLanguage,
+				country: enrichedInput.fingerprint.country,
+				region: enrichedInput.fingerprint.region,
+				city: enrichedInput.fingerprint.city,
+				attributionSource: enrichedInput.fingerprint.attributionSource,
+				attributionTrusted: enrichedInput.fingerprint.attributionTrusted,
+				matchedRule: enrichedInput.matchedRule,
+				requestCount: enrichedInput.requestCount,
+				windowMs: enrichedInput.windowMs,
+				blockId: enrichedInput.blockId,
+				authenticatedUserId: enrichedInput.fingerprint.authenticatedUserId,
+				authenticatedUserEmail: enrichedInput.fingerprint.authenticatedUserEmail,
+				metadataJson: fingerprintMetadata(enrichedInput.fingerprint),
 			},
 		});
 
@@ -649,9 +655,9 @@ export async function persistSecurityEvent(input: PersistSecurityEventInput): Pr
 	} catch (error) {
 		logger.error('Failed to persist security event', {
 			error: error instanceof Error ? error.message : String(error),
-			kind: input.kind,
-			path: input.path,
-			ipHash: input.fingerprint.ipHash,
+			kind: enrichedInput.kind,
+			path: enrichedInput.path,
+			ipHash: enrichedInput.fingerprint.ipHash,
 		});
 		return null;
 	}
@@ -1064,6 +1070,30 @@ export async function getSecuritySummary(input: SecuritySummaryInput = {}): Prom
 					cities: new Set(event.city ? [event.city] : []),
 				});
 			}
+		}
+	}
+
+	const topOriginsForGeoFallback = [...originCounts.values()]
+		.sort((left, right) => right.count - left.count)
+		.slice(0, 12);
+
+	for (const origin of topOriginsForGeoFallback) {
+		const hasRecordedCountry = events.some((event) => event.ip === origin.ip && Boolean(event.country));
+		if (hasRecordedCountry) continue;
+
+		const location = await lookupIpGeolocation(origin.ip);
+		if (!location?.country) continue;
+
+		const existingCountry = countryCounts.get(location.country);
+		if (existingCountry) {
+			existingCountry.count += origin.count;
+			if (location.city) existingCountry.cities.add(location.city);
+		} else {
+			countryCounts.set(location.country, {
+				country: location.country,
+				count: origin.count,
+				cities: new Set(location.city ? [location.city] : []),
+			});
 		}
 	}
 

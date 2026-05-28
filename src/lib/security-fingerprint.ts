@@ -86,7 +86,7 @@ export function extractClientIp(req: Pick<Request, 'ip' | 'headers' | 'socket'>)
 	const forwardedFor = normalizeHeaderValue(req.headers['x-forwarded-for']);
 	const forwardedIp = forwardedFor?.split(',')[0]?.trim();
 	const realIp = normalizeHeaderValue(req.headers['x-real-ip']);
-	const rawIp = resolvedReqIp || forwardedIp || realIp || req.socket.remoteAddress || 'unknown';
+	const rawIp = forwardedIp || realIp || resolvedReqIp || req.socket.remoteAddress || 'unknown';
 
 	return rawIp.replace(/^::ffff:/, '');
 }
