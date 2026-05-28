@@ -94,4 +94,32 @@ describe('security-events', () => {
 		expect(summary.topPaths.some((item) => item.path === '/api/transactions')).toBe(false);
 		expect(summary.topPaths.some((item) => item.path === '/.cursor/mcp.json')).toBe(true);
 	});
+
+	test('summarizes suspicious origins by country for the dashboard map', async () => {
+		await persistSecurityEvent({
+			kind: 'blocked_path',
+			action: 'blocked',
+			method: 'GET',
+			path: '/.env',
+			statusCode: 403,
+			fingerprint: { ...baseFingerprint, country: 'us', city: 'Ashburn' },
+		});
+
+		await persistSecurityEvent({
+			kind: 'not_found',
+			action: 'not_found',
+			method: 'GET',
+			path: '/wp-admin',
+			statusCode: 404,
+			fingerprint: { ...baseFingerprint, ip: '198.51.100.201', country: 'US', city: 'Dallas' },
+		});
+
+		const summary = await getSecuritySummary();
+
+		expect(summary.topCountries[0]).toEqual({
+			country: 'US',
+			count: 2,
+			cities: ['Ashburn', 'Dallas'],
+		});
+	});
 });

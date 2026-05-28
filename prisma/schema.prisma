@@ -12,6 +12,9 @@ model User {
   firebaseId              String                    @unique @db.VarChar(128)
   email                   String                    @unique @db.VarChar(255)
   role                    String                    @default("user") @db.VarChar(20)
+  onboardingStatus        String                    @default("approved") @db.VarChar(20)
+  approvalRequestedAt     DateTime?
+  approvedAt              DateTime?
   createdAt               DateTime                  @default(now())
   aiSettings              AISettings?
   dashboardBudgetPreferences Json?

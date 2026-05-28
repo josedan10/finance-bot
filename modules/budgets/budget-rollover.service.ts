@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { BudgetPeriod, Category, Prisma, PrismaClient } from '@prisma/client';
 import dayjs from 'dayjs';
 import { PrismaModule as prisma } from '../database/database.module';
 import logger from '../../src/lib/logger';
@@ -76,7 +76,12 @@ export class BudgetRolloverService {
 	/**
 	 * Calculates how much to carry over from the previous period
 	 */
-	async calculateRollover(categoryId: number, targetMonth: number, targetYear: number): Promise<number> {
+	async calculateRollover(
+		categoryId: number,
+		targetMonth: number,
+		targetYear: number,
+		visited = new Set<string>()
+	): Promise<number> {
 		const prevDate = dayjs(`${targetYear}-${targetMonth}-01`).subtract(1, 'month');
 		const prevMonth = prevDate.month() + 1;
 		const prevYear = prevDate.year();
@@ -101,7 +106,7 @@ export class BudgetRolloverService {
 		});
 
 		const baseLimit = Number(category.amountLimit);
-		const baseCarryOver = prevPeriod ? Number(prevPeriod.carryOver) : 0;
+		const baseCarryOver = await this.getPreviousCarryOver(category, targetMonth, targetYear, prevPeriod, visited);
 
 		// 3. Calculate total spending in previous month
 		const startDate = prevDate.startOf('month').toDate();
@@ -135,6 +140,52 @@ export class BudgetRolloverService {
 		);
 
 		return ownCarryOver + incomingReassignedSurplus;
+	}
+
+	private async getPreviousCarryOver(
+		category: Category,
+		targetMonth: number,
+		targetYear: number,
+		prevPeriod: Pick<BudgetPeriod, 'carryOver'> | null,
+		visited = new Set<string>()
+	): Promise<number> {
+		if (prevPeriod) return Number(prevPeriod.carryOver);
+		if (!category.isCumulative) return 0;
+
+		const prevDate = dayjs(`${targetYear}-${targetMonth}-01`).subtract(1, 'month');
+		const prevMonth = prevDate.month() + 1;
+		const prevYear = prevDate.year();
+		const key = `${category.id}:${prevYear}-${prevMonth}`;
+
+		if (visited.has(key)) return 0;
+
+		const hasEarlierActivity = await this.hasBudgetActivityBefore(category.id, prevYear, prevMonth);
+		if (!hasEarlierActivity) return 0;
+
+		visited.add(key);
+		return this.calculateRollover(category.id, prevMonth, prevYear, visited);
+	}
+
+	private async hasBudgetActivityBefore(categoryId: number, year: number, month: number): Promise<boolean> {
+		const [olderPeriod, olderTransaction] = await Promise.all([
+			this._db.budgetPeriod.findFirst({
+				where: {
+					categoryId,
+					OR: [{ year: { lt: year } }, { year, month: { lt: month } }],
+				},
+				select: { id: true },
+			}),
+			this._db.transaction.findFirst({
+				where: {
+					categoryId,
+					type: 'expense',
+					date: { lt: dayjs(`${year}-${month}-01`).startOf('month').toDate() },
+				},
+				select: { id: true },
+			}),
+		]);
+
+		return Boolean(olderPeriod || olderTransaction);
 	}
 
 	private async getOutgoingFallbackRule(userId: number, sourceCategoryId: number): Promise<BudgetFallbackRuleRow | null> {
@@ -214,7 +265,7 @@ export class BudgetRolloverService {
 		});
 
 		const baseLimit = Number(category.amountLimit);
-		const baseCarryOver = prevPeriod ? Number(prevPeriod.carryOver) : 0;
+		const baseCarryOver = await this.getPreviousCarryOver(category, targetMonth, targetYear, prevPeriod);
 		const totalSpent = Number(spending._sum.amount || 0);
 		const surplus = (baseLimit + baseCarryOver) - totalSpent;
 
