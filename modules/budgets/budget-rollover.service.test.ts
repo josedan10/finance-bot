@@ -37,6 +37,37 @@ describe('BudgetRolloverService', () => {
 			expect(carryOver).toBe(20);
 		});
 
+		it('should accumulate missing monthly periods recursively for cumulative budgets', async () => {
+			prismaMock.category.findUnique.mockResolvedValue({
+				id: categoryId,
+				userId: 1,
+				amountLimit: new Decimal(100),
+				isCumulative: true,
+			} as any);
+
+			// No stored periods for March, April, or May.
+			prismaMock.budgetPeriod.findUnique.mockResolvedValue(null);
+			prismaMock.budgetPeriod.findFirst.mockResolvedValue(null);
+
+			// There is older spending before May and April, but March starts the chain.
+			prismaMock.transaction.findFirst
+				.mockResolvedValueOnce({ id: 1 } as any)
+				.mockResolvedValueOnce({ id: 1 } as any)
+				.mockResolvedValueOnce(null);
+
+			// March spent 80 => April carryOver 20
+			// April spent 40 with carryOver 20 => May carryOver 80
+			// May spent 50 with carryOver 80 => June carryOver 130
+			prismaMock.transaction.aggregate
+				.mockResolvedValueOnce({ _sum: { amount: new Decimal(80) } } as any)
+				.mockResolvedValueOnce({ _sum: { amount: new Decimal(40) } } as any)
+				.mockResolvedValueOnce({ _sum: { amount: new Decimal(50) } } as any);
+
+			const carryOver = await BudgetRollover.calculateRollover(categoryId, 6, targetYear);
+
+			expect(carryOver).toBe(130);
+		});
+
 		it('should include previous carry-over in calculation', async () => {
 			prismaMock.category.findUnique.mockResolvedValue({
 				id: categoryId,

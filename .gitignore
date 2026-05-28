@@ -18,3 +18,5 @@ __pycache__/
 /traefik/acme.json
 /modules/image-2-text/*.jpeg
 /modules/image-2-text/*.jpg
+
+/.atl

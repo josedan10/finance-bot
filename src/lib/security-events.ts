@@ -133,6 +133,7 @@ export type SecuritySummary = {
 	};
 	topPaths: Array<{ path: string; count: number }>;
 	topOrigins: Array<{ ip: string; ipHash: string; count: number }>;
+	topCountries: Array<{ country: string; count: number; cities: string[] }>;
 };
 
 const SUSPICIOUS_PATH_SUMMARY_KINDS: SecurityEventKind[] = ['blocked_path', 'not_found', 'rate_limit'];
@@ -1032,6 +1033,7 @@ export async function getSecuritySummary(input: SecuritySummaryInput = {}): Prom
 
 	const pathCounts = new Map<string, number>();
 	const originCounts = new Map<string, { ip: string; ipHash: string; count: number }>();
+	const countryCounts = new Map<string, { country: string; count: number; cities: Set<string> }>();
 
 	for (const event of events) {
 		if (SUSPICIOUS_PATH_SUMMARY_KINDS.includes(event.kind)) {
@@ -1047,6 +1049,21 @@ export async function getSecuritySummary(input: SecuritySummaryInput = {}): Prom
 				ipHash: event.ipHash,
 				count: 1,
 			});
+		}
+
+		if (event.country) {
+			const normalizedCountry = event.country.trim().toUpperCase();
+			const existingCountry = countryCounts.get(normalizedCountry);
+			if (existingCountry) {
+				existingCountry.count += 1;
+				if (event.city) existingCountry.cities.add(event.city);
+			} else {
+				countryCounts.set(normalizedCountry, {
+					country: normalizedCountry,
+					count: 1,
+					cities: new Set(event.city ? [event.city] : []),
+				});
+			}
 		}
 	}
 
@@ -1074,6 +1091,14 @@ export async function getSecuritySummary(input: SecuritySummaryInput = {}): Prom
 		topOrigins: [...originCounts.values()]
 			.sort((left, right) => right.count - left.count)
 			.slice(0, 5),
+		topCountries: [...countryCounts.values()]
+			.map((item) => ({
+				country: item.country,
+				count: item.count,
+				cities: [...item.cities].sort().slice(0, 5),
+			}))
+			.sort((left, right) => right.count - left.count)
+			.slice(0, 12),
 	};
 }
 

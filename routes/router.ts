@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import { TelegramRouter as telegramRouter } from './telegram';
 import { AIAssistantRouter as aiAssistantRouter } from './ai-assistant';
-import { requireAuth, requireRole } from '../src/lib/auth.middleware';
+import * as AuthMiddleware from '../src/lib/auth.middleware';
 import { firebaseAdmin } from '../src/lib/firebase';
 import * as CategoryController from '../controllers/categories.controller';
 import * as PaymentMethodController from '../controllers/paymentMethods.controller';
@@ -37,6 +37,8 @@ import {
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
 const securityDashboardAllowedRoles = getSecurityDashboardAllowedRoles();
+const { requireAuth, requireRole } = AuthMiddleware;
+const requireOnboardingSyncAuth = AuthMiddleware.requireOnboardingSyncAuth ?? AuthMiddleware.requireAuth;
 
 function normalizeTransactionStatus(status?: string): string {
 	return status?.trim().toLowerCase() ?? '';
@@ -159,25 +161,22 @@ router.post('/api/debug/sentry/error', async (req: Request, res: Response) => {
 // ============================================
 
 /**
- * Endpoint to sync a Firebase user with the local Prisma database.
- * This should be called by the frontend immediately after a successful Firebase signup.
- * It's protected by requireAuth, so it verifies the token first.
+ * Endpoint to request onboarding approval and sync Firebase identity with local DB.
+ * If the user does not exist in local DB, it is created in "pending" status.
  */
-router.post('/api/auth/signup', requireAuth, async (req: Request, res: Response) => {
+router.post('/api/auth/signup', requireOnboardingSyncAuth, async (req: Request, res: Response) => {
 	try {
-		// The user is already in req.user because of requireAuth's auto-signup logic,
-		// but we call it explicitly here to ensure the frontend gets a proper response
-		// and the OnboardingService is triggered if it wasn't already.
-		
 		const user = req.user;
+		const isApproved = (user.onboardingStatus || '').toLowerCase() === 'approved';
 
-		res.status(200).json({
-			message: 'User synchronized successfully',
+		res.status(isApproved ? 200 : 202).json({
+			message: isApproved ? 'User approved and synchronized' : 'Onboarding request received. Awaiting approval.',
 			user: {
 				id: user.id,
 				email: user.email,
 				role: user.role || 'user',
 				firebaseId: user.firebaseId,
+				onboardingStatus: user.onboardingStatus,
 			}
 		});
 	} catch (error) {
@@ -473,6 +472,10 @@ router.delete(
 router.delete('/api/auth/cleanup-test-user', requireAuth, async (req: Request, res: Response) => {
 	const userId = req.user.id;
 	const firebaseId = req.user.firebaseId;
+
+	if (!firebaseId) {
+		return res.status(400).json({ message: 'Missing Firebase user id' });
+	}
 
 	try {
 		logger.info('Starting full cleanup for test user', { userId, firebaseId });

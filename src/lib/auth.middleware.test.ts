@@ -1,8 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { requireAuth, requireRole } from './auth.middleware';
+import { requireAuth, requireOnboardingSyncAuth, requireRole } from './auth.middleware';
 import { firebaseAdmin } from './firebase';
 import { PrismaClient } from '@prisma/client';
-import OnboardingService from '../services/onboarding.service';
 
 const verifyIdToken = jest.fn();
 
@@ -20,18 +19,11 @@ jest.mock('@prisma/client', () => {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
   };
   return { PrismaClient: jest.fn(() => mPrisma) };
 });
-
-jest.mock('../services/onboarding.service', () => ({
-  __esModule: true,
-  default: {
-    setupUserDefaultCategories: jest.fn().mockResolvedValue(undefined),
-    setupUserDefaultPaymentMethods: jest.fn().mockResolvedValue(undefined),
-  },
-}));
 
 describe('Auth Middleware', () => {
   let req: Partial<Request>;
@@ -66,7 +58,13 @@ describe('Auth Middleware', () => {
 
   it('should proceed and attach user if token and DB user are valid', async () => {
     const mockDecodedToken = { uid: 'test-uid', email: 'test@example.com' };
-    const mockDbUser = { id: 1, firebaseId: 'test-uid', email: 'test@example.com', role: 'user' };
+    const mockDbUser = {
+      id: 1,
+      firebaseId: 'test-uid',
+      email: 'test@example.com',
+      role: 'user',
+      onboardingStatus: 'approved',
+    };
 
     req.headers!.authorization = 'Bearer valid-token';
     (firebaseAdmin.auth().verifyIdToken as jest.Mock).mockResolvedValue(mockDecodedToken);
@@ -79,27 +77,66 @@ describe('Auth Middleware', () => {
     expect(next).toHaveBeenCalledWith();
   });
 
-  it('should auto-create user and onboarding if token is valid but user missing in DB', async () => {
+  it('should reject access when token is valid but user is missing in DB', async () => {
     const mockDecodedToken = { uid: 'new-uid', email: 'new@example.com' };
-    const mockCreatedUser = { id: 2, firebaseId: 'new-uid', email: 'new@example.com', role: 'user' };
 
     req.headers!.authorization = 'Bearer valid-token';
     (firebaseAdmin.auth().verifyIdToken as jest.Mock).mockResolvedValue(mockDecodedToken);
     (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
-    (prisma.user.create as jest.Mock).mockResolvedValue(mockCreatedUser);
 
     await requireAuth(req as Request, res as Response, next);
 
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 403, message: 'Access pending approval. Please contact support.' })
+    );
+  });
+
+  it('should reject access when user is pending approval', async () => {
+    const mockDecodedToken = { uid: 'pending-uid', email: 'pending@example.com' };
+    const pendingUser = {
+      id: 3,
+      firebaseId: 'pending-uid',
+      email: 'pending@example.com',
+      role: 'user',
+      onboardingStatus: 'pending',
+    };
+
+    req.headers!.authorization = 'Bearer valid-token';
+    (firebaseAdmin.auth().verifyIdToken as jest.Mock).mockResolvedValue(mockDecodedToken);
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue(pendingUser);
+
+    await requireAuth(req as Request, res as Response, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 403, message: 'Access pending approval. Please contact support.' })
+    );
+  });
+
+  it('should create a pending user through onboarding sync middleware', async () => {
+    const mockDecodedToken = { uid: 'signup-uid', email: 'signup@example.com' };
+    const pendingUser = {
+      id: 4,
+      firebaseId: 'signup-uid',
+      email: 'signup@example.com',
+      role: 'user',
+      onboardingStatus: 'pending',
+    };
+
+    req.headers!.authorization = 'Bearer valid-token';
+    (firebaseAdmin.auth().verifyIdToken as jest.Mock).mockResolvedValue(mockDecodedToken);
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.user.create as jest.Mock).mockResolvedValue(pendingUser);
+
+    await requireOnboardingSyncAuth(req as Request, res as Response, next);
+
     expect(prisma.user.create).toHaveBeenCalledWith({
-      data: {
-        firebaseId: 'new-uid',
-        email: 'new@example.com',
-        role: 'user',
-      },
+      data: expect.objectContaining({
+        firebaseId: 'signup-uid',
+        email: 'signup@example.com',
+        onboardingStatus: 'pending',
+      }),
     });
-    expect(prisma.user.create).toHaveBeenCalled();
-    expect(OnboardingService.setupUserDefaultCategories).toHaveBeenCalledWith(2);
-    expect(req.user).toEqual(mockCreatedUser);
+    expect(req.user).toEqual(pendingUser);
     expect(next).toHaveBeenCalledWith();
   });
 
