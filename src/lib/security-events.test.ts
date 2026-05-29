@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import {
 	checkActiveSecurityBlock,
 	getRecordedSecurityEventsForTesting,
@@ -8,7 +8,13 @@ import {
 	registerSuspiciousActivity,
 	resetSecurityStateForTesting,
 } from './security-events';
+import { config } from '../config';
+import { resetIpGeolocationCacheForTesting } from './ip-geolocation';
 import type { SecurityFingerprint } from './security-fingerprint';
+
+
+const originalGeoEnabled = config.SECURITY_GEO_ENRICHMENT_ENABLED;
+const originalGeoEnvEnabled = process.env.SECURITY_GEO_ENRICHMENT_ENABLED;
 
 const baseFingerprint: SecurityFingerprint = {
 	ip: '198.51.100.200',
@@ -22,6 +28,17 @@ const baseFingerprint: SecurityFingerprint = {
 describe('security-events', () => {
 	beforeEach(() => {
 		resetSecurityStateForTesting();
+		resetIpGeolocationCacheForTesting();
+	});
+
+	afterEach(() => {
+		config.SECURITY_GEO_ENRICHMENT_ENABLED = originalGeoEnabled;
+		if (originalGeoEnvEnabled === undefined) {
+			delete process.env.SECURITY_GEO_ENRICHMENT_ENABLED;
+		} else {
+			process.env.SECURITY_GEO_ENRICHMENT_ENABLED = originalGeoEnvEnabled;
+		}
+		jest.restoreAllMocks();
 	});
 
 	test('records suspicious activity and creates an automatic block at the configured threshold', async () => {
@@ -120,6 +137,32 @@ describe('security-events', () => {
 			country: 'US',
 			count: 2,
 			cities: ['Ashburn', 'Dallas'],
+		});
+	});
+
+	test('falls back to IP geolocation for summary map when stored events have no country', async () => {
+		process.env.SECURITY_GEO_ENRICHMENT_ENABLED = 'true';
+		config.SECURITY_GEO_ENRICHMENT_ENABLED = true;
+		jest.spyOn(global, 'fetch').mockResolvedValue({
+			ok: true,
+			json: async () => ({ success: true, country_code: 'DE', region: 'Hesse', city: 'Frankfurt' }),
+		} as Response);
+
+		await persistSecurityEvent({
+			kind: 'blocked_path',
+			action: 'blocked',
+			method: 'GET',
+			path: '/.env',
+			statusCode: 403,
+			fingerprint: { ...baseFingerprint, ip: '8.8.8.8', ipHash: 'hash-8' },
+		});
+
+		const summary = await getSecuritySummary();
+
+		expect(summary.topCountries[0]).toEqual({
+			country: 'DE',
+			count: 1,
+			cities: ['Frankfurt'],
 		});
 	});
 });

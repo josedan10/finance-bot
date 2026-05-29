@@ -14,6 +14,17 @@ function buildRequest(headers: Record<string, string | undefined>): Request {
 }
 
 describe('collectSecurityFingerprint location fallbacks', () => {
+	test('prefers forwarded public IP over proxy socket IP', () => {
+		const request = buildRequest({
+			'x-forwarded-for': '203.0.113.10, 10.0.0.2',
+		});
+
+		const fingerprint = collectSecurityFingerprint(request);
+
+		expect(fingerprint.ip).toBe('203.0.113.10');
+		expect(fingerprint.forwardedFor).toBe('203.0.113.10, 10.0.0.2');
+	});
+
 	test('reads Cloudflare geo headers when available', () => {
 		const request = buildRequest({
 			'cf-ipcountry': 'US',
