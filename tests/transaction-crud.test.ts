@@ -209,6 +209,20 @@ describe('Transaction API (CRUD)', () => {
 		expect(prismaMock.categoryKeyword.upsert).not.toHaveBeenCalled();
 	});
 
+	it('should reject generic payment keywords such as Card before creating mappings', async () => {
+		const response = await request(app)
+			.patch('/api/transactions/31/categorize')
+			.send({ category: 'Food', keyword: 'Card', applyToMatchingTransactions: true });
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({
+			message: 'Keyword is too generic for category assignment. Choose a merchant or description-specific keyword.',
+		});
+		expect(prismaMock.transaction.findFirst).not.toHaveBeenCalled();
+		expect(prismaMock.keyword.upsert).not.toHaveBeenCalled();
+		expect(prismaMock.categoryKeyword.upsert).not.toHaveBeenCalled();
+	});
+
 	it('should return 404 when categorizing a non-existent transaction id', async () => {
 		prismaMock.transaction.findFirst.mockResolvedValue(null);
 
@@ -320,5 +334,171 @@ describe('Transaction API (CRUD)', () => {
 				reviewedAt: expect.any(Date),
 			}),
 		});
+	});
+
+	it('should preview reassignment for the latest transactions updated by a wrong keyword', async () => {
+		const cardCategory = createCategory({ id: 10, userId: 1, name: 'Card' } as never);
+		const foodCategory = createCategory({ id: 11, userId: 1, name: 'Food' } as never);
+		const travelCategory = createCategory({ id: 12, userId: 1, name: 'Travel' } as never);
+		const cardKeyword = createKeyword({ id: 20, userId: 1, name: 'card' } as never);
+		const reviewedAt = new Date('2026-06-04T12:30:00.000Z');
+		const olderReviewedAt = new Date('2026-06-04T11:00:00.000Z');
+
+		prismaMock.keyword.findFirst.mockResolvedValue({
+			...cardKeyword,
+			categoryKeyword: [{ categoryId: cardCategory.id, keywordId: cardKeyword.id, category: cardCategory }],
+		} as never);
+		prismaMock.transaction.findMany.mockResolvedValue([
+			{
+				id: 101,
+				description: 'Card McDonalds debit',
+				categoryId: cardCategory.id,
+				category: { name: 'Card' },
+				reviewedAt,
+			},
+			{
+				id: 102,
+				description: 'Card airline ticket',
+				categoryId: cardCategory.id,
+				category: { name: 'Card' },
+				reviewedAt,
+			},
+			{
+				id: 103,
+				description: 'Card older McDonalds debit',
+				categoryId: cardCategory.id,
+				category: { name: 'Card' },
+				reviewedAt: olderReviewedAt,
+			},
+		] as never);
+		prismaMock.category.findMany.mockResolvedValue([
+			{
+				...cardCategory,
+				categoryKeyword: [{ keyword: { name: 'card' } }],
+			},
+			{
+				...foodCategory,
+				categoryKeyword: [{ keyword: { name: 'mcdonalds' } }],
+			},
+			{
+				...travelCategory,
+				categoryKeyword: [{ keyword: { name: 'airline' } }],
+			},
+		] as never);
+
+		const response = await request(app)
+			.post('/api/transactions/category-keyword/reassign')
+			.send({ wrongKeyword: 'Card' });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			wrongKeyword: 'card',
+			dryRun: true,
+			latestBatchOnly: true,
+			latestReviewedAt: reviewedAt.toISOString(),
+			matchedTransactionCount: 2,
+			reassignedCount: 2,
+			unmatchedCount: 0,
+			deletedKeywordMapping: false,
+		});
+		expect(response.body.changes).toEqual([
+			expect.objectContaining({
+				id: '101',
+				previousCategory: 'Card',
+				newCategory: 'Food',
+				matchedKeyword: 'mcdonalds',
+			}),
+			expect.objectContaining({
+				id: '102',
+				previousCategory: 'Card',
+				newCategory: 'Travel',
+				matchedKeyword: 'airline',
+			}),
+		]);
+		expect(prismaMock.transaction.update).not.toHaveBeenCalled();
+	});
+
+	it('should apply reassignment and delete the wrong keyword mapping when dryRun is false', async () => {
+		const cardCategory = createCategory({ id: 10, userId: 1, name: 'Card' } as never);
+		const foodCategory = createCategory({ id: 11, userId: 1, name: 'Food' } as never);
+		const cardKeyword = createKeyword({ id: 20, userId: 1, name: 'card' } as never);
+		const reviewedAt = new Date('2026-06-04T12:30:00.000Z');
+		const tx = {
+			categoryKeyword: {
+				deleteMany: jest.fn().mockResolvedValue({ count: 1 } as never),
+			},
+			transaction: {
+				update: jest.fn().mockResolvedValue({} as never),
+			},
+		};
+
+		prismaMock.keyword.findFirst.mockResolvedValue({
+			...cardKeyword,
+			categoryKeyword: [{ categoryId: cardCategory.id, keywordId: cardKeyword.id, category: cardCategory }],
+		} as never);
+		prismaMock.transaction.findMany.mockResolvedValue([
+			{
+				id: 101,
+				description: 'Card McDonalds debit',
+				categoryId: cardCategory.id,
+				category: { name: 'Card' },
+				reviewedAt,
+			},
+		] as never);
+		prismaMock.category.findMany.mockResolvedValue([
+			{
+				...cardCategory,
+				categoryKeyword: [{ keyword: { name: 'card' } }],
+			},
+			{
+				...foodCategory,
+				categoryKeyword: [{ keyword: { name: 'mcdonalds' } }],
+			},
+		] as never);
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) => {
+			if (typeof callback !== 'function') {
+				throw new Error('Expected transaction callback');
+			}
+
+			// eslint-disable-next-line n/no-callback-literal
+			return callback(tx as never);
+		});
+
+		const response = await request(app)
+			.post('/api/transactions/category-keyword/reassign')
+			.send({ wrongKeyword: 'Card', dryRun: false });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			wrongKeyword: 'card',
+			dryRun: false,
+			matchedTransactionCount: 1,
+			reassignedCount: 1,
+			deletedKeywordMapping: true,
+		});
+		expect(tx.categoryKeyword.deleteMany).toHaveBeenCalledWith({
+			where: {
+				keywordId: cardKeyword.id,
+				category: {
+					userId: 1,
+				},
+			},
+		});
+		expect(tx.transaction.update).toHaveBeenCalledWith({
+			where: { id: 101 },
+			data: {
+				categoryId: foodCategory.id,
+				reviewed: false,
+				reviewedAt: null,
+			},
+		});
+	});
+
+	it('should reject reassignment when the wrong keyword is missing', async () => {
+		const response = await request(app).post('/api/transactions/category-keyword/reassign').send({});
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: 'wrongKeyword is required and must be 100 characters or fewer' });
+		expect(prismaMock.keyword.findFirst).not.toHaveBeenCalled();
 	});
 });

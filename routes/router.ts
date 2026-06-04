@@ -36,6 +36,20 @@ import {
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
+const unsafeCategoryKeywords = new Set([
+	'card',
+	'debit',
+	'credit',
+	'purchase',
+	'payment',
+	'transaction',
+	'tarjeta',
+	'debito',
+	'crédito',
+	'credito',
+	'pago',
+	'compra',
+]);
 const securityDashboardAllowedRoles = getSecurityDashboardAllowedRoles();
 const { requireAuth, requireRole } = AuthMiddleware;
 const requireOnboardingSyncAuth = AuthMiddleware.requireOnboardingSyncAuth ?? AuthMiddleware.requireAuth;
@@ -80,6 +94,71 @@ function parseOptionalBooleanQuery(value: unknown): boolean | undefined | null {
 	}
 
 	return null;
+}
+
+function normalizeCategoryKeyword(value: unknown): string | null {
+	if (typeof value !== 'string') {
+		return null;
+	}
+
+	const normalized = value.trim().toLowerCase();
+	return normalized.length > 0 && normalized.length <= 100 ? normalized : null;
+}
+
+function isValidDate(value: Date): boolean {
+	return !Number.isNaN(value.getTime());
+}
+
+function pickBestKeywordCategory(
+	description: string | null,
+	categories: {
+		id: number;
+		name: string;
+		categoryKeyword: { keyword: { name: string } }[];
+	}[],
+	excludedKeyword: string
+): { id: number; name: string; matchedKeyword: string } | null {
+	const normalizedDescription = description?.trim().toLowerCase();
+	if (!normalizedDescription) {
+		return null;
+	}
+
+	const matches = categories
+		.map((category) => {
+			const matchedKeywords = category.categoryKeyword
+				.map((entry) => entry.keyword.name.trim().toLowerCase())
+				.filter((keyword) => keyword && keyword !== excludedKeyword && normalizedDescription.includes(keyword));
+
+			if (matchedKeywords.length === 0) {
+				return null;
+			}
+
+			const longestKeyword = matchedKeywords.reduce((longest, keyword) =>
+				keyword.length > longest.length ? keyword : longest
+			);
+
+			return {
+				id: category.id,
+				name: category.name,
+				matchedKeyword: longestKeyword,
+				matchCount: matchedKeywords.length,
+				longestKeywordLength: longestKeyword.length,
+			};
+		})
+		.filter((match): match is NonNullable<typeof match> => match !== null)
+		.sort((left, right) => {
+			if (right.longestKeywordLength !== left.longestKeywordLength) {
+				return right.longestKeywordLength - left.longestKeywordLength;
+			}
+
+			if (right.matchCount !== left.matchCount) {
+				return right.matchCount - left.matchCount;
+			}
+
+			return left.name.localeCompare(right.name);
+		});
+
+	return matches[0] ?? null;
 }
 
 router.use((req: Request, res: Response, next) => {
@@ -945,6 +1024,12 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			return res.status(400).json({ message: 'Keyword is required to apply categorization to matching transactions' });
 		}
 
+		if (normalizedKeyword && unsafeCategoryKeywords.has(normalizedKeyword)) {
+			return res.status(400).json({
+				message: 'Keyword is too generic for category assignment. Choose a merchant or description-specific keyword.',
+			});
+		}
+
 		const existingTransaction = await prisma.transaction.findFirst({
 			where: { id, userId: req.user.id },
 			include: {
@@ -1064,6 +1149,175 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 	} catch (error) {
 		logger.error('Failed to categorize transaction', { error, userId: req.user.id });
 		res.status(500).json({ message: 'Failed to categorize transaction' });
+	}
+});
+
+router.post('/api/transactions/category-keyword/reassign', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const {
+			wrongKeyword,
+			updatedAfter,
+			latestBatchOnly = true,
+			dryRun = true,
+			deleteKeywordMapping = true,
+			limit = 500,
+		} = req.body as {
+			wrongKeyword?: string;
+			updatedAfter?: string;
+			latestBatchOnly?: boolean;
+			dryRun?: boolean;
+			deleteKeywordMapping?: boolean;
+			limit?: number;
+		};
+
+		const normalizedKeyword = normalizeCategoryKeyword(wrongKeyword);
+		if (!normalizedKeyword) {
+			return res.status(400).json({ message: 'wrongKeyword is required and must be 100 characters or fewer' });
+		}
+
+		let reviewedAfterDate: Date | undefined;
+		if (updatedAfter) {
+			reviewedAfterDate = new Date(updatedAfter);
+			if (!isValidDate(reviewedAfterDate)) {
+				return res.status(400).json({ message: 'updatedAfter must be a valid ISO date' });
+			}
+		}
+
+		const safeLimit = Math.min(Math.max(Number(limit) || 500, 1), 1000);
+
+		const wrongKeywordRecord = await prisma.keyword.findFirst({
+			where: { name: normalizedKeyword, userId: req.user.id },
+			include: {
+				categoryKeyword: {
+					include: {
+						category: true,
+					},
+				},
+			},
+		});
+
+		if (!wrongKeywordRecord) {
+			return res.status(404).json({ message: 'Keyword not found' });
+		}
+
+		const wronglyAssignedCategoryIds = wrongKeywordRecord.categoryKeyword
+			.filter((mapping) => mapping.category.userId === req.user.id)
+			.map((mapping) => mapping.categoryId);
+
+		const candidateTransactions = await prisma.transaction.findMany({
+			where: {
+				userId: req.user.id,
+				description: {
+					contains: normalizedKeyword,
+				},
+				...(wronglyAssignedCategoryIds.length > 0 ? { categoryId: { in: wronglyAssignedCategoryIds } } : {}),
+				...(reviewedAfterDate ? { reviewedAt: { gte: reviewedAfterDate } } : { reviewedAt: { not: null } }),
+			},
+			select: {
+				id: true,
+				description: true,
+				categoryId: true,
+				reviewedAt: true,
+				category: {
+					select: {
+						name: true,
+					},
+				},
+			},
+			orderBy: {
+				reviewedAt: 'desc',
+			},
+			take: safeLimit,
+		});
+
+		const keywordMatchedTransactions = candidateTransactions.filter((transaction) =>
+			transaction.description?.toLowerCase().includes(normalizedKeyword)
+		);
+
+		const latestReviewedAt = keywordMatchedTransactions.reduce<Date | null>((latest, transaction) => {
+			if (!transaction.reviewedAt) {
+				return latest;
+			}
+
+			return !latest || transaction.reviewedAt.getTime() > latest.getTime() ? transaction.reviewedAt : latest;
+		}, null);
+
+		const scopedTransactions =
+			latestBatchOnly && !reviewedAfterDate && latestReviewedAt
+				? keywordMatchedTransactions.filter((transaction) => transaction.reviewedAt?.getTime() === latestReviewedAt.getTime())
+				: keywordMatchedTransactions;
+
+		const categories = await prisma.category.findMany({
+			where: { userId: req.user.id },
+			select: {
+				id: true,
+				name: true,
+				categoryKeyword: {
+					select: {
+						keyword: {
+							select: {
+								name: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const plannedChanges = scopedTransactions.map((transaction) => {
+			const reassignedCategory = pickBestKeywordCategory(transaction.description, categories, normalizedKeyword);
+
+			return {
+				id: String(transaction.id),
+				description: transaction.description ?? 'No description',
+				previousCategory: transaction.category?.name ?? null,
+				previousCategoryId: transaction.categoryId,
+				newCategory: reassignedCategory?.name ?? null,
+				newCategoryId: reassignedCategory?.id ?? null,
+				matchedKeyword: reassignedCategory?.matchedKeyword ?? null,
+			};
+		});
+
+		if (!dryRun && (plannedChanges.length > 0 || deleteKeywordMapping)) {
+			await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+				if (deleteKeywordMapping) {
+					await tx.categoryKeyword.deleteMany({
+						where: {
+							keywordId: wrongKeywordRecord.id,
+							category: {
+								userId: req.user.id,
+							},
+						},
+					});
+				}
+
+				for (const change of plannedChanges) {
+					await tx.transaction.update({
+						where: { id: Number(change.id) },
+						data: {
+							categoryId: change.newCategoryId,
+							reviewed: false,
+							reviewedAt: null,
+						},
+					});
+				}
+			});
+		}
+
+		return res.status(200).json({
+			wrongKeyword: normalizedKeyword,
+			dryRun,
+			latestBatchOnly,
+			latestReviewedAt: latestReviewedAt?.toISOString() ?? null,
+			matchedTransactionCount: scopedTransactions.length,
+			reassignedCount: plannedChanges.filter((change) => change.newCategoryId !== change.previousCategoryId).length,
+			unmatchedCount: plannedChanges.filter((change) => change.newCategoryId === null).length,
+			deletedKeywordMapping: !dryRun && deleteKeywordMapping,
+			changes: plannedChanges,
+		});
+	} catch (error) {
+		logger.error('Failed to reassign transactions by keyword', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to reassign transactions by keyword' });
 	}
 });
 
