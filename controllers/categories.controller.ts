@@ -3,6 +3,12 @@ import { Prisma } from '@prisma/client';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import logger from '../src/lib/logger';
 import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
+import {
+	normalizeBudgetType,
+	normalizeOptionalAmount,
+	normalizeOptionalDueDay,
+	normalizeOptionalTargetDate,
+} from '../src/lib/budget-normalizers';
 
 const normalizeKeywords = (keywords: string[]): string[] =>
 	[...new Set(keywords.map((keyword) => keyword.trim().toLowerCase()).filter(Boolean))];
@@ -10,36 +16,6 @@ const normalizeKeywords = (keywords: string[]): string[] =>
 type CategoryWithOptionalIcon = {
 	icon?: string | null;
 };
-
-type BudgetType = 'spending' | 'recurring' | 'goal' | 'reserve';
-
-const BUDGET_TYPES = new Set<BudgetType>(['spending', 'recurring', 'goal', 'reserve']);
-
-function normalizeBudgetType(value: unknown): BudgetType {
-	return typeof value === 'string' && BUDGET_TYPES.has(value as BudgetType) ? value as BudgetType : 'spending';
-}
-
-function normalizeOptionalAmount(value: unknown): number | null | undefined {
-	if (value === undefined) return undefined;
-	if (value === null || value === '') return null;
-	const parsed = Number(value);
-	return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-}
-
-function normalizeOptionalDueDay(value: unknown): number | null | undefined {
-	if (value === undefined) return undefined;
-	if (value === null || value === '') return null;
-	const parsed = Number(value);
-	return Number.isInteger(parsed) && parsed >= 1 && parsed <= 31 ? parsed : null;
-}
-
-function normalizeOptionalTargetDate(value: unknown): Date | null | undefined {
-	if (value === undefined) return undefined;
-	if (value === null || value === '') return null;
-	if (typeof value !== 'string') return null;
-	const parsed = new Date(value);
-	return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
 
 function mapCategoryBudgetFields(category: {
 	budgetType?: string | null;

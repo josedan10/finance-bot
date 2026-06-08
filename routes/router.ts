@@ -33,6 +33,7 @@ import {
 	listSecurityPathBlocks,
 	removeSecurityPathBlock,
 } from '../src/lib/security-path-blocks';
+import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, normalizeOptionalTargetDate } from '../src/lib/budget-normalizers';
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
@@ -1481,20 +1482,24 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 		}
 
 		const updateData: Prisma.CategoryUpdateInput = { amountLimit: limit };
-		if (type && ['spending', 'recurring', 'goal', 'reserve'].includes(type)) {
-			updateData.budgetType = type;
+		if (type !== undefined) {
+			updateData.budgetType = normalizeBudgetType(type);
 		}
-		if (targetAmount !== undefined) {
-			updateData.targetAmount = targetAmount;
+		const normalizedTargetAmount = normalizeOptionalAmount(targetAmount);
+		if (normalizedTargetAmount !== undefined) {
+			updateData.targetAmount = normalizedTargetAmount;
 		}
-		if (currentAmount !== undefined) {
-			updateData.currentAmount = currentAmount;
+		const normalizedCurrentAmount = normalizeOptionalAmount(currentAmount);
+		if (normalizedCurrentAmount !== undefined) {
+			updateData.currentAmount = normalizedCurrentAmount;
 		}
-		if (dueDay !== undefined) {
-			updateData.dueDay = dueDay === null ? null : Number(dueDay);
+		const normalizedDueDay = normalizeOptionalDueDay(dueDay);
+		if (normalizedDueDay !== undefined) {
+			updateData.dueDay = normalizedDueDay;
 		}
-		if (targetDate !== undefined) {
-			updateData.targetDate = targetDate === null || targetDate === '' ? null : new Date(targetDate);
+		const normalizedTargetDate = normalizeOptionalTargetDate(targetDate);
+		if (normalizedTargetDate !== undefined) {
+			updateData.targetDate = normalizedTargetDate;
 		}
 
 		const updated = await prisma.category.update({
