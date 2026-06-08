@@ -55,10 +55,7 @@ describe('Budget Routes', () => {
 		});
 		expect(prismaMock.category.update).toHaveBeenCalledWith({
 			where: { id: category.id },
-			data: expect.objectContaining({
-				amountLimit: 350,
-				budgetType: 'spending',
-			}),
+			data: { amountLimit: 350 },
 		});
 	});
 

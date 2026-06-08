@@ -1480,20 +1480,26 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			return res.status(404).json({ message: 'Category not found' });
 		}
 
-		const normalizedType = type && ['spending', 'recurring', 'goal', 'reserve'].includes(type) ? type : category.budgetType;
-		const normalizedDueDay = dueDay === null || dueDay === undefined ? dueDay : Number(dueDay);
-		const normalizedTargetDate = targetDate === null || targetDate === undefined || targetDate === '' ? null : new Date(targetDate);
+		const updateData: Prisma.CategoryUpdateInput = { amountLimit: limit };
+		if (type && ['spending', 'recurring', 'goal', 'reserve'].includes(type)) {
+			updateData.budgetType = type;
+		}
+		if (targetAmount !== undefined) {
+			updateData.targetAmount = targetAmount;
+		}
+		if (currentAmount !== undefined) {
+			updateData.currentAmount = currentAmount;
+		}
+		if (dueDay !== undefined) {
+			updateData.dueDay = dueDay === null ? null : Number(dueDay);
+		}
+		if (targetDate !== undefined) {
+			updateData.targetDate = targetDate === null || targetDate === '' ? null : new Date(targetDate);
+		}
 
 		const updated = await prisma.category.update({
 			where: { id: category.id },
-			data: {
-				amountLimit: limit,
-				budgetType: normalizedType,
-				targetAmount: targetAmount === undefined ? category.targetAmount : targetAmount,
-				currentAmount: currentAmount === undefined ? category.currentAmount : currentAmount,
-				dueDay: normalizedDueDay === undefined ? category.dueDay : normalizedDueDay,
-				targetDate: targetDate === undefined ? category.targetDate : normalizedTargetDate,
-			},
+			data: updateData,
 		});
 
 		res.status(200).json({
