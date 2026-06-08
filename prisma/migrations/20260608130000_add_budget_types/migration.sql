@@ -1,0 +1,6 @@
+ALTER TABLE `Category`
+ADD COLUMN `budgetType` VARCHAR(20) NOT NULL DEFAULT 'spending',
+ADD COLUMN `targetAmount` DECIMAL(10, 2) NULL,
+ADD COLUMN `currentAmount` DECIMAL(10, 2) NULL,
+ADD COLUMN `dueDay` INTEGER NULL,
+ADD COLUMN `targetDate` DATETIME(3) NULL;

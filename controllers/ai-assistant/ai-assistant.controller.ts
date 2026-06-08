@@ -207,6 +207,7 @@ async function optimizeAndStoreReceiptFile(params: {
   requestId: string;
   baseUrl: string;
   label: string;
+  publicSubdir?: 'receipt-processing' | 'receipt-review';
 }) {
   const optimizationDetails = await optimizeReceiptImageForOcr(params.file.buffer);
   const mimeType = optimizationDetails.didOptimize
@@ -222,6 +223,7 @@ async function optimizeAndStoreReceiptFile(params: {
     requestId: params.requestId,
     baseUrl: params.baseUrl,
     label: params.label,
+    publicSubdir: params.publicSubdir,
   });
 
   return {
@@ -263,6 +265,7 @@ export async function queueReceiptAnalysis(req: Request, res: Response): Promise
         requestId,
         baseUrl,
         label: `queue-${index + 1}`,
+        publicSubdir: 'receipt-review',
       });
 
       queuedFiles.push({

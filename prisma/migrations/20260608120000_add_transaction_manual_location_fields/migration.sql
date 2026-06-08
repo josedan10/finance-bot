@@ -1,0 +1,6 @@
+ALTER TABLE `Transaction`
+ADD COLUMN `manualDescription` VARCHAR(255) NULL,
+ADD COLUMN `locationName` VARCHAR(255) NULL,
+ADD COLUMN `latitude` DECIMAL(10, 7) NULL,
+ADD COLUMN `longitude` DECIMAL(10, 7) NULL,
+ADD COLUMN `googleMapsUrl` VARCHAR(500) NULL;

@@ -37,6 +37,11 @@ model Category {
   description      String?           @db.VarChar(255)
   icon             String?           @db.VarChar(50)
   amountLimit      Decimal?          @db.Decimal(10, 2)
+  budgetType       String            @default("spending") @db.VarChar(20)
+  targetAmount     Decimal?          @db.Decimal(10, 2)
+  currentAmount    Decimal?          @db.Decimal(10, 2)
+  dueDay           Int?
+  targetDate       DateTime?
   isCumulative     Boolean           @default(false)
   userId           Int
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -128,6 +133,11 @@ model Transaction {
   isMonthly              Boolean        @default(false)
   shopId                 Int?
   referenceId            String?        @db.VarChar(30)
+  manualDescription      String?        @db.VarChar(255)
+  locationName           String?        @db.VarChar(255)
+  latitude               Decimal?       @db.Decimal(10, 7)
+  longitude              Decimal?       @db.Decimal(10, 7)
+  googleMapsUrl          String?        @db.VarChar(500)
   isAnnually             Boolean        @default(false)
   originalCurrencyAmount Decimal?       @db.Decimal(10, 2)
   telegramFileIds        String?        @db.VarChar(255)

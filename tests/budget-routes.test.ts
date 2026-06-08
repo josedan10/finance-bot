@@ -44,6 +44,11 @@ describe('Budget Routes', () => {
 			id: String(updatedCategory.id),
 			category: updatedCategory.name,
 			limit: 350,
+			type: 'spending',
+			targetAmount: null,
+			currentAmount: null,
+			dueDay: null,
+			targetDate: null,
 		});
 		expect(prismaMock.category.findFirst).toHaveBeenCalledWith({
 			where: { id: 10, userId: 1 },
