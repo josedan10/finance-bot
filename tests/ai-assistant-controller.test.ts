@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Request, Response } from 'express';
-import { queueReceiptAnalysis } from '../controllers/ai-assistant/ai-assistant.controller';
+import { queueReceiptAnalysis, scanReceipt } from '../controllers/ai-assistant/ai-assistant.controller';
 import { ReceiptOcrQueueService } from '../modules/ai-assistant/receipt-ocr-queue.service';
+import { analyzeReceiptImageForUser } from '../modules/ai-assistant/receipt-analysis.service';
 import {
 	optimizeReceiptImageForOcr,
 	saveReceiptProcessingImage,
@@ -21,6 +22,10 @@ jest.mock('../modules/ai-assistant/receipt-ocr-queue.service', () => ({
 	},
 }));
 
+jest.mock('../modules/ai-assistant/receipt-analysis.service', () => ({
+	analyzeReceiptImageForUser: jest.fn(),
+}));
+
 jest.mock('../src/lib/receipt-image-storage', () => ({
 	getImageExtension: jest.fn(),
 	optimizeReceiptImageForOcr: jest.fn(),
@@ -35,6 +40,7 @@ jest.mock('../src/lib/sentry', () => ({
 const optimizeReceiptImageForOcrMock = jest.mocked(optimizeReceiptImageForOcr);
 const saveReceiptProcessingImageMock = jest.mocked(saveReceiptProcessingImage);
 const enqueueJobsMock = jest.mocked(ReceiptOcrQueueService.enqueueJobs);
+const analyzeReceiptImageForUserMock = jest.mocked(analyzeReceiptImageForUser);
 
 function createResponse() {
 	const json = jest.fn();
@@ -73,6 +79,23 @@ describe('AI Assistant Controller', () => {
 			filePath: `/tmp/${requestId}.jpg`,
 			fileName: `${requestId}.jpg`,
 		}));
+
+		analyzeReceiptImageForUserMock.mockResolvedValue({
+			date: '2026-04-06',
+			dateTime: '2026-04-06T00:00:00.000Z',
+			description: 'Receipt scan',
+			amount: 12.5,
+			category: 'Other',
+			type: 'expense',
+			currency: 'USD',
+			isDuplicate: false,
+			beloWithdrawMatch: null,
+			rawText: '',
+			textLines: [],
+			requiresManualReview: false,
+			parseWarning: null,
+			metadataDateTimeSuggestion: null,
+		});
 
 		enqueueJobsMock.mockResolvedValue([
 			{
@@ -142,4 +165,48 @@ describe('AI Assistant Controller', () => {
 			}),
 		]);
 	});
+
+	it('uses the default receipt-processing subdirectory for immediate receipt scans', async () => {
+		const req = {
+			user: {
+				id: 1,
+				firebaseId: 'firebase-user-1',
+				email: 'test@example.com',
+				createdAt: new Date('2026-04-06T00:00:00.000Z'),
+				dashboardBudgetPreferences: null,
+			},
+			body: {},
+			file: {
+				buffer: Buffer.from('scan-image'),
+				originalname: 'receipt.jpg',
+				mimetype: 'image/jpeg',
+				size: 5000,
+			},
+			get: (header: string) => {
+				if (header === 'host') return 'api.zentra-app.pro';
+				if (header === 'x-forwarded-proto') return 'https';
+				return undefined;
+			},
+			protocol: 'https',
+		} as unknown as Request;
+		const res = createResponse();
+
+		await scanReceipt(req, res);
+
+		expect(saveReceiptProcessingImageMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				label: 'scan',
+			})
+		);
+		expect(saveReceiptProcessingImageMock.mock.calls[0][0]).not.toHaveProperty('publicSubdir');
+		expect(analyzeReceiptImageForUserMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				imageInput: expect.objectContaining({
+					type: 'image-source',
+					value: 'https://api.zentra-app.pro/receipt-processing/req-123.jpg',
+				}),
+			})
+		);
+	});
+
 });

@@ -188,14 +188,14 @@ export async function saveReceiptProcessingImage(params: {
 	publicSubdir?: 'receipt-processing' | 'receipt-review';
 }): Promise<StoredReceiptImage> {
 	const publicSubdir = params.publicSubdir || 'receipt-processing';
-	const receiptProcessingDir = path.resolve(process.cwd(), 'public', publicSubdir);
+	const receiptStorageDir = path.resolve(process.cwd(), 'public', publicSubdir);
 	const extension = getImageExtension(params.mimeType, params.originalName);
 	const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 	const label = sanitizeLabel(params.label || 'scan');
 	const fileName = `${timestamp}-${label}-${params.requestId}${extension}`;
-	const filePath = path.join(receiptProcessingDir, fileName);
+	const filePath = path.join(receiptStorageDir, fileName);
 
-	await fs.mkdir(receiptProcessingDir, { recursive: true });
+	await fs.mkdir(receiptStorageDir, { recursive: true });
 	await fs.writeFile(filePath, params.buffer);
 
 	return {
