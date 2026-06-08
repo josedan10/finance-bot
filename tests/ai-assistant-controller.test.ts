@@ -128,6 +128,12 @@ describe('AI Assistant Controller', () => {
 
 		await queueReceiptAnalysis(req, res);
 
+		expect(saveReceiptProcessingImageMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				publicSubdir: 'receipt-review',
+				label: 'queue-1',
+			})
+		);
 		expect(enqueueJobsMock).toHaveBeenCalledTimes(1);
 		expect(enqueueJobsMock.mock.calls[0][1]).toEqual([
 			expect.objectContaining({

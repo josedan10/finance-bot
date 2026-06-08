@@ -11,6 +11,52 @@ type CategoryWithOptionalIcon = {
 	icon?: string | null;
 };
 
+type BudgetType = 'spending' | 'recurring' | 'goal' | 'reserve';
+
+const BUDGET_TYPES = new Set<BudgetType>(['spending', 'recurring', 'goal', 'reserve']);
+
+function normalizeBudgetType(value: unknown): BudgetType {
+	return typeof value === 'string' && BUDGET_TYPES.has(value as BudgetType) ? value as BudgetType : 'spending';
+}
+
+function normalizeOptionalAmount(value: unknown): number | null | undefined {
+	if (value === undefined) return undefined;
+	if (value === null || value === '') return null;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function normalizeOptionalDueDay(value: unknown): number | null | undefined {
+	if (value === undefined) return undefined;
+	if (value === null || value === '') return null;
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed >= 1 && parsed <= 31 ? parsed : null;
+}
+
+function normalizeOptionalTargetDate(value: unknown): Date | null | undefined {
+	if (value === undefined) return undefined;
+	if (value === null || value === '') return null;
+	if (typeof value !== 'string') return null;
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function mapCategoryBudgetFields(category: {
+	budgetType?: string | null;
+	targetAmount?: unknown;
+	currentAmount?: unknown;
+	dueDay?: number | null;
+	targetDate?: Date | string | null;
+}) {
+	return {
+		budgetType: normalizeBudgetType(category.budgetType),
+		targetAmount: category.targetAmount === null || category.targetAmount === undefined ? null : Number(category.targetAmount),
+		currentAmount: category.currentAmount === null || category.currentAmount === undefined ? null : Number(category.currentAmount),
+		dueDay: category.dueDay ?? null,
+		targetDate: category.targetDate ? new Date(category.targetDate).toISOString() : null,
+	};
+}
+
 /**
  * Returns all categories for the authenticated user, 
  * including their keywords and transaction counts.
@@ -42,6 +88,7 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
 				icon: (cat as unknown as CategoryWithOptionalIcon).icon ?? null,
 				amountLimit: Number(cat.amountLimit ?? 0),
 				isCumulative: cat.isCumulative,
+				...mapCategoryBudgetFields(cat),
 				currentCarryOver: Number(period?.carryOver || 0),
 				keywords: cat.categoryKeyword.map((ck) => ck.keyword.name),
 				transactionCount: cat._count.transaction,
@@ -59,13 +106,18 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
  * Creates a new category and associates keywords.
  */
 export async function createCategory(req: Request, res: Response): Promise<void> {
-	const { name, description, icon, amountLimit, keywords, isCumulative } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
 		name: string;
 		description?: string;
 		icon?: string;
 		amountLimit?: number;
 		keywords?: string[];
 		isCumulative?: boolean;
+		budgetType?: string;
+		targetAmount?: number | null;
+		currentAmount?: number | null;
+		dueDay?: number | null;
+		targetDate?: string | null;
 	};
 
 	if (!name) {
@@ -75,6 +127,12 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 
 	try {
 		logger.info('API: Creating category', { userId: req.user.id, name });
+		const normalizedBudgetType = normalizeBudgetType(budgetType);
+		const normalizedTargetAmount = normalizeOptionalAmount(targetAmount);
+		const normalizedCurrentAmount = normalizeOptionalAmount(currentAmount);
+		const normalizedDueDay = normalizeOptionalDueDay(dueDay);
+		const normalizedTargetDate = normalizeOptionalTargetDate(targetDate);
+
 		const result = await prisma.$transaction(async (tx) => {
 			// 1. Create the category
 			const categoryCreateData = {
@@ -82,6 +140,11 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 					description,
 					icon: icon ?? null,
 					amountLimit,
+					budgetType: normalizedBudgetType,
+					targetAmount: normalizedTargetAmount === undefined ? null : normalizedTargetAmount,
+					currentAmount: normalizedCurrentAmount === undefined ? null : normalizedCurrentAmount,
+					dueDay: normalizedDueDay === undefined ? null : normalizedDueDay,
+					targetDate: normalizedTargetDate === undefined ? null : normalizedTargetDate,
 					isCumulative: !!isCumulative,
 					userId: req.user.id,
 				};
@@ -119,7 +182,11 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 			return category;
 		});
 
-		res.status(201).json(result);
+		res.status(201).json({
+			...result,
+			amountLimit: Number(result.amountLimit ?? 0),
+			...mapCategoryBudgetFields(result),
+		});
 	} catch (error: unknown) {
 		const prismaError = error instanceof Prisma.PrismaClientKnownRequestError ? error : null;
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -139,13 +206,18 @@ export async function createCategory(req: Request, res: Response): Promise<void>
  */
 export async function updateCategory(req: Request, res: Response): Promise<void> {
 	const id = Number(req.params.id);
-	const { name, description, icon, amountLimit, keywords, isCumulative } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
 		name?: string;
 		description?: string;
 		icon?: string;
 		amountLimit?: number;
 		keywords?: string[];
 		isCumulative?: boolean;
+		budgetType?: string;
+		targetAmount?: number | null;
+		currentAmount?: number | null;
+		dueDay?: number | null;
+		targetDate?: string | null;
 	};
 
 	if (isNaN(id)) {
@@ -179,12 +251,22 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 				}
 			}
 
+			const normalizedTargetAmount = normalizeOptionalAmount(targetAmount);
+			const normalizedCurrentAmount = normalizeOptionalAmount(currentAmount);
+			const normalizedDueDay = normalizeOptionalDueDay(dueDay);
+			const normalizedTargetDate = normalizeOptionalTargetDate(targetDate);
+
 			// 1. Update category fields
 			const categoryUpdateData = {
 						name: name ?? existing.name,
 						description: description !== undefined ? description : existing.description,
 						icon: icon !== undefined ? icon : (existing as unknown as CategoryWithOptionalIcon).icon,
 						amountLimit: amountLimit !== undefined ? amountLimit : existing.amountLimit,
+						budgetType: budgetType !== undefined ? normalizeBudgetType(budgetType) : existing.budgetType,
+						targetAmount: normalizedTargetAmount !== undefined ? normalizedTargetAmount : existing.targetAmount,
+						currentAmount: normalizedCurrentAmount !== undefined ? normalizedCurrentAmount : existing.currentAmount,
+						dueDay: normalizedDueDay !== undefined ? normalizedDueDay : existing.dueDay,
+						targetDate: normalizedTargetDate !== undefined ? normalizedTargetDate : existing.targetDate,
 						isCumulative: isCumulative !== undefined ? isCumulative : existing.isCumulative,
 					};
 			const updatedCategory = await tx.category.update({
@@ -228,7 +310,11 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 			return updatedCategory;
 		});
 
-		res.status(200).json(result);
+		res.status(200).json({
+			...result,
+			amountLimit: Number(result.amountLimit ?? 0),
+			...mapCategoryBudgetFields(result),
+		});
 	} catch (error: unknown) {
 		if (error instanceof Error && error.message === 'Category not found') {
 			res.status(404).json({ message: error.message });

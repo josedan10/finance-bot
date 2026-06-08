@@ -185,8 +185,10 @@ export async function saveReceiptProcessingImage(params: {
 	requestId: string;
 	baseUrl: string;
 	label?: string;
+	publicSubdir?: 'receipt-processing' | 'receipt-review';
 }): Promise<StoredReceiptImage> {
-	const receiptProcessingDir = path.resolve(process.cwd(), 'public', 'receipt-processing');
+	const publicSubdir = params.publicSubdir || 'receipt-processing';
+	const receiptProcessingDir = path.resolve(process.cwd(), 'public', publicSubdir);
 	const extension = getImageExtension(params.mimeType, params.originalName);
 	const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 	const label = sanitizeLabel(params.label || 'scan');
@@ -199,7 +201,7 @@ export async function saveReceiptProcessingImage(params: {
 	return {
 		fileName,
 		filePath,
-		publicUrl: `${params.baseUrl}/receipt-processing/${fileName}`,
+		publicUrl: `${params.baseUrl}/${publicSubdir}/${fileName}`,
 	};
 }
 

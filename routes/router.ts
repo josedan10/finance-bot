@@ -604,6 +604,11 @@ router.get('/api/transactions', requireAuth, async (req: Request, res: Response)
 			type: tx.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
 			referenceId: tx.referenceId ?? undefined,
+			manualDescription: tx.manualDescription ?? undefined,
+			locationName: tx.locationName ?? undefined,
+			latitude: tx.latitude === null ? undefined : Number(tx.latitude),
+			longitude: tx.longitude === null ? undefined : Number(tx.longitude),
+			googleMapsUrl: tx.googleMapsUrl ?? undefined,
 			currency: tx.currency,
 			reviewed: tx.reviewed,
 		}));
@@ -644,7 +649,7 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 
 router.post('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
-		const { date, description, amount, category, type, paymentMethodId, currency } = req.body as {
+		const { date, description, amount, category, type, paymentMethodId, currency, manualDescription, locationName, latitude, longitude, googleMapsUrl } = req.body as {
 			date?: string;
 			description?: string;
 			amount?: number;
@@ -652,6 +657,11 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			type?: 'income' | 'expense';
 			paymentMethodId?: number;
 			currency?: string;
+			manualDescription?: string;
+			locationName?: string;
+			latitude?: number;
+			longitude?: number;
+			googleMapsUrl?: string;
 		};
 
 
@@ -703,6 +713,11 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			type: normalizedType,
 			categoryId: matchedCategory?.id,
 			paymentMethodId: finalPaymentMethodId,
+			manualDescription: manualDescription?.trim() || null,
+			locationName: locationName?.trim() || null,
+			latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+			longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+			googleMapsUrl: googleMapsUrl?.trim() || null,
 			reviewed: true,
 		});
 
@@ -719,6 +734,11 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			type,
 			source: 'manual',
 			referenceId: transaction.referenceId ?? undefined,
+			manualDescription: transaction.manualDescription ?? undefined,
+			locationName: transaction.locationName ?? undefined,
+			latitude: transaction.latitude === null ? undefined : Number(transaction.latitude),
+			longitude: transaction.longitude === null ? undefined : Number(transaction.longitude),
+			googleMapsUrl: transaction.googleMapsUrl ?? undefined,
 			reviewed: transaction.reviewed,
 		});
 	} catch (error) {
@@ -909,7 +929,21 @@ router.delete('/api/transactions/:id', requireAuth, async (req: Request, res: Re
 router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		const { date, description, amount, currency, category, paymentMethodId, type, referenceId } = req.body as {
+		const {
+			date,
+			description,
+			amount,
+			currency,
+			category,
+			paymentMethodId,
+			type,
+			referenceId,
+			manualDescription,
+			locationName,
+			latitude,
+			longitude,
+			googleMapsUrl,
+		} = req.body as {
 			date?: string;
 			description?: string;
 			amount?: number;
@@ -918,6 +952,11 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			paymentMethodId?: number;
 			type?: 'income' | 'expense';
 			referenceId?: string;
+			manualDescription?: string;
+			locationName?: string;
+			latitude?: number | null;
+			longitude?: number | null;
+			googleMapsUrl?: string;
 		};
 
 		if (
@@ -965,6 +1004,9 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			}
 		}
 
+		const normalizedLatitude = Number.isFinite(Number(latitude)) ? Number(latitude) : null;
+		const normalizedLongitude = Number.isFinite(Number(longitude)) ? Number(longitude) : null;
+
 		const updated = await prisma.transaction.update({
 			where: { id: existingTransaction.id },
 			data: {
@@ -976,6 +1018,11 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 				paymentMethodId: resolvedPaymentMethodId,
 				type: type === 'income' ? 'credit' : 'debit',
 				referenceId: referenceId?.trim() || null,
+				manualDescription: manualDescription?.trim() || null,
+				locationName: locationName?.trim() || null,
+				latitude: normalizedLatitude,
+				longitude: normalizedLongitude,
+				googleMapsUrl: googleMapsUrl?.trim() || null,
 				reviewed: true,
 				reviewedAt: new Date(),
 			},
@@ -997,6 +1044,11 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			type: updated.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
 			referenceId: updated.referenceId ?? undefined,
+			manualDescription: updated.manualDescription ?? undefined,
+			locationName: updated.locationName ?? undefined,
+			latitude: updated.latitude === null ? undefined : Number(updated.latitude),
+			longitude: updated.longitude === null ? undefined : Number(updated.longitude),
+			googleMapsUrl: updated.googleMapsUrl ?? undefined,
 			currency: updated.currency,
 			reviewed: updated.reviewed,
 		});
@@ -1364,6 +1416,11 @@ router.patch('/api/transactions/:id/review', requireAuth, async (req: Request, r
 			type: updated.type === 'credit' ? 'income' : 'expense',
 			source: 'manual',
 			referenceId: updated.referenceId ?? undefined,
+			manualDescription: updated.manualDescription ?? undefined,
+			locationName: updated.locationName ?? undefined,
+			latitude: updated.latitude === null ? undefined : Number(updated.latitude),
+			longitude: updated.longitude === null ? undefined : Number(updated.longitude),
+			googleMapsUrl: updated.googleMapsUrl ?? undefined,
 			currency: updated.currency,
 			reviewed: updated.reviewed,
 		});
@@ -1386,6 +1443,11 @@ router.get('/api/budgets', requireAuth, async (req: Request, res: Response) => {
 				id: String(category.id),
 				category: category.name,
 				limit: Number(category.amountLimit ?? 0),
+				type: category.budgetType || 'spending',
+				targetAmount: category.targetAmount === null ? null : Number(category.targetAmount),
+				currentAmount: category.currentAmount === null ? null : Number(category.currentAmount),
+				dueDay: category.dueDay ?? null,
+				targetDate: category.targetDate ? category.targetDate.toISOString() : null,
 			}));
 
 		res.status(200).json(budgets);
@@ -1397,7 +1459,14 @@ router.get('/api/budgets', requireAuth, async (req: Request, res: Response) => {
 router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		const { limit } = req.body as { limit?: number };
+		const { limit, type, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
+			limit?: number;
+			type?: 'spending' | 'recurring' | 'goal' | 'reserve';
+			targetAmount?: number | null;
+			currentAmount?: number | null;
+			dueDay?: number | null;
+			targetDate?: string | null;
+		};
 
 		if (Number.isNaN(id) || limit === undefined) {
 			return res.status(400).json({ message: 'Invalid request' });
@@ -1411,15 +1480,31 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			return res.status(404).json({ message: 'Category not found' });
 		}
 
+		const normalizedType = type && ['spending', 'recurring', 'goal', 'reserve'].includes(type) ? type : category.budgetType;
+		const normalizedDueDay = dueDay === null || dueDay === undefined ? dueDay : Number(dueDay);
+		const normalizedTargetDate = targetDate === null || targetDate === undefined || targetDate === '' ? null : new Date(targetDate);
+
 		const updated = await prisma.category.update({
 			where: { id: category.id },
-			data: { amountLimit: limit },
+			data: {
+				amountLimit: limit,
+				budgetType: normalizedType,
+				targetAmount: targetAmount === undefined ? category.targetAmount : targetAmount,
+				currentAmount: currentAmount === undefined ? category.currentAmount : currentAmount,
+				dueDay: normalizedDueDay === undefined ? category.dueDay : normalizedDueDay,
+				targetDate: targetDate === undefined ? category.targetDate : normalizedTargetDate,
+			},
 		});
 
 		res.status(200).json({
 			id: String(updated.id),
 			category: updated.name,
 			limit: Number(updated.amountLimit ?? 0),
+			type: updated.budgetType || 'spending',
+			targetAmount: updated.targetAmount === null ? null : Number(updated.targetAmount),
+			currentAmount: updated.currentAmount === null ? null : Number(updated.currentAmount),
+			dueDay: updated.dueDay ?? null,
+			targetDate: updated.targetDate ? updated.targetDate.toISOString() : null,
 		});
 	} catch (error) {
 		res.status(500).json({ message: 'Failed to update budget' });
