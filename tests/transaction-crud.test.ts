@@ -170,6 +170,22 @@ describe('Transaction API (CRUD)', () => {
 		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
 	});
 
+	it('should reject transaction creation when googleMapsUrl is invalid', async () => {
+		const response = await request(app).post('/api/transactions').send({
+			date: '2026-03-20',
+			description: 'Coffee',
+			amount: 10,
+			category: 'Food',
+			type: 'expense',
+			currency: 'USD',
+			googleMapsUrl: 'not-a-url',
+		});
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: 'googleMapsUrl must be a valid URL' });
+		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
+	});
+
 	it('should allow a simple category change without assigning a keyword', async () => {
 		const category = createCategory({ id: 3, userId: 1, name: 'Travel' } as never);
 		const paymentMethod = createPaymentMethod({ id: 5, userId: 1, name: 'Card' } as never);
@@ -500,5 +516,24 @@ describe('Transaction API (CRUD)', () => {
 		expect(response.status).toBe(400);
 		expect(response.body).toEqual({ message: 'wrongKeyword is required and must be 100 characters or fewer' });
 		expect(prismaMock.keyword.findFirst).not.toHaveBeenCalled();
+	});
+
+	it('should reject transaction updates when locationName is too long', async () => {
+		const response = await request(app)
+			.patch('/api/transactions/22')
+			.send({
+				date: '2026-03-20T00:00:00.000Z',
+				description: 'Coffee',
+				amount: 10,
+				currency: 'USD',
+				category: 'Food',
+				type: 'expense',
+				locationName: 'x'.repeat(256),
+			});
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: 'locationName must be 255 characters or fewer' });
+		expect(prismaMock.transaction.findFirst).not.toHaveBeenCalled();
+		expect(prismaMock.transaction.update).not.toHaveBeenCalled();
 	});
 });

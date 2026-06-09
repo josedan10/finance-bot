@@ -34,6 +34,7 @@ import {
 	removeSecurityPathBlock,
 } from '../src/lib/security-path-blocks';
 import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, normalizeOptionalTargetDate } from '../src/lib/budget-normalizers';
+import { normalizeOptionalCoordinate, normalizeTransactionLocationMetadata } from '../src/lib/transaction-location';
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
@@ -675,6 +676,19 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			return res.status(400).json({ message: 'Missing or invalid required fields' });
 		}
 
+		let normalizedLocationMetadata;
+		try {
+			normalizedLocationMetadata = normalizeTransactionLocationMetadata({
+				manualDescription,
+				locationName,
+				googleMapsUrl,
+			});
+		} catch (error) {
+			return res.status(400).json({
+				message: error instanceof Error ? error.message : 'Invalid location metadata',
+			});
+		}
+
 		// 1. Match Category
 		const matchedCategory = await prisma.category.findFirst({
 			where: { name: category, userId: req.user.id },
@@ -714,11 +728,11 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			type: normalizedType,
 			categoryId: matchedCategory?.id,
 			paymentMethodId: finalPaymentMethodId,
-			manualDescription: manualDescription?.trim() || null,
-			locationName: locationName?.trim() || null,
-			latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
-			longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
-			googleMapsUrl: googleMapsUrl?.trim() || null,
+			manualDescription: normalizedLocationMetadata.manualDescription,
+			locationName: normalizedLocationMetadata.locationName,
+			latitude: normalizeOptionalCoordinate(latitude),
+			longitude: normalizeOptionalCoordinate(longitude),
+			googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
 			reviewed: true,
 		});
 
@@ -972,6 +986,19 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			return res.status(400).json({ message: 'Missing required fields' });
 		}
 
+		let normalizedLocationMetadata;
+		try {
+			normalizedLocationMetadata = normalizeTransactionLocationMetadata({
+				manualDescription,
+				locationName,
+				googleMapsUrl,
+			});
+		} catch (error) {
+			return res.status(400).json({
+				message: error instanceof Error ? error.message : 'Invalid location metadata',
+			});
+		}
+
 		const existingTransaction = await prisma.transaction.findFirst({
 			where: { id, userId: req.user.id },
 		});
@@ -1005,8 +1032,8 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			}
 		}
 
-		const normalizedLatitude = Number.isFinite(Number(latitude)) ? Number(latitude) : null;
-		const normalizedLongitude = Number.isFinite(Number(longitude)) ? Number(longitude) : null;
+		const normalizedLatitude = normalizeOptionalCoordinate(latitude);
+		const normalizedLongitude = normalizeOptionalCoordinate(longitude);
 
 		const updated = await prisma.transaction.update({
 			where: { id: existingTransaction.id },
@@ -1019,11 +1046,11 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 				paymentMethodId: resolvedPaymentMethodId,
 				type: type === 'income' ? 'credit' : 'debit',
 				referenceId: referenceId?.trim() || null,
-				manualDescription: manualDescription?.trim() || null,
-				locationName: locationName?.trim() || null,
+				manualDescription: normalizedLocationMetadata.manualDescription,
+				locationName: normalizedLocationMetadata.locationName,
 				latitude: normalizedLatitude,
 				longitude: normalizedLongitude,
-				googleMapsUrl: googleMapsUrl?.trim() || null,
+				googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
 				reviewed: true,
 				reviewedAt: new Date(),
 			},

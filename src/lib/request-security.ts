@@ -41,19 +41,12 @@ export function applySecurityHeaders(res: Response): void {
 	);
 }
 
-function isLocalOrPrivateIp(ip: string): boolean {
-	if (!ip || ip === 'unknown') return false;
-	if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') return true;
-	if (ip.startsWith('10.') || ip.startsWith('192.168.')) return true;
-	if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true;
-	if (/^169\.254\./.test(ip)) return true;
-	if (/^fc|^fd/i.test(ip)) return true;
-
-	return false;
+function isLoopbackIp(ip: string): boolean {
+	return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
 }
 
 function shouldBypassActiveSecurityBlockForLocalDevelopment(ip: string): boolean {
-	return process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test' && isLocalOrPrivateIp(ip);
+	return process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test' && isLoopbackIp(ip);
 }
 
 type SecurityAlertKind = 'blocked_path' | 'rate_limit';
