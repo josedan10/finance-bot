@@ -94,6 +94,23 @@ describe('Security hardening', () => {
 		expect(blockedOptions.text).toBe('Forbidden');
 	});
 
+	it('bypasses active security blocks for loopback traffic in local development', async () => {
+		const originalNodeEnv = process.env.NODE_ENV;
+		process.env.NODE_ENV = 'development';
+
+		try {
+			await request(app).get('/.env');
+			await request(app).get('/appsettings.json');
+			await request(app).get('/.git/config');
+
+			const response = await request(app).options('/api/categories/15');
+
+			expect(response.status).toBe(204);
+		} finally {
+			process.env.NODE_ENV = originalNodeEnv;
+		}
+	});
+
 	it('collects enriched attacker context from headers', () => {
 		const details = collectSecurityRequestDetails({
 			ip: '::ffff:203.0.113.99',

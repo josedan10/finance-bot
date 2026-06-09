@@ -206,36 +206,40 @@ export async function saveReceiptProcessingImage(params: {
 }
 
 export async function cleanupOldReceiptProcessingImages(maxAgeHours: number): Promise<{ deletedCount: number }> {
-	const receiptProcessingDir = path.resolve(process.cwd(), 'public', 'receipt-processing');
 	const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
 	const cutoff = Date.now() - maxAgeMs;
+	const receiptDirectories = ['receipt-processing', 'receipt-review'];
+	let deletedCount = 0;
 
-	try {
-		const files = await fs.readdir(receiptProcessingDir);
-		let deletedCount = 0;
+	for (const subdir of receiptDirectories) {
+		const receiptDirectory = path.resolve(process.cwd(), 'public', subdir);
 
-		for (const fileName of files) {
-			const filePath = path.join(receiptProcessingDir, fileName);
-			const stats = await fs.stat(filePath);
+		try {
+			const files = await fs.readdir(receiptDirectory);
 
-			if (!stats.isFile()) {
+			for (const fileName of files) {
+				const filePath = path.join(receiptDirectory, fileName);
+				const stats = await fs.stat(filePath);
+
+				if (!stats.isFile()) {
+					continue;
+				}
+
+				if (stats.mtimeMs < cutoff) {
+					await fs.unlink(filePath);
+					deletedCount += 1;
+				}
+			}
+		} catch (error: unknown) {
+			const nodeError = error as NodeJS.ErrnoException;
+			if (nodeError.code === 'ENOENT') {
 				continue;
 			}
 
-			if (stats.mtimeMs < cutoff) {
-				await fs.unlink(filePath);
-				deletedCount += 1;
-			}
+			logger.error('Failed to clean receipt processing images', { error, subdir });
+			throw error;
 		}
-
-		return { deletedCount };
-	} catch (error: unknown) {
-		const nodeError = error as NodeJS.ErrnoException;
-		if (nodeError.code === 'ENOENT') {
-			return { deletedCount: 0 };
-		}
-
-		logger.error('Failed to clean receipt processing images', { error });
-		throw error;
 	}
+
+	return { deletedCount };
 }

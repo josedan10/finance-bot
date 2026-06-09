@@ -41,6 +41,14 @@ export function applySecurityHeaders(res: Response): void {
 	);
 }
 
+function isLoopbackIp(ip: string): boolean {
+	return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+}
+
+function shouldBypassActiveSecurityBlockForLocalDevelopment(ip: string): boolean {
+	return process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test' && isLoopbackIp(ip);
+}
+
 type SecurityAlertKind = 'blocked_path' | 'rate_limit';
 
 type SecurityAlert = {
@@ -477,6 +485,11 @@ export function blockSuspiciousPathsMiddleware(req: Request, res: Response, next
 
 export function activeSecurityBlockMiddleware(req: Request, res: Response, next: NextFunction): void {
 	const baseFingerprint = collectSecurityFingerprint(req);
+	if (shouldBypassActiveSecurityBlockForLocalDevelopment(baseFingerprint.ip)) {
+		next();
+		return;
+	}
+
 	checkActiveSecurityBlock(baseFingerprint.ip)
 		.then(async ({ blocked, blockId }) => {
 			if (!blocked) {
