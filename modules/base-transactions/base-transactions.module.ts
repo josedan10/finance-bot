@@ -82,16 +82,9 @@ class BaseTransactionsModule {
 	 * be updated at the next day with a cronjob that runs once per day.
 	 */
 	async _VESToUSDWithExchangeRateByDate(date: string, amount: number | Decimal) {
-		const currentHour = dayjs().hour();
-		const rateIsNotAvailable =
-			currentHour < config.RATE_AVAILABLE_START_HOUR || currentHour >= config.RATE_AVAILABLE_END_HOUR;
-		const currentDay = dayjs().format('YYYY-MM-DD');
-		const currentDayIsNotEqualToTransactionDate = currentDay !== date;
-		const isWeekend = dayjs().day() === 6 || dayjs().day() === 0;
-
 		const exchangeManualRateMatch = await ExchangeCurrencyCronServices.getLatestExchangeCurrency(date);
 
-		if ((currentDayIsNotEqualToTransactionDate || isWeekend || rateIsNotAvailable) && exchangeManualRateMatch) {
+		if (exchangeManualRateMatch) {
 			return calculateUSDAmountByRate(Number(amount), exchangeManualRateMatch);
 		}
 
@@ -156,9 +149,11 @@ class BaseTransactionsModule {
 				const latestExchange = await ExchangeCurrencyCronServices.getLatestExchangeCurrency(
 					dayjs(transactionDate).format('YYYY-MM-DD')
 				);
-				exchangeRateUsed = latestExchange === null || latestExchange === undefined ? null : Number(latestExchange);
-				exchangeRateSource = exchangeRateUsed ? 'pydolar' : null;
-				exchangeRateSourceKey = exchangeRateUsed ? 'bcv' : null;
+				const normalizedVesRate =
+					latestExchange === null || latestExchange === undefined ? null : Number(latestExchange);
+				exchangeRateUsed = normalizedVesRate !== null && Number.isFinite(normalizedVesRate) ? normalizedVesRate : null;
+				exchangeRateSource = exchangeRateUsed !== null ? 'pydolar' : null;
+				exchangeRateSourceKey = exchangeRateUsed !== null ? 'bcv' : null;
 			}
 		} else if (currency === 'ARS' && !args.amountIsAlreadyNormalized) {
 			const historicalRate = await getArsUsdRateByDate(dayjs(transactionDate).format('YYYY-MM-DD'));

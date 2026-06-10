@@ -52,8 +52,8 @@ describe('ExchangeCurrencyCronModule', () => {
 	// getAmountResult method updates the amount property of transactions in the database with the calculated USD amount based on the latest exchange currency of the BCV and the original value on VES of each transaction
 	it('should update the amount property of transactions in the database with the calculated USD amount', async () => {
 		const transactionsData = [
-			{ originalCurrencyAmount: new Decimal(100), id: 1 },
-			{ originalCurrencyAmount: new Decimal(200), id: 2 },
+			{ originalCurrencyAmount: new Decimal(100), id: 1, date: new Date('2022-01-01T12:00:00.000Z'), currency: 'VES' },
+			{ originalCurrencyAmount: new Decimal(200), id: 2, date: new Date('2022-01-02T12:00:00.000Z'), currency: 'VES' },
 		].map((transaction) => createTransaction(transaction));
 		const bcvPrice = createDailyExchangeRate({ bcvPrice: new Decimal(100) });
 		const transactionsWithAmount = [
@@ -74,6 +74,9 @@ describe('ExchangeCurrencyCronModule', () => {
 			},
 			data: {
 				amount: transactionsWithAmount[0].amount,
+				exchangeRateUsed: bcvPrice.bcvPrice,
+				exchangeRateSource: 'pydolar',
+				exchangeRateSourceKey: 'bcv',
 			},
 		});
 
@@ -83,6 +86,9 @@ describe('ExchangeCurrencyCronModule', () => {
 			},
 			data: {
 				amount: transactionsWithAmount[1].amount,
+				exchangeRateUsed: bcvPrice.bcvPrice,
+				exchangeRateSource: 'pydolar',
+				exchangeRateSourceKey: 'bcv',
 			},
 		});
 		expect(spyTransactionBatch).toHaveBeenCalledTimes(1);
@@ -91,8 +97,8 @@ describe('ExchangeCurrencyCronModule', () => {
 	// getAmountResult method returns undefined
 	it('should return undefined after updating the amount property of transactions in the database', async () => {
 		const transactionsData = [
-			{ originalCurrencyAmount: new Decimal(100), id: 1 },
-			{ originalCurrencyAmount: new Decimal(200), id: 2 },
+			{ originalCurrencyAmount: new Decimal(100), id: 1, date: new Date('2022-01-01T12:00:00.000Z'), currency: 'VES' },
+			{ originalCurrencyAmount: new Decimal(200), id: 2, date: new Date('2022-01-02T12:00:00.000Z'), currency: 'VES' },
 		].map((transaction) => createTransaction(transaction));
 		const bcvPrice = createDailyExchangeRate({ bcvPrice: new Decimal(100) });
 
@@ -133,8 +139,8 @@ describe('ExchangeCurrencyCronModule', () => {
 		it('should calculate the amount in dollars for each transaction without amount and update the database successfully', async () => {
 			// Mock the dependencies
 			const transactionsData = [
-				{ id: 1, originalCurrencyAmount: new Decimal(100) },
-				{ id: 2, originalCurrencyAmount: new Decimal(200) },
+				{ id: 1, originalCurrencyAmount: new Decimal(100), date: new Date('2022-01-01T12:00:00.000Z'), currency: 'VES' },
+				{ id: 2, originalCurrencyAmount: new Decimal(200), date: new Date('2022-01-02T12:00:00.000Z'), currency: 'VES' },
 			].map((transaction) => createTransaction(transaction));
 			const bcvPrice = 0.5;
 
@@ -152,15 +158,15 @@ describe('ExchangeCurrencyCronModule', () => {
 
 			// Assertions
 			expect(getTransactionsWithoutAmountMock).toHaveBeenCalledTimes(1);
-			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(1);
+			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(2);
 			expect(updateTransactionMock).toHaveBeenCalledTimes(2);
 			expect(updateTransactionMock).toHaveBeenCalledWith({
 				where: { id: 1 },
-				data: { amount: 200 },
+				data: { amount: 200, exchangeRateUsed: 0.5, exchangeRateSource: 'pydolar', exchangeRateSourceKey: 'bcv' },
 			});
 			expect(updateTransactionMock).toHaveBeenCalledWith({
 				where: { id: 2 },
-				data: { amount: 400 },
+				data: { amount: 400, exchangeRateUsed: 0.5, exchangeRateSource: 'pydolar', exchangeRateSourceKey: 'bcv' },
 			});
 			expect(batchTransactionMock).toHaveBeenCalledTimes(1);
 		});
@@ -202,7 +208,7 @@ describe('ExchangeCurrencyCronModule', () => {
 
 			// Assertions
 			expect(getTransactionsWithoutAmountMock).toHaveBeenCalledTimes(1);
-			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(1);
+			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(0);
 			expect(updateTransactionMock).toHaveBeenCalledTimes(0);
 		});
 
@@ -210,8 +216,8 @@ describe('ExchangeCurrencyCronModule', () => {
 		it('should not update any transactions when the latest exchange currency of the BCV is null', async () => {
 			// Mock the dependencies
 			const transactionsData = [
-				{ id: 1, originalCurrencyAmount: new Decimal(100) },
-				{ id: 2, originalCurrencyAmount: new Decimal(200) },
+				{ id: 1, originalCurrencyAmount: new Decimal(100), date: new Date('2022-01-01T12:00:00.000Z'), currency: 'VES' },
+				{ id: 2, originalCurrencyAmount: new Decimal(200), date: new Date('2022-01-02T12:00:00.000Z'), currency: 'VES' },
 			].map((transaction) => createTransaction(transaction));
 			const bcvPrice = null;
 
@@ -227,7 +233,7 @@ describe('ExchangeCurrencyCronModule', () => {
 
 			// Assertions
 			expect(getTransactionsWithoutAmountMock).toHaveBeenCalledTimes(1);
-			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(1);
+			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(2);
 			expect(updateTransactionMock).toHaveBeenCalledTimes(0);
 		});
 
@@ -235,8 +241,8 @@ describe('ExchangeCurrencyCronModule', () => {
 		it('should not update any transactions when the latest exchange currency of the BCV is undefined', async () => {
 			// Mock the dependencies
 			const transactionsData = [
-				{ id: 1, originalCurrencyAmount: new Decimal(100) },
-				{ id: 2, originalCurrencyAmount: new Decimal(200) },
+				{ id: 1, originalCurrencyAmount: new Decimal(100), date: new Date('2022-01-01T12:00:00.000Z'), currency: 'VES' },
+				{ id: 2, originalCurrencyAmount: new Decimal(200), date: new Date('2022-01-02T12:00:00.000Z'), currency: 'VES' },
 			].map((transaction) => createTransaction(transaction));
 			const bcvPrice = undefined;
 
@@ -252,7 +258,7 @@ describe('ExchangeCurrencyCronModule', () => {
 
 			// Assertions
 			expect(getTransactionsWithoutAmountMock).toHaveBeenCalledTimes(1);
-			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(1);
+			expect(getLatestExchangeCurrencyMock).toHaveBeenCalledTimes(2);
 			expect(updateTransactionMock).toHaveBeenCalledTimes(0);
 		});
 	});

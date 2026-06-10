@@ -184,38 +184,34 @@ export async function getArsUsdRateByDate(date?: string | Date, preferredHouse?:
 }
 
 export async function searchRateByDate(date?: string) {
-	let searchDate;
+	const normalizedDate = normalizeCalendarDate(date);
 
-	if (!date) {
-		searchDate = dayjs().toISOString();
-	} else {
-		searchDate = dayjs(date).toISOString();
-	}
+	for (let offset = 0; offset < 7; offset += 1) {
+		const fallbackDate = normalizedDate.subtract(offset, 'day');
+		const cacheKey = `exchange_rate:${fallbackDate.format('YYYY-MM-DD')}`;
+		const cachedRate = await redisClient.get(cacheKey);
 
-	const cacheKey = `exchange_rate:${searchDate}`;
-	const cachedRate = await redisClient.get(cacheKey);
+		if (cachedRate) {
+			return JSON.parse(cachedRate);
+		}
 
-	if (cachedRate) {
-		return JSON.parse(cachedRate);
-	}
-
-	const rate = await prisma.dailyExchangeRate.findFirst({
-		where: {
-			date: {
-				lte: searchDate,
+		const rate = await prisma.dailyExchangeRate.findFirst({
+			where: {
+				date: {
+					gte: fallbackDate.toDate(),
+					lte: fallbackDate.endOf('day').toDate(),
+				},
 			},
-		},
-		orderBy: {
-			date: 'desc',
-		},
-	});
+			orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+		});
 
-	if (rate) {
-		// Cache for 12 hours
-		await redisClient.set(cacheKey, JSON.stringify(rate), { EX: 43200 });
+		if (rate) {
+			await redisClient.set(cacheKey, JSON.stringify(rate), { EX: 43200 });
+			return rate;
+		}
 	}
 
-	return rate;
+	return null;
 }
 
 export function calculateUSDAmountByRate(originalCurrencyAmount: number | Decimal, bcvPrice: number | Decimal) {

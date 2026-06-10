@@ -9,10 +9,12 @@ class ExchangeCurrencyCronService {
 		return prisma.transaction.findMany({
 			where: {
 				amount: null,
+				currency: 'VES',
 			},
 			select: {
 				originalCurrencyAmount: true,
 				id: true,
+				date: true,
 			},
 		});
 	}
@@ -25,24 +27,35 @@ class ExchangeCurrencyCronService {
 	async getAmountResult(): Promise<void> {
 		try {
 			const transactionsData = await this.getTransactionsWithoutAmount();
-			const bcvPrice = await this.getLatestExchangeCurrency();
-			if (bcvPrice !== undefined && bcvPrice !== null) {
-				const transactionsWithAmount = transactionsData.map((transaction) => ({
-					id: transaction.id,
-					amount: transaction.originalCurrencyAmount
-						? calculateUSDAmountByRate(transaction.originalCurrencyAmount, bcvPrice)
-						: 0,
-				}));
+			const updatePromises = [];
 
-				const updatePromises = transactionsWithAmount.map(({ id, amount }) =>
+			for (const transaction of transactionsData) {
+				if (!transaction.id || !transaction.originalCurrencyAmount || !transaction.date) {
+					continue;
+				}
+
+				const bcvPrice = await this.getLatestExchangeCurrency(transaction.date.toISOString());
+				if (bcvPrice === undefined || bcvPrice === null) {
+					continue;
+				}
+
+				updatePromises.push(
 					prisma.transaction.update({
-						where: { id },
-						data: { amount },
+						where: { id: transaction.id },
+						data: {
+							amount: calculateUSDAmountByRate(transaction.originalCurrencyAmount, bcvPrice),
+							exchangeRateUsed: bcvPrice,
+							exchangeRateSource: 'pydolar',
+							exchangeRateSourceKey: 'bcv',
+						},
 					})
 				);
+			}
+
+			if (updatePromises.length > 0) {
 				await prisma.$transaction(updatePromises);
 			} else {
-				logger.warn('Could not fetch the latest exchange rate.');
+				logger.warn('Could not fetch historical VES exchange rates to update pending transactions.');
 			}
 		} catch (error) {
 			logger.error("The DB couldn't be updated with the amount result", { error });

@@ -45,7 +45,7 @@ describe('searchRateByDate', () => {
 		const result = await searchRateByDate(validDate);
 
 		expect(result).toBeNull();
-		expect(mockFindFirst).toHaveBeenCalledTimes(1);
+		expect(mockFindFirst).toHaveBeenCalledTimes(7);
 	});
 
 	it('should return a DailyExchangeRate object when no date is provided', async () => {
