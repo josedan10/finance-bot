@@ -234,7 +234,7 @@ model HistoricalExchangeRate {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@unique([baseCurrency, quoteCurrency, source, sourceKey, rateDate])
+  @@unique([baseCurrency, quoteCurrency, source, sourceKey, rateDate], map: "hist_rate_pair_source_date_uq")
   @@index([quoteCurrency, rateDate])
   @@index([source, sourceKey, rateDate])
 }

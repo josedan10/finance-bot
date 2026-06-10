@@ -10,7 +10,7 @@ CREATE TABLE `HistoricalExchangeRate` (
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updatedAt` DATETIME(3) NOT NULL,
 
-  UNIQUE INDEX `HistoricalExchangeRate_baseCurrency_quoteCurrency_source_sourceKey_rateDate_key`(`baseCurrency`, `quoteCurrency`, `source`, `sourceKey`, `rateDate`),
+  UNIQUE INDEX `hist_rate_pair_source_date_uq`(`baseCurrency`, `quoteCurrency`, `source`, `sourceKey`, `rateDate`),
   INDEX `HistoricalExchangeRate_quoteCurrency_rateDate_idx`(`quoteCurrency`, `rateDate`),
   INDEX `HistoricalExchangeRate_source_sourceKey_rateDate_idx`(`source`, `sourceKey`, `rateDate`),
   PRIMARY KEY (`id`)
