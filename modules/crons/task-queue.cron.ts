@@ -22,7 +22,7 @@ const CRON_EXPRESSIONS = {
 	checkGmailEmails: process.env.CRON_CHECK_GMAIL || '0 */30 * * 1-5',
 	cleanupReceiptProcessingImages: process.env.CRON_CLEAN_RECEIPT_PROCESSING_IMAGES || '0 * * * *',
 	processReceiptOcrQueue: process.env.CRON_PROCESS_RECEIPT_OCR_QUEUE || '*/10 * * * * *',
-	syncArsUsdRate: config.CRON_SYNC_ARS_USD_RATE,
+	syncArsUsdRate: process.env.CRON_SYNC_ARS_USD_RATE || '0 0,12 * * *',
 };
 
 export class TaskQueueModule {
