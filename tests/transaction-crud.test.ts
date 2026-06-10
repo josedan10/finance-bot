@@ -6,6 +6,8 @@ import { prismaMock } from '../modules/database/database.module.mock';
 import { createCategory, createKeyword, createPaymentMethod, createTransaction, createUser } from '../prisma/factories';
 import { Decimal } from '@prisma/client/runtime/library';
 import { requireAuth } from '../src/lib/auth.middleware';
+import { BaseTransactions } from '../modules/base-transactions/base-transactions.module';
+import { CashLotServiceInstance } from '../modules/cash-lots/cash-lot.service';
 
 // Mock the auth middleware
 jest.mock('../src/lib/auth.middleware', () => {
@@ -22,9 +24,39 @@ jest.mock('../src/lib/auth.middleware', () => {
 	};
 });
 
+jest.mock('../modules/cash-lots/cash-lot.service', () => ({
+	CashLotServiceInstance: {
+		createWithdrawalCashLot: jest.fn(),
+		updateWithdrawalCashLot: jest.fn(),
+		allocateCashExpense: jest.fn(),
+		restoreExpenseAllocations: jest.fn(),
+		deleteWithdrawalCashLot: jest.fn(),
+		getWithdrawalLotByTransactionId: jest.fn(),
+		getExpenseAllocations: jest.fn(),
+	},
+}));
+
+const cashLotServiceMock = CashLotServiceInstance as unknown as {
+	createWithdrawalCashLot: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+	updateWithdrawalCashLot: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+	allocateCashExpense: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+	restoreExpenseAllocations: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+	deleteWithdrawalCashLot: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+	getWithdrawalLotByTransactionId: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+	getExpenseAllocations: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+};
+
 describe('Transaction API (CRUD)', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		jest.restoreAllMocks();
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) => {
+			if (typeof callback !== 'function') {
+				throw new Error('Expected transaction callback');
+			}
+
+			return callback(prismaMock as never);
+		});
 	});
 
 	// TDD Scenario 1: Unauthorized POST /api/transactions
@@ -47,7 +79,13 @@ describe('Transaction API (CRUD)', () => {
 		const tx1 = await createTransaction({ id: 1, userId: user1.id, description: 'My Transaction' });
 
 		// Mock the database to return only the filtered transactions
-		prismaMock.transaction.findMany.mockResolvedValue([tx1]);
+		prismaMock.transaction.findMany.mockResolvedValue([
+			{
+				...tx1,
+				cashLot: null,
+				cashLotAllocations: [],
+			} as never,
+		] as never);
 
 		const response = await request(app).get('/api/transactions');
 		
@@ -535,5 +573,354 @@ describe('Transaction API (CRUD)', () => {
 		expect(response.body).toEqual({ message: 'locationName must be 255 characters or fewer' });
 		expect(prismaMock.transaction.findFirst).not.toHaveBeenCalled();
 		expect(prismaMock.transaction.update).not.toHaveBeenCalled();
+	});
+
+	it('should create a cash lot when posting a withdrawal transaction', async () => {
+		const category = createCategory({ id: 30, userId: 1, name: 'Cash Withdrawal' } as never);
+		const paymentMethod = createPaymentMethod({ id: 40, userId: 1, name: 'Bank Account' } as never);
+		const withdrawalTransaction = createTransaction({
+			id: 301,
+			userId: 1,
+			description: 'ATM withdrawal',
+			amount: new Decimal(100),
+			originalCurrencyAmount: new Decimal(100),
+			currency: 'USD',
+			type: 'debit',
+			paymentMethodId: paymentMethod.id,
+			categoryId: category.id,
+		} as never);
+		const withdrawalLot = {
+			id: 1,
+			withdrawalTransactionId: withdrawalTransaction.id,
+			withdrawalDate: withdrawalTransaction.date,
+			sourceAmount: new Decimal(100),
+			sourceCurrency: 'USD',
+			destinationAmount: new Decimal(120000),
+			destinationCurrency: 'ARS',
+			exchangeRate: new Decimal(1200),
+			remainingAmount: new Decimal(120000),
+			migrationStatus: 'linked',
+			createdAt: new Date('2026-04-01T10:00:00.000Z'),
+			updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+			allocations: [],
+			withdrawalTransaction: {
+				...withdrawalTransaction,
+				category,
+				paymentMethod,
+			},
+		};
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		jest.spyOn(BaseTransactions, 'safeCreateTransaction').mockResolvedValue({
+			transaction: withdrawalTransaction,
+			isDuplicate: false,
+		} as never);
+		cashLotServiceMock.createWithdrawalCashLot.mockResolvedValue(withdrawalLot);
+		prismaMock.transaction.findFirst.mockResolvedValueOnce({
+			...withdrawalTransaction,
+			category,
+			paymentMethod,
+			cashLot: withdrawalLot,
+			cashLotAllocations: [],
+		} as never);
+
+		const response = await request(app).post('/api/transactions').send({
+			date: '2026-04-01',
+			description: 'ATM withdrawal',
+			amount: 100,
+			category: 'Cash Withdrawal',
+			type: 'expense',
+			paymentMethodId: paymentMethod.id,
+			currency: 'USD',
+			isCashWithdrawal: true,
+			cashWithdrawalDestinationAmount: 120000,
+			cashWithdrawalDestinationCurrency: 'ARS',
+			cashWithdrawalExchangeRate: 1200,
+		});
+
+		expect(response.status).toBe(201);
+		expect(response.body).toMatchObject({
+			id: '301',
+			type: 'expense',
+			cashLot: {
+				destinationAmount: 120000,
+				destinationCurrency: 'ARS',
+				exchangeRate: 1200,
+				remainingAmount: 120000,
+			},
+		});
+		expect(cashLotServiceMock.createWithdrawalCashLot).toHaveBeenCalledTimes(1);
+		expect(cashLotServiceMock.createWithdrawalCashLot.mock.calls[0]?.[0]).toMatchObject({
+			id: withdrawalTransaction.id,
+			description: withdrawalTransaction.description,
+			currency: withdrawalTransaction.currency,
+		});
+		expect(cashLotServiceMock.createWithdrawalCashLot.mock.calls[0]?.[1]).toEqual({
+			destinationAmount: 120000,
+			destinationCurrency: 'ARS',
+			exchangeRate: 1200,
+			migrationStatus: 'linked',
+		});
+	});
+
+	it('should allocate cash expenses from available cash lots', async () => {
+		const category = createCategory({ id: 31, userId: 1, name: 'Food' } as never);
+		const paymentMethod = createPaymentMethod({ id: 41, userId: 1, name: 'Cash' } as never);
+		const expenseTransaction = createTransaction({
+			id: 302,
+			userId: 1,
+			description: 'Lunch',
+			amount: new Decimal(20000),
+			originalCurrencyAmount: new Decimal(20000),
+			currency: 'ARS',
+			type: 'debit',
+			categoryId: category.id,
+			paymentMethodId: paymentMethod.id,
+		} as never);
+		const withdrawalLot = {
+			id: 8,
+			withdrawalTransactionId: 201,
+			withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+			sourceAmount: new Decimal(100),
+			sourceCurrency: 'USD',
+			destinationAmount: new Decimal(120000),
+			destinationCurrency: 'ARS',
+			exchangeRate: new Decimal(1200),
+			remainingAmount: new Decimal(100000),
+			migrationStatus: 'linked',
+			createdAt: new Date('2026-04-01T10:00:00.000Z'),
+			updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+			allocations: [],
+			withdrawalTransaction: {
+				id: 201,
+				date: new Date('2026-04-01T10:00:00.000Z'),
+				description: 'ATM withdrawal',
+				amount: 100,
+				currency: 'USD',
+				category: { name: 'Other' },
+				paymentMethod: { name: 'Bank Account' },
+			},
+		};
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		jest.spyOn(BaseTransactions, 'safeCreateTransaction').mockResolvedValue({
+			transaction: expenseTransaction,
+			isDuplicate: false,
+		} as never);
+		cashLotServiceMock.allocateCashExpense.mockResolvedValue({
+			allocations: [
+				{
+					cashLotId: withdrawalLot.id,
+					allocatedAmount: 20000,
+					exchangeRate: 1200,
+					sourceEquivalentAmount: 16.67,
+				},
+			],
+			totalAllocated: 20000,
+		});
+		prismaMock.transaction.findFirst.mockResolvedValueOnce({
+			...expenseTransaction,
+			category,
+			paymentMethod,
+			cashLot: null,
+			cashLotAllocations: [
+				{
+					id: 1,
+					cashLotId: withdrawalLot.id,
+					expenseTransactionId: expenseTransaction.id,
+					allocatedAmount: new Decimal(20000),
+					exchangeRate: new Decimal(1200),
+					sourceEquivalentAmount: 16.67,
+					createdAt: new Date('2026-04-02T12:00:00.000Z'),
+					cashLot: withdrawalLot,
+				},
+			],
+		} as never);
+
+		const response = await request(app).post('/api/transactions').send({
+			date: '2026-04-02',
+			description: 'Lunch',
+			amount: 20000,
+			category: 'Food',
+			type: 'expense',
+			paymentMethodId: paymentMethod.id,
+			currency: 'ARS',
+		});
+
+		expect(response.status).toBe(201);
+		expect(response.body.cashLotAllocations).toHaveLength(1);
+		expect(cashLotServiceMock.allocateCashExpense).toHaveBeenCalledTimes(1);
+		expect(cashLotServiceMock.allocateCashExpense.mock.calls[0]?.[0]).toMatchObject({
+			id: expenseTransaction.id,
+			description: expenseTransaction.description,
+			currency: expenseTransaction.currency,
+		});
+	});
+
+	it('should restore cash lots when deleting a cash expense', async () => {
+		const cashExpense = createTransaction({
+			id: 303,
+			userId: 1,
+			description: 'Lunch',
+			amount: new Decimal(20000),
+			originalCurrencyAmount: new Decimal(20000),
+			currency: 'ARS',
+			type: 'debit',
+			categoryId: 31,
+			paymentMethodId: 41,
+		} as never);
+		const allocation = {
+			id: 1,
+			cashLotId: 8,
+			expenseTransactionId: cashExpense.id,
+			allocatedAmount: new Decimal(20000),
+			exchangeRate: new Decimal(1200),
+			sourceEquivalentAmount: 16.67,
+			createdAt: new Date('2026-04-02T12:00:00.000Z'),
+			cashLot: {
+				id: 8,
+				withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+				sourceAmount: new Decimal(100),
+				sourceCurrency: 'USD',
+				destinationAmount: new Decimal(120000),
+				destinationCurrency: 'ARS',
+				exchangeRate: new Decimal(1200),
+				remainingAmount: new Decimal(100000),
+				migrationStatus: 'linked',
+				withdrawalTransaction: {
+					id: 201,
+					date: new Date('2026-04-01T10:00:00.000Z'),
+					description: 'ATM withdrawal',
+					amount: 100,
+					currency: 'USD',
+					category: { name: 'Other' },
+					paymentMethod: { name: 'Bank Account' },
+				},
+			},
+		};
+
+		prismaMock.transaction.findFirst
+			.mockResolvedValueOnce({
+				...cashExpense,
+				cashLot: null,
+				cashLotAllocations: [allocation],
+			} as never)
+			.mockResolvedValueOnce({
+				...cashExpense,
+				cashLot: null,
+				cashLotAllocations: [allocation],
+			} as never);
+		cashLotServiceMock.restoreExpenseAllocations.mockResolvedValue(1);
+		prismaMock.transaction.delete.mockResolvedValue({} as never);
+
+		const response = await request(app).delete('/api/transactions/303');
+
+		expect(response.status).toBe(204);
+		expect(cashLotServiceMock.restoreExpenseAllocations).toHaveBeenCalledTimes(1);
+		expect(cashLotServiceMock.restoreExpenseAllocations.mock.calls[0]?.[0]).toBe(303);
+		expect(cashLotServiceMock.restoreExpenseAllocations.mock.calls[0]?.[1]).toBe(1);
+		expect(cashLotServiceMock.restoreExpenseAllocations.mock.calls[0]?.[2]).toBeDefined();
+		expect(prismaMock.transaction.delete).toHaveBeenCalledWith({
+			where: { id: 303 },
+		});
+	});
+
+	it('should update a withdrawal cash lot when the withdrawal is edited', async () => {
+		const category = createCategory({ id: 32, userId: 1, name: 'Cash Withdrawal' } as never);
+		const paymentMethod = createPaymentMethod({ id: 42, userId: 1, name: 'Bank Account' } as never);
+		const withdrawalTransaction = createTransaction({
+			id: 304,
+			userId: 1,
+			description: 'ATM withdrawal',
+			amount: new Decimal(100),
+			originalCurrencyAmount: new Decimal(100),
+			currency: 'USD',
+			type: 'debit',
+			categoryId: category.id,
+			paymentMethodId: paymentMethod.id,
+		} as never);
+		const withdrawalLot = {
+			id: 9,
+			withdrawalTransactionId: withdrawalTransaction.id,
+			withdrawalDate: withdrawalTransaction.date,
+			sourceAmount: new Decimal(100),
+			sourceCurrency: 'USD',
+			destinationAmount: new Decimal(120000),
+			destinationCurrency: 'ARS',
+			exchangeRate: new Decimal(1200),
+			remainingAmount: new Decimal(120000),
+			migrationStatus: 'linked',
+			createdAt: new Date('2026-04-01T10:00:00.000Z'),
+			updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+			allocations: [],
+			withdrawalTransaction: {
+				...withdrawalTransaction,
+				category,
+				paymentMethod,
+			},
+		};
+
+		prismaMock.transaction.findFirst
+			.mockResolvedValueOnce({
+				...withdrawalTransaction,
+				category,
+				paymentMethod,
+				cashLot: withdrawalLot,
+				cashLotAllocations: [],
+			} as never)
+			.mockResolvedValueOnce({
+				...withdrawalTransaction,
+				description: 'Edited withdrawal',
+				category,
+				paymentMethod,
+				cashLot: withdrawalLot,
+				cashLotAllocations: [],
+			} as never);
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		jest.spyOn(BaseTransactions, 'normalizeTransactionAmount').mockResolvedValue({
+			amount: new Decimal(100),
+			currency: 'USD',
+			originalCurrencyAmount: new Decimal(100),
+			exchangeRateUsed: new Decimal(1200),
+			exchangeRateSource: 'manual',
+			exchangeRateSourceKey: 'manual',
+		} as never);
+		prismaMock.transaction.update.mockResolvedValue({
+			...withdrawalTransaction,
+			description: 'Edited withdrawal',
+			category,
+			paymentMethod,
+		} as never);
+		cashLotServiceMock.updateWithdrawalCashLot.mockResolvedValue(withdrawalLot);
+
+		const response = await request(app).patch('/api/transactions/304').send({
+			date: '2026-04-01T00:00:00.000Z',
+			description: 'Edited withdrawal',
+			amount: 100,
+			category: 'Cash Withdrawal',
+			type: 'expense',
+			paymentMethodId: paymentMethod.id,
+			currency: 'USD',
+			isCashWithdrawal: true,
+			cashWithdrawalDestinationAmount: 120000,
+			cashWithdrawalDestinationCurrency: 'ARS',
+			cashWithdrawalExchangeRate: 1200,
+		});
+
+		expect(response.status).toBe(200);
+		expect(cashLotServiceMock.updateWithdrawalCashLot).toHaveBeenCalledTimes(1);
+		expect(cashLotServiceMock.updateWithdrawalCashLot.mock.calls[0]?.[0]).toMatchObject({
+			id: 304,
+			description: 'Edited withdrawal',
+		});
+		expect(cashLotServiceMock.updateWithdrawalCashLot.mock.calls[0]?.[1]).toEqual({
+			destinationAmount: 120000,
+			destinationCurrency: 'ARS',
+			exchangeRate: 1200,
+			migrationStatus: 'linked',
+		});
 	});
 });

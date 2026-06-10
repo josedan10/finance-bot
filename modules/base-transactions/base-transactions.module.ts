@@ -22,6 +22,8 @@ type TransactionWithOptionalRelations = Transaction & {
 	paymentMethod: PaymentMethod | null;
 };
 
+type PrismaLikeClient = PrismaClient | Prisma.TransactionClient;
+
 type SafeCreateTransactionInput = Prisma.TransactionUncheckedCreateInput & {
 	userId: number;
 	amount: number | Decimal;
@@ -396,13 +398,13 @@ class BaseTransactionsModule {
 		return candidates.find((candidate) => this.isDuplicateCandidate(data, candidate)) ?? null;
 	}
 
-	async findDuplicate(data: DuplicateLookupInput): Promise<TransactionWithRelations | null> {
+	async findDuplicate(data: DuplicateLookupInput, db: PrismaLikeClient = this._db): Promise<TransactionWithRelations | null> {
 		const { userId, amount, date, type, currency, referenceId } = data;
 		const normalizedAmount = amount instanceof Decimal ? amount : new Decimal(amount);
 
 		// 1. Priority: Exact referenceId match
 		if (referenceId) {
-			const refMatch = await this._db.transaction.findFirst({
+			const refMatch = await db.transaction.findFirst({
 				where: {
 					userId,
 					referenceId,
@@ -419,7 +421,7 @@ class BaseTransactionsModule {
 		const startDate = dayjs(date).subtract(1, 'day').toDate();
 		const endDate = dayjs(date).add(1, 'day').toDate();
 
-		const potentialDuplicates = (await this._db.transaction.findMany({
+		const potentialDuplicates = (await db.transaction.findMany({
 			where: {
 				userId,
 				amount: normalizedAmount,
@@ -445,7 +447,7 @@ class BaseTransactionsModule {
 	 * Creates a transaction only if it's not a duplicate.
 	 * Handles internal VES -> USD normalization if needed.
 	 */
-	async safeCreateTransaction(data: SafeCreateTransactionInput): Promise<SafeCreateTransactionResult> {
+	async safeCreateTransaction(data: SafeCreateTransactionInput, db: PrismaLikeClient = this._db): Promise<SafeCreateTransactionResult> {
 		const { amount, currency, date } = data;
 		const transactionDate = date instanceof Date ? date : new Date(date);
 		const normalizedAmounts = await this.normalizeTransactionAmount({
@@ -469,7 +471,7 @@ class BaseTransactionsModule {
 				currency: normalizedCurrency || 'USD',
 				description: data.description ?? undefined,
 				referenceId: data.referenceId ?? undefined,
-			});
+			}, db);
 
 			if (duplicate) {
 				logger.info('Duplicate transaction detected, skipping creation', {
@@ -484,7 +486,7 @@ class BaseTransactionsModule {
 		}
 
 		const { amountIsAlreadyNormalized: _amountIsAlreadyNormalized, skipDuplicateCheck: _skipDuplicateCheck, ...transactionData } = data;
-		const transaction = await this._db.transaction.create({
+		const transaction = await db.transaction.create({
 			data: {
 				...transactionData,
 				date: transactionDate,

@@ -192,6 +192,9 @@ export class BudgetRolloverService {
 			where: {
 				categoryId,
 				type: 'expense',
+				cashLot: {
+					is: null,
+				},
 				date: {
 					gte: startDate,
 					lte: endDate,
@@ -255,6 +258,9 @@ export class BudgetRolloverService {
 				where: {
 					categoryId,
 					type: 'expense',
+					cashLot: {
+						is: null,
+					},
 					date: { lt: dayjs(`${year}-${month}-01`).startOf('month').toDate() },
 				},
 				select: { id: true },
@@ -330,6 +336,9 @@ export class BudgetRolloverService {
 			where: {
 				categoryId,
 				type: 'expense',
+				cashLot: {
+					is: null,
+				},
 				date: {
 					gte: startDate,
 					lte: endDate,

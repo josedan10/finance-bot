@@ -49,6 +49,9 @@ export class BudgetCheckerService implements IBudgetChecker {
         userId,
         categoryId,
         type: 'expense',
+        cashLot: {
+          is: null,
+        },
         date: {
           gte: startOfMonth,
         },

@@ -25,6 +25,8 @@ model User {
   budgetFallbackRules     BudgetFallbackRule[]
   budgetOverflowAssignments BudgetOverflowAssignment[]
   paymentMethods          PaymentMethod[]
+  cashLots                CashLot[]
+  cashLotAllocations      CashLotAllocation[]
   platformMonthlyRegister PlatformMonthlyRegister[]
   pushSubscriptions       PushSubscription[]
   shops                   Shop[]
@@ -173,12 +175,53 @@ model Transaction {
   paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
   shop                   Shop?          @relation(fields: [shopId], references: [id])
   user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cashLot                CashLot?       @relation("WithdrawalCashLot")
+  cashLotAllocations     CashLotAllocation[] @relation("ExpenseCashLotAllocations")
 
   @@unique([description, referenceId, date, userId])
   @@index([categoryId], map: "Transaction_categoryId_fkey")
   @@index([paymentMethodId], map: "Transaction_paymentMethodId_fkey")
   @@index([shopId], map: "Transaction_shopId_fkey")
   @@index([userId], map: "Transaction_userId_fkey")
+}
+
+model CashLot {
+  id                      Int                 @id @default(autoincrement())
+  userId                  Int
+  withdrawalTransactionId  Int?                @unique
+  withdrawalDate          DateTime
+  sourceAmount            Decimal             @db.Decimal(10, 2)
+  sourceCurrency          String              @db.VarChar(3)
+  destinationAmount       Decimal             @db.Decimal(10, 2)
+  destinationCurrency     String              @db.VarChar(3)
+  exchangeRate            Decimal             @db.Decimal(10, 6)
+  remainingAmount         Decimal             @db.Decimal(10, 2)
+  migrationStatus         String              @default("linked") @db.VarChar(20)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  user                    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  withdrawalTransaction   Transaction?        @relation("WithdrawalCashLot", fields: [withdrawalTransactionId], references: [id], onDelete: Restrict)
+  allocations             CashLotAllocation[]
+
+  @@index([userId], map: "CashLot_userId_fkey")
+  @@index([destinationCurrency, withdrawalDate], map: "CashLot_destinationCurrency_withdrawalDate_idx")
+}
+
+model CashLotAllocation {
+  id                  Int         @id @default(autoincrement())
+  userId              Int
+  cashLotId           Int
+  expenseTransactionId Int
+  allocatedAmount     Decimal     @db.Decimal(10, 2)
+  exchangeRate        Decimal     @db.Decimal(10, 6)
+  createdAt           DateTime    @default(now())
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cashLot             CashLot     @relation(fields: [cashLotId], references: [id], onDelete: Cascade)
+  expenseTransaction  Transaction @relation("ExpenseCashLotAllocations", fields: [expenseTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([cashLotId, expenseTransactionId], map: "cash_lot_allocation_uq")
+  @@index([userId], map: "CashLotAllocation_userId_fkey")
+  @@index([expenseTransactionId], map: "CashLotAllocation_expenseTransactionId_fkey")
 }
 
 model PlatformMonthlyRegister {
