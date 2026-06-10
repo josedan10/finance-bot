@@ -1891,6 +1891,90 @@ router.delete('/api/budgets/overflow-assignments/:sourceCategoryId', requireAuth
 	}
 });
 
+router.post('/api/budgets/carryover-transfers', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const { sourceCategoryId, targetCategoryId, amount } = req.body as {
+			sourceCategoryId?: number;
+			targetCategoryId?: number;
+			amount?: number;
+		};
+
+		if (
+			!Number.isInteger(sourceCategoryId) ||
+			!Number.isInteger(targetCategoryId) ||
+			sourceCategoryId === targetCategoryId ||
+			typeof amount !== 'number' ||
+			!Number.isFinite(amount) ||
+			amount <= 0
+		) {
+			return res.status(400).json({ message: 'Invalid carry-over transfer request' });
+		}
+
+		const now = new Date();
+		const month = now.getMonth() + 1;
+		const year = now.getFullYear();
+
+		const [sourcePeriod, targetPeriod] = await Promise.all([
+			prisma.budgetPeriod.findUnique({
+				where: {
+					categoryId_year_month: {
+						categoryId: sourceCategoryId,
+						month,
+						year,
+					},
+				},
+				include: { category: true },
+			}),
+			prisma.budgetPeriod.findUnique({
+				where: {
+					categoryId_year_month: {
+						categoryId: targetCategoryId,
+						month,
+						year,
+					},
+				},
+				include: { category: true },
+			}),
+		]);
+
+		if (!sourcePeriod || !targetPeriod) {
+			return res.status(404).json({ message: 'Budget period not found for one of the categories' });
+		}
+
+		if (sourcePeriod.category.userId !== req.user.id || targetPeriod.category.userId !== req.user.id) {
+			return res.status(404).json({ message: 'Category not found' });
+		}
+
+		const availableCarryOver = Number(sourcePeriod.carryOver ?? 0);
+		if (availableCarryOver < amount) {
+			return res.status(400).json({ message: 'Source category does not have enough carry-over available' });
+		}
+
+		await prisma.$transaction([
+			prisma.budgetPeriod.update({
+				where: { id: sourcePeriod.id },
+				data: { carryOver: availableCarryOver - amount },
+			}),
+			prisma.budgetPeriod.update({
+				where: { id: targetPeriod.id },
+				data: { carryOver: Number(targetPeriod.carryOver ?? 0) + amount },
+			}),
+		]);
+
+		return res.status(200).json({
+			message: 'Carry-over transferred successfully',
+			month,
+			year,
+			sourceCategoryId,
+			targetCategoryId,
+			amount,
+		});
+	} catch (error) {
+		logger.error('Failed to transfer carry-over between budgets', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to transfer carry-over between budgets' });
+	}
+});
+
 // ============================================
 // Dashboard Preferences API
 // ============================================
