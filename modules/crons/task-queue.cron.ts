@@ -13,6 +13,7 @@ import logger from '../../src/lib/logger';
 import { cleanupOldReceiptProcessingImages } from '../../src/lib/receipt-image-storage';
 import { ReceiptOcrQueueService } from '../ai-assistant/receipt-ocr-queue.service';
 import { processReceiptOcrJob } from '../ai-assistant/receipt-ocr-job-processor.service';
+import { fetchAndStoreArsUsdRateByDate } from '../../src/helpers/rate.helper';
 
 const CRON_EXPRESSIONS = {
 	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10 * * 1-5',
@@ -21,6 +22,7 @@ const CRON_EXPRESSIONS = {
 	checkGmailEmails: process.env.CRON_CHECK_GMAIL || '0 */30 * * 1-5',
 	cleanupReceiptProcessingImages: process.env.CRON_CLEAN_RECEIPT_PROCESSING_IMAGES || '0 * * * *',
 	processReceiptOcrQueue: process.env.CRON_PROCESS_RECEIPT_OCR_QUEUE || '*/10 * * * * *',
+	syncArsUsdRate: config.CRON_SYNC_ARS_USD_RATE,
 };
 
 export class TaskQueueModule {
@@ -60,6 +62,11 @@ export class TaskQueueModule {
 		{ timezone: config.CRON_TIMEZONE, scheduled: true }
 	);
 
+	private syncArsUsdRate = cron.schedule(CRON_EXPRESSIONS.syncArsUsdRate, this._syncArsUsdRate.bind(this), {
+		timezone: config.CRON_TIMEZONE,
+		scheduled: true,
+	});
+
 	private isProcessingReceiptQueue = false;
 
 	start() {
@@ -71,6 +78,7 @@ export class TaskQueueModule {
 		this.checkGmailSchedule.start();
 		this.cleanupReceiptProcessingImages.start();
 		this.processReceiptOcrQueue.start();
+		this.syncArsUsdRate.start();
 	}
 
 	private async _createDailyExchangeRateTask() {
@@ -169,6 +177,22 @@ export class TaskQueueModule {
 			logger.info('Transaction amounts in dollars are up to date');
 		} catch (error) {
 			logger.error('Error updating daily transactions table', { error });
+		}
+	}
+
+	private async _syncArsUsdRate() {
+		try {
+			const storedRate = await fetchAndStoreArsUsdRateByDate(new Date(), config.ARS_USD_EXCHANGE_HOUSE);
+			logger.info('ARS/USD historical rate synced', {
+				house: config.ARS_USD_EXCHANGE_HOUSE,
+				date: dayjs(storedRate.rateDate).format('YYYY-MM-DD'),
+				sellPrice: Number(storedRate.sellPrice ?? 0),
+			});
+		} catch (error) {
+			logger.error('Failed to sync ARS/USD rate', {
+				error,
+				house: config.ARS_USD_EXCHANGE_HOUSE,
+			});
 		}
 	}
 

@@ -2,7 +2,7 @@ import dayjs from 'dayjs';
 import { PrismaModule } from '../database/database.module';
 import { extractTransactionDetails } from '../../src/helpers/price.helper';
 import { ExchangeCurrencyCronServices } from '../crons/exchange-currency/exchange-currency.service';
-import { calculateUSDAmountByRate } from '../../src/helpers/rate.helper';
+import { calculateUSDAmountByRate, getArsUsdRateByDate } from '../../src/helpers/rate.helper';
 import { Category, PaymentMethod, Prisma, PrismaClient, Transaction } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { config } from '../../src/config';
@@ -31,6 +31,7 @@ type SafeCreateTransactionInput = Prisma.TransactionUncheckedCreateInput & {
 	description?: string | null;
 	referenceId?: string | null;
 	originalCurrencyAmount?: number | Decimal | null;
+	exchangeRateOverride?: number | Decimal | null;
 	amountIsAlreadyNormalized?: boolean;
 	skipDuplicateCheck?: boolean;
 };
@@ -97,6 +98,121 @@ class BaseTransactionsModule {
 		return null;
 	}
 
+	async _ARSToUSDWithExchangeRateByDate(date: string, amount: number | Decimal) {
+		const exchangeRate = await getArsUsdRateByDate(date);
+		const sellPrice = exchangeRate?.sellPrice;
+
+		if (sellPrice === undefined || sellPrice === null) {
+			return null;
+		}
+
+		return calculateUSDAmountByRate(Number(amount), sellPrice);
+	}
+
+	async normalizeTransactionAmount(args: {
+		amount: number | Decimal;
+		currency: string;
+		date: Date | string;
+		originalCurrencyAmount?: number | Decimal | null;
+		exchangeRateOverride?: number | Decimal | null;
+		amountIsAlreadyNormalized?: boolean;
+	}) {
+		const transactionDate = args.date instanceof Date ? args.date : new Date(args.date);
+		const currency = args.currency.trim().toUpperCase();
+		let finalAmount = Number(args.amount);
+		let originalCurrencyAmount =
+			args.originalCurrencyAmount ?? (currency !== 'USD' ? Number(args.amount) : null);
+		let exchangeRateUsed: number | null = null;
+		let exchangeRateSource: string | null = null;
+		let exchangeRateSourceKey: string | null = null;
+
+		const overrideRate = args.exchangeRateOverride === null || args.exchangeRateOverride === undefined
+			? null
+			: Number(args.exchangeRateOverride);
+
+		if (overrideRate !== null && Number.isFinite(overrideRate) && overrideRate > 0 && currency !== 'USD') {
+			finalAmount = calculateUSDAmountByRate(Number(args.amount), overrideRate);
+			exchangeRateUsed = overrideRate;
+			exchangeRateSource = 'manual';
+			exchangeRateSourceKey = 'transaction_override';
+			return {
+				amount: finalAmount,
+				originalCurrencyAmount,
+				currency,
+				exchangeRateUsed,
+				exchangeRateSource,
+				exchangeRateSourceKey,
+			};
+		}
+
+		if (currency === 'VES' && !args.amountIsAlreadyNormalized) {
+			const converted = await this._VESToUSDWithExchangeRateByDate(
+				dayjs(transactionDate).format('YYYY-MM-DD'),
+				Number(args.amount)
+			);
+			if (converted !== null) {
+				finalAmount = converted;
+				originalCurrencyAmount = Number(args.amount);
+				const latestExchange = await ExchangeCurrencyCronServices.getLatestExchangeCurrency(
+					dayjs(transactionDate).format('YYYY-MM-DD')
+				);
+				exchangeRateUsed = latestExchange === null || latestExchange === undefined ? null : Number(latestExchange);
+				exchangeRateSource = exchangeRateUsed ? 'pydolar' : null;
+				exchangeRateSourceKey = exchangeRateUsed ? 'bcv' : null;
+			}
+		} else if (currency === 'ARS' && !args.amountIsAlreadyNormalized) {
+			const historicalRate = await getArsUsdRateByDate(dayjs(transactionDate).format('YYYY-MM-DD'));
+			const converted =
+				historicalRate?.sellPrice === null || historicalRate?.sellPrice === undefined
+					? null
+					: calculateUSDAmountByRate(Number(args.amount), historicalRate.sellPrice);
+			if (converted !== null) {
+				finalAmount = converted;
+				originalCurrencyAmount = Number(args.amount);
+				exchangeRateUsed = Number(historicalRate?.sellPrice ?? 0) || null;
+				exchangeRateSource = historicalRate?.source ?? null;
+				exchangeRateSourceKey = historicalRate?.sourceKey ?? null;
+			}
+		} else if (currency === 'USD') {
+			finalAmount = Number(args.amount);
+			if (!originalCurrencyAmount) {
+				originalCurrencyAmount = finalAmount;
+			}
+		}
+
+		return {
+			amount: finalAmount,
+			originalCurrencyAmount,
+			currency,
+			exchangeRateUsed,
+			exchangeRateSource,
+			exchangeRateSourceKey,
+		};
+	}
+
+	async getSystemExchangeRatePreview(currency: string, date: Date | string) {
+		const normalizedCurrency = currency.trim().toUpperCase();
+		const transactionDate = date instanceof Date ? date : new Date(date);
+		if (normalizedCurrency === 'ARS') {
+			return getArsUsdRateByDate(dayjs(transactionDate).format('YYYY-MM-DD'));
+		}
+		if (normalizedCurrency === 'VES') {
+			const latestExchange = await ExchangeCurrencyCronServices.getLatestExchangeCurrency(
+				dayjs(transactionDate).format('YYYY-MM-DD'),
+			);
+			if (latestExchange === null || latestExchange === undefined) {
+				return null;
+			}
+			return {
+				sellPrice: latestExchange,
+				buyPrice: latestExchange,
+				source: 'pydolar',
+				sourceKey: 'bcv',
+			};
+		}
+		return null;
+	}
+
 	async registerManualTransactions(data: string[], userId: number) {
 		const joinedData = data.join(' ');
 		const splittedData = joinedData.split(';');
@@ -124,6 +240,8 @@ class BaseTransactionsModule {
 
 		if (currency && currency === 'VES') {
 			amountInUSD = await this._VESToUSDWithExchangeRateByDate(date, Number(amount));
+		} else if (currency && currency === 'ARS') {
+			amountInUSD = await this._ARSToUSDWithExchangeRateByDate(date, Number(amount));
 		} else {
 			amountInUSD = Number(amount);
 		}
@@ -345,23 +463,17 @@ class BaseTransactionsModule {
 	async safeCreateTransaction(data: SafeCreateTransactionInput): Promise<SafeCreateTransactionResult> {
 		const { amount, currency, date } = data;
 		const transactionDate = date instanceof Date ? date : new Date(date);
-		
-		let finalAmount = Number(amount);
-		let originalCurrencyAmount = data.originalCurrencyAmount || null;
-
-		// Handle Normalization if not already USD
-		if (currency === 'VES' && !data.amountIsAlreadyNormalized) {
-			const dateStr = dayjs(transactionDate).format('YYYY-MM-DD');
-			const converted = await this._VESToUSDWithExchangeRateByDate(dateStr, Number(amount));
-			if (converted !== null) {
-				finalAmount = converted;
-				originalCurrencyAmount = Number(amount);
-			}
-		} else if (currency === 'USD') {
-			finalAmount = Number(amount);
-			// For USD, original amount is the same as final amount
-			if (!originalCurrencyAmount) originalCurrencyAmount = finalAmount;
-		}
+		const normalizedAmounts = await this.normalizeTransactionAmount({
+			amount,
+			currency,
+			date: transactionDate,
+			originalCurrencyAmount: data.originalCurrencyAmount,
+			exchangeRateOverride: data.exchangeRateOverride,
+			amountIsAlreadyNormalized: data.amountIsAlreadyNormalized,
+		});
+		const finalAmount = normalizedAmounts.amount;
+		const originalCurrencyAmount = normalizedAmounts.originalCurrencyAmount;
+		const normalizedCurrency = normalizedAmounts.currency;
 
 		if (!data.skipDuplicateCheck) {
 			const duplicate = await this.findDuplicate({
@@ -369,7 +481,7 @@ class BaseTransactionsModule {
 				amount: finalAmount,
 				date: transactionDate,
 				type: data.type,
-				currency: data.currency || 'USD',
+				currency: normalizedCurrency || 'USD',
 				description: data.description ?? undefined,
 				referenceId: data.referenceId ?? undefined,
 			});
@@ -379,7 +491,7 @@ class BaseTransactionsModule {
 					originalId: duplicate.id,
 					userId: data.userId,
 					amount: finalAmount,
-					currency: data.currency,
+					currency: normalizedCurrency,
 					date: transactionDate,
 				});
 				return { transaction: duplicate, isDuplicate: true };
@@ -392,7 +504,11 @@ class BaseTransactionsModule {
 				...transactionData,
 				date: transactionDate,
 				amount: finalAmount,
+				currency: normalizedCurrency,
 				originalCurrencyAmount,
+				exchangeRateUsed: normalizedAmounts.exchangeRateUsed,
+				exchangeRateSource: normalizedAmounts.exchangeRateSource,
+				exchangeRateSourceKey: normalizedAmounts.exchangeRateSourceKey,
 			},
 			include: {
 				category: true,
