@@ -74,6 +74,82 @@ export class BudgetRolloverService {
 	}
 
 	/**
+	 * Gets or creates budget periods for many categories in a single batch.
+	 */
+	async getOrCreateCurrentPeriods(categoryIds: number[], date: Date = new Date()) {
+		const uniqueCategoryIds = [...new Set(categoryIds)].filter((categoryId) => Number.isInteger(categoryId) && categoryId > 0);
+		const periodsByCategoryId = new Map<number, BudgetPeriod>();
+
+		if (uniqueCategoryIds.length === 0) {
+			return periodsByCategoryId;
+		}
+
+		const month = dayjs(date).month() + 1;
+		const year = dayjs(date).year();
+
+		const [existingPeriods, categories] = await Promise.all([
+			this._db.budgetPeriod.findMany({
+				where: {
+					categoryId: { in: uniqueCategoryIds },
+					year,
+					month,
+				},
+			}),
+			this._db.category.findMany({
+				where: { id: { in: uniqueCategoryIds } },
+				select: {
+					id: true,
+					isCumulative: true,
+				},
+			}),
+		]);
+
+		for (const period of existingPeriods) {
+			periodsByCategoryId.set(period.categoryId, period);
+		}
+
+		const missingCategories = categories.filter((category) => !periodsByCategoryId.has(category.id));
+		if (missingCategories.length > 0) {
+			const missingPeriodData = [];
+
+			for (const category of missingCategories) {
+				let carryOver = 0;
+				if (category.isCumulative) {
+					carryOver = await this.calculateRollover(category.id, month, year);
+				}
+
+				missingPeriodData.push({
+					categoryId: category.id,
+					year,
+					month,
+					carryOver,
+				});
+			}
+
+			if (missingPeriodData.length > 0) {
+				await this._db.budgetPeriod.createMany({
+					data: missingPeriodData,
+					skipDuplicates: true,
+				});
+			}
+
+			const createdPeriods = await this._db.budgetPeriod.findMany({
+				where: {
+					categoryId: { in: uniqueCategoryIds },
+					year,
+					month,
+				},
+			});
+
+			for (const period of createdPeriods) {
+				periodsByCategoryId.set(period.categoryId, period);
+			}
+		}
+
+		return periodsByCategoryId;
+	}
+
+	/**
 	 * Calculates how much to carry over from the previous period
 	 */
 	async calculateRollover(

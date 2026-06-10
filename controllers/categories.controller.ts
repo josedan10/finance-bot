@@ -182,7 +182,7 @@ export async function createCategory(req: Request, res: Response): Promise<void>
  */
 export async function updateCategory(req: Request, res: Response): Promise<void> {
 	const id = Number(req.params.id);
-	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, currentCarryOver, dueDay, targetDate } = req.body as {
 		name?: string;
 		description?: string;
 		icon?: string;
@@ -192,6 +192,7 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 		budgetType?: string;
 		targetAmount?: number | null;
 		currentAmount?: number | null;
+		currentCarryOver?: number | null;
 		dueDay?: number | null;
 		targetDate?: string | null;
 	};
@@ -250,6 +251,25 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 				data: categoryUpdateData as never
 			});
 
+				let updatedCarryOver: number | null = null;
+				if (currentCarryOver !== undefined) {
+					const normalizedCarryOver = normalizeOptionalAmount(currentCarryOver);
+					if (normalizedCarryOver === undefined || normalizedCarryOver === null) {
+						throw new Error('Invalid current carry-over value');
+					}
+
+					const period = await BudgetRollover.getOrCreateCurrentPeriod(id);
+				if (!period) {
+					throw new Error('Budget period not found');
+				}
+
+				const updatedPeriod = await tx.budgetPeriod.update({
+					where: { id: period.id },
+					data: { carryOver: normalizedCarryOver },
+				});
+				updatedCarryOver = Number(updatedPeriod.carryOver);
+			}
+
 			// 2. Update keywords if provided
 			if (keywords && Array.isArray(keywords)) {
 				const normalizedKeywords = normalizeKeywords(keywords);
@@ -283,13 +303,14 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 				}
 			}
 
-			return updatedCategory;
+			return { updatedCategory, updatedCarryOver };
 		});
 
 		res.status(200).json({
-			...result,
-			amountLimit: Number(result.amountLimit ?? 0),
-			...mapCategoryBudgetFields(result),
+			...result.updatedCategory,
+			amountLimit: Number(result.updatedCategory.amountLimit ?? 0),
+			...mapCategoryBudgetFields(result.updatedCategory),
+			currentCarryOver: result.updatedCarryOver ?? Number((await BudgetRollover.getOrCreateCurrentPeriod(id))?.carryOver ?? 0),
 		});
 	} catch (error: unknown) {
 		if (error instanceof Error && error.message === 'Category not found') {
@@ -299,6 +320,14 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 
 		if (error instanceof Error && error.message === 'Categories with a fallback rule cannot also carry over leftover budget') {
 			res.status(400).json({ message: error.message });
+			return;
+		}
+		if (error instanceof Error && error.message === 'Invalid current carry-over value') {
+			res.status(400).json({ message: error.message });
+			return;
+		}
+		if (error instanceof Error && error.message === 'Budget period not found') {
+			res.status(404).json({ message: error.message });
 			return;
 		}
 		logger.error('Failed to update category', { userId: req.user.id, id, error });

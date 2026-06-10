@@ -1,6 +1,6 @@
 {
 	"name": "zentra-api",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"scripts": {
 		"start:dev": "ts-node ./bin/www.ts",
 		"start": "node ./dist/bin/www.js",

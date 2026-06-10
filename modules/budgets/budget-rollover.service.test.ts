@@ -189,4 +189,37 @@ describe('BudgetRolloverService', () => {
 			}));
 		});
 	});
+
+	describe('getOrCreateCurrentPeriods', () => {
+		it('should reuse existing periods and create missing ones in bulk', async () => {
+			prismaMock.budgetPeriod.findMany
+				.mockResolvedValueOnce([
+					{ id: 1, categoryId: 10, month: 6, year: 2026, carryOver: new Decimal(15) },
+				] as any)
+				.mockResolvedValueOnce([
+					{ id: 1, categoryId: 10, month: 6, year: 2026, carryOver: new Decimal(15) },
+					{ id: 2, categoryId: 11, month: 6, year: 2026, carryOver: new Decimal(25) },
+				] as any);
+
+			prismaMock.category.findMany.mockResolvedValue([
+				{ id: 10, isCumulative: true },
+				{ id: 11, isCumulative: false },
+			] as any);
+
+			prismaMock.transaction.aggregate.mockResolvedValue({ _sum: { amount: new Decimal(75) } } as any);
+			prismaMock.budgetPeriod.createMany.mockResolvedValue({ count: 1 } as any);
+
+			const result = await BudgetRollover.getOrCreateCurrentPeriods([10, 11], new Date('2026-06-15'));
+
+			expect(prismaMock.budgetPeriod.createMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.arrayContaining([
+						expect.objectContaining({ categoryId: 11, month: 6, year: 2026 }),
+					]),
+				})
+			);
+			expect(result.get(10)?.carryOver.toNumber()).toBe(15);
+			expect(result.get(11)?.carryOver.toNumber()).toBe(25);
+		});
+	});
 });
