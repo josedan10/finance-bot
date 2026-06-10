@@ -23,11 +23,13 @@ model User {
   notificationLogs        NotificationLog[]
   notificationPreferences NotificationPreference?
   budgetFallbackRules     BudgetFallbackRule[]
+  budgetOverflowAssignments BudgetOverflowAssignment[]
   paymentMethods          PaymentMethod[]
   platformMonthlyRegister PlatformMonthlyRegister[]
   pushSubscriptions       PushSubscription[]
   shops                   Shop[]
   suscriptions            Suscription[]
+  sharedMonthlySummaries  SharedMonthlySummary[]
   transactions            Transaction[]
 }
 
@@ -52,6 +54,8 @@ model Category {
   budgetPeriods    BudgetPeriod[]
   sourceFallbackRules BudgetFallbackRule[] @relation("BudgetFallbackSource")
   targetFallbackRules BudgetFallbackRule[] @relation("BudgetFallbackTarget")
+  sourceOverflowAssignments BudgetOverflowAssignment[] @relation("BudgetOverflowSource")
+  targetOverflowAssignments BudgetOverflowAssignment[] @relation("BudgetOverflowTarget")
 
   @@unique([name, userId])
   @@index([userId], map: "Category_userId_fkey")
@@ -72,6 +76,24 @@ model BudgetFallbackRule {
   @@unique([userId, sourceCategoryId])
   @@index([userId])
   @@index([targetCategoryId])
+}
+
+model BudgetOverflowAssignment {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  sourceCategoryId Int
+  targetCategoryId Int
+  month            Int
+  year             Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceCategory   Category @relation("BudgetOverflowSource", fields: [sourceCategoryId], references: [id], onDelete: Cascade)
+  targetCategory   Category @relation("BudgetOverflowTarget", fields: [targetCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceCategoryId, month, year], map: "budget_overflow_assignment_source_month_uq")
+  @@index([userId], map: "BudgetOverflowAssignment_userId_fkey")
+  @@index([targetCategoryId], map: "BudgetOverflowAssignment_targetCategoryId_fkey")
 }
 
 model BudgetPeriod {
@@ -237,6 +259,23 @@ model HistoricalExchangeRate {
   @@unique([baseCurrency, quoteCurrency, source, sourceKey, rateDate], map: "hist_rate_pair_source_date_uq")
   @@index([quoteCurrency, rateDate])
   @@index([source, sourceKey, rateDate])
+}
+
+model SharedMonthlySummary {
+  id        Int       @id @default(autoincrement())
+  userId     Int
+  token      String    @unique @db.VarChar(64)
+  month      Int
+  year       Int
+  title      String?   @db.VarChar(120)
+  revokedAt  DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "SharedMonthlySummary_userId_fkey")
+  @@index([year, month])
 }
 
 model ProcessedEmail {

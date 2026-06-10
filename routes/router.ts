@@ -36,6 +36,7 @@ import {
 } from '../src/lib/security-path-blocks';
 import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, normalizeOptionalTargetDate } from '../src/lib/budget-normalizers';
 import { normalizeOptionalCoordinate, normalizeTransactionLocationMetadata } from '../src/lib/transaction-location';
+import { buildSharedMonthlySummary, createShareToken, isValidShareMonth } from '../src/lib/monthly-share-summary';
 
 const router = express.Router();
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
@@ -1721,6 +1722,175 @@ router.delete('/api/budgets/fallback-rules/:sourceCategoryId', requireAuth, asyn
 	}
 });
 
+router.get('/api/budgets/overflow-assignments', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const month = Number(req.query.month);
+		const year = Number(req.query.year);
+
+		if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2000 || year > 2100) {
+			return res.status(400).json({ message: 'month and year are required' });
+		}
+
+		const assignments = await prisma.$queryRaw<
+			Array<{
+				id: number;
+				sourceCategoryId: number;
+				sourceCategoryName: string;
+				targetCategoryId: number;
+				targetCategoryName: string;
+				month: number;
+				year: number;
+			}>
+		>(Prisma.sql`
+			SELECT
+				a.id,
+				a.sourceCategoryId,
+				source.name AS sourceCategoryName,
+				a.targetCategoryId,
+				target.name AS targetCategoryName,
+				a.month,
+				a.year
+			FROM BudgetOverflowAssignment a
+			INNER JOIN Category source ON source.id = a.sourceCategoryId
+			INNER JOIN Category target ON target.id = a.targetCategoryId
+			WHERE a.userId = ${req.user.id}
+			  AND a.month = ${month}
+			  AND a.year = ${year}
+			ORDER BY source.name ASC
+		`);
+
+		return res.status(200).json(assignments);
+	} catch (error) {
+		logger.error('Failed to fetch budget overflow assignments', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to fetch budget overflow assignments' });
+	}
+});
+
+router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const { sourceCategoryId, targetCategoryId, month, year } = req.body as {
+			sourceCategoryId?: number;
+			targetCategoryId?: number;
+			month?: number;
+			year?: number;
+		};
+
+		if (
+			!sourceCategoryId ||
+			!targetCategoryId ||
+			sourceCategoryId === targetCategoryId ||
+			!Number.isInteger(month) ||
+			month < 1 ||
+			month > 12 ||
+			!Number.isInteger(year) ||
+			year < 2000 ||
+			year > 2100
+		) {
+			return res.status(400).json({ message: 'Invalid overflow assignment request' });
+		}
+
+		const categories = await prisma.category.findMany({
+			where: {
+				id: { in: [sourceCategoryId, targetCategoryId] },
+				userId: req.user.id,
+			},
+		});
+
+		if (categories.length !== 2) {
+			return res.status(404).json({ message: 'Category not found' });
+		}
+
+		await prisma.budgetOverflowAssignment.upsert({
+			where: {
+				userId_sourceCategoryId_month_year: {
+					userId: req.user.id,
+					sourceCategoryId,
+					month,
+					year,
+				},
+			},
+			update: {
+				targetCategoryId,
+			},
+			create: {
+				userId: req.user.id,
+				sourceCategoryId,
+				targetCategoryId,
+				month,
+				year,
+			},
+		});
+
+		const assignment = await prisma.$queryRaw<
+			Array<{
+				id: number;
+				sourceCategoryId: number;
+				sourceCategoryName: string;
+				targetCategoryId: number;
+				targetCategoryName: string;
+				month: number;
+				year: number;
+			}>
+		>(Prisma.sql`
+			SELECT
+				a.id,
+				a.sourceCategoryId,
+				source.name AS sourceCategoryName,
+				a.targetCategoryId,
+				target.name AS targetCategoryName,
+				a.month,
+				a.year
+			FROM BudgetOverflowAssignment a
+			INNER JOIN Category source ON source.id = a.sourceCategoryId
+			INNER JOIN Category target ON target.id = a.targetCategoryId
+			WHERE a.userId = ${req.user.id}
+			  AND a.sourceCategoryId = ${sourceCategoryId}
+			  AND a.month = ${month}
+			  AND a.year = ${year}
+			LIMIT 1
+		`);
+
+		return res.status(200).json(assignment[0]);
+	} catch (error) {
+		logger.error('Failed to save budget overflow assignment', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to save budget overflow assignment' });
+	}
+});
+
+router.delete('/api/budgets/overflow-assignments/:sourceCategoryId', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const sourceCategoryId = Number(req.params.sourceCategoryId);
+		const month = Number(req.query.month);
+		const year = Number(req.query.year);
+
+		if (
+			!Number.isInteger(sourceCategoryId) ||
+			!Number.isInteger(month) ||
+			month < 1 ||
+			month > 12 ||
+			!Number.isInteger(year) ||
+			year < 2000 ||
+			year > 2100
+		) {
+			return res.status(400).json({ message: 'Invalid overflow assignment request' });
+		}
+
+		await prisma.budgetOverflowAssignment.deleteMany({
+			where: {
+				userId: req.user.id,
+				sourceCategoryId,
+				month,
+				year,
+			},
+		});
+
+		return res.status(204).send();
+	} catch (error) {
+		logger.error('Failed to delete budget overflow assignment', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to delete budget overflow assignment' });
+	}
+});
+
 // ============================================
 // Dashboard Preferences API
 // ============================================
@@ -1934,6 +2104,75 @@ router.get('/api/notifications/push/vapidPublicKey', async (req: Request, res: R
 	res.status(200).json({ 
 		publicKey: config.VAPID_PUBLIC_KEY 
 	});
+});
+
+router.post('/api/monthly-summaries/share', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const { month, year, title } = req.body as { month?: number; year?: number; title?: string | null };
+
+		if (!isValidShareMonth(Number(month), Number(year))) {
+			return res.status(400).json({ message: 'month must be 1-12 and year must be valid' });
+		}
+
+		const token = createShareToken();
+		const trimmedTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : null;
+		const record = await prisma.sharedMonthlySummary.create({
+			data: {
+				userId: req.user.id,
+				token,
+				month: Number(month),
+				year: Number(year),
+				title: trimmedTitle,
+			},
+		});
+
+		const summary = await buildSharedMonthlySummary(
+			req.user.id,
+			record.month,
+			record.year,
+			record.token,
+			record.title,
+			record.createdAt,
+			record.expiresAt
+		);
+
+		return res.status(201).json(summary);
+	} catch (error) {
+		logger.error('Failed to create shared monthly summary', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to create shared monthly summary' });
+	}
+});
+
+router.get('/api/public/monthly-summaries/:token', async (req: Request, res: Response) => {
+	try {
+		const token = String(req.params.token || '').trim();
+		if (!token) {
+			return res.status(400).json({ message: 'Share token is required' });
+		}
+
+		const share = await prisma.sharedMonthlySummary.findUnique({
+			where: { token },
+		});
+
+		if (!share || share.revokedAt || (share.expiresAt && share.expiresAt.getTime() < Date.now())) {
+			return res.status(404).json({ message: 'Shared summary not found' });
+		}
+
+		const summary = await buildSharedMonthlySummary(
+			share.userId,
+			share.month,
+			share.year,
+			share.token,
+			share.title,
+			share.createdAt,
+			share.expiresAt
+		);
+
+		return res.status(200).json(summary);
+	} catch (error) {
+		logger.error('Failed to fetch shared monthly summary', { error });
+		return res.status(500).json({ message: 'Failed to fetch shared monthly summary' });
+	}
 });
 
 // ============================================

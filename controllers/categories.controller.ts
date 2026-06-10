@@ -182,7 +182,7 @@ export async function createCategory(req: Request, res: Response): Promise<void>
  */
 export async function updateCategory(req: Request, res: Response): Promise<void> {
 	const id = Number(req.params.id);
-	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, currentCarryOver, dueDay, targetDate } = req.body as {
 		name?: string;
 		description?: string;
 		icon?: string;
@@ -192,6 +192,7 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 		budgetType?: string;
 		targetAmount?: number | null;
 		currentAmount?: number | null;
+		currentCarryOver?: number | null;
 		dueDay?: number | null;
 		targetDate?: string | null;
 	};
@@ -286,10 +287,27 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 			return updatedCategory;
 		});
 
+		let updatedCarryOver: number | undefined;
+		if (currentCarryOver !== undefined) {
+			const normalizedCarryOver = normalizeOptionalAmount(currentCarryOver);
+			if (normalizedCarryOver === undefined) {
+				res.status(400).json({ message: 'Invalid current carry-over value' });
+				return;
+			}
+
+			const period = await BudgetRollover.getOrCreateCurrentPeriod(id);
+			const updatedPeriod = await prisma.budgetPeriod.update({
+				where: { id: period.id },
+				data: { carryOver: normalizedCarryOver },
+			});
+			updatedCarryOver = Number(updatedPeriod.carryOver);
+		}
+
 		res.status(200).json({
 			...result,
 			amountLimit: Number(result.amountLimit ?? 0),
 			...mapCategoryBudgetFields(result),
+			currentCarryOver: updatedCarryOver ?? Number((await BudgetRollover.getOrCreateCurrentPeriod(id))?.carryOver ?? 0),
 		});
 	} catch (error: unknown) {
 		if (error instanceof Error && error.message === 'Category not found') {
