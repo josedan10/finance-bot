@@ -37,8 +37,15 @@ import {
 import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, normalizeOptionalTargetDate } from '../src/lib/budget-normalizers';
 import { normalizeOptionalCoordinate, normalizeTransactionLocationMetadata } from '../src/lib/transaction-location';
 import { buildSharedMonthlySummary, createShareToken, isValidShareMonth } from '../src/lib/monthly-share-summary';
+import { createRedisRateLimitMiddleware } from '../src/lib/redis-rate-limit';
 
 const router = express.Router();
+const publicMonthlySummaryRateLimit = createRedisRateLimitMiddleware({
+	windowMs: 60_000,
+	maxRequests: 10,
+	keyPrefix: 'rate_limit:public_monthly_summary',
+	getKey: (req) => `${req.ip}:${String(req.params.token || '').trim().toLowerCase()}`,
+});
 const ignoredTransactionStatuses = new Set(['cancelled', 'canceled', 'declined', 'pending', 'reversed', 'void']);
 const unsafeCategoryKeywords = new Set([
 	'card',
@@ -2200,15 +2207,33 @@ router.post('/api/monthly-summaries/share', requireAuth, async (req: Request, re
 
 		const token = createShareToken();
 		const trimmedTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : null;
-		const record = await prisma.sharedMonthlySummary.create({
-			data: {
+		const existingShare = await prisma.sharedMonthlySummary.findFirst({
+			where: {
 				userId: req.user.id,
-				token,
 				month: Number(month),
 				year: Number(year),
-				title: trimmedTitle,
+				revokedAt: null,
 			},
 		});
+
+		const record = existingShare
+			? await prisma.sharedMonthlySummary.update({
+					where: { id: existingShare.id },
+					data: {
+						token,
+						title: trimmedTitle,
+						revokedAt: null,
+					},
+				})
+			: await prisma.sharedMonthlySummary.create({
+					data: {
+						userId: req.user.id,
+						token,
+						month: Number(month),
+						year: Number(year),
+						title: trimmedTitle,
+					},
+				});
 
 		const summary = await buildSharedMonthlySummary(
 			req.user.id,
@@ -2227,7 +2252,7 @@ router.post('/api/monthly-summaries/share', requireAuth, async (req: Request, re
 	}
 });
 
-router.get('/api/public/monthly-summaries/:token', async (req: Request, res: Response) => {
+router.get('/api/public/monthly-summaries/:token', publicMonthlySummaryRateLimit, async (req: Request, res: Response) => {
 	try {
 		const token = String(req.params.token || '').trim();
 		if (!token) {

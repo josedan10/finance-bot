@@ -98,19 +98,20 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
   const net = roundAmount(income - expenses);
 
   const budgetCategories = categories.filter((category) => Number(category.amountLimit ?? 0) > 0);
-  const budgetPeriods = await Promise.all(
-    budgetCategories.map((category) => BudgetRollover.getOrCreateCurrentPeriod(category.id, startDate))
+  const budgetPeriods = await BudgetRollover.getOrCreateCurrentPeriods(
+    budgetCategories.map((category) => category.id),
+    startDate
   );
 
   const budgets = budgetCategories
-    .map((category, index) => {
+    .map((category) => {
       const spent = roundAmount(
         transactions
           .filter((transaction) => transaction.type === 'expense' && transaction.categoryId === category.id)
           .reduce((sum, transaction) => sum + Number(transaction.amount ?? 0), 0)
       );
       const limit = roundAmount(Number(category.amountLimit ?? 0));
-      const carryOver = roundAmount(Number(budgetPeriods[index]?.carryOver ?? 0));
+      const carryOver = roundAmount(Number(budgetPeriods.get(category.id)?.carryOver ?? 0));
       const effectiveBudget = roundAmount(limit + carryOver);
       const remaining = roundAmount(effectiveBudget - spent);
       const percentage = effectiveBudget > 0 ? roundAmount((spent / effectiveBudget) * 100) : 0;
