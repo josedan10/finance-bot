@@ -138,8 +138,7 @@ describe('historical ARS/USD rates', () => {
 				venta: 1125,
 			},
 		} as any);
-		prismaMock.historicalExchangeRate.findFirst.mockResolvedValueOnce(null);
-		prismaMock.historicalExchangeRate.create.mockResolvedValue({
+		prismaMock.historicalExchangeRate.upsert.mockResolvedValue({
 			id: 10,
 			baseCurrency: 'USD',
 			quoteCurrency: 'ARS',
@@ -158,7 +157,7 @@ describe('historical ARS/USD rates', () => {
 			expect.stringContaining('/v1/cotizaciones/dolares/blue/2026/06/09'),
 			expect.objectContaining({ timeout: 5000 })
 		);
-		expect(prismaMock.historicalExchangeRate.create).toHaveBeenCalledTimes(1);
+		expect(prismaMock.historicalExchangeRate.upsert).toHaveBeenCalledTimes(1);
 		expect(Number(result?.sellPrice)).toBe(1125);
 	});
 
@@ -176,7 +175,7 @@ describe('historical ARS/USD rates', () => {
 					venta: 1050,
 				},
 			} as any);
-		prismaMock.historicalExchangeRate.create.mockResolvedValue({
+		prismaMock.historicalExchangeRate.upsert.mockResolvedValue({
 			id: 11,
 			baseCurrency: 'USD',
 			quoteCurrency: 'ARS',

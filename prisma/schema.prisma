@@ -229,8 +229,8 @@ model HistoricalExchangeRate {
   source        String   @db.VarChar(30)
   sourceKey     String   @db.VarChar(30)
   rateDate      DateTime
-  buyPrice      Decimal? @db.Decimal(10, 2)
-  sellPrice     Decimal? @db.Decimal(10, 2)
+  buyPrice      Decimal? @db.Decimal(10, 6)
+  sellPrice     Decimal? @db.Decimal(10, 6)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

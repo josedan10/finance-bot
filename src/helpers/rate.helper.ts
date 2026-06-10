@@ -47,7 +47,7 @@ export async function searchHistoricalExchangeRateByDate(
 	sourceKey?: string
 ) {
 	const normalizedDate = normalizeCalendarDate(date);
-	const normalizedSourceKey = sourceKey?.trim().toLowerCase() || 'default';
+	const normalizedSourceKey = normalizeArsUsdExchangeHouse(sourceKey);
 	const cacheKey = getHistoricalExchangeRateCacheKey(
 		quoteCurrency.toUpperCase(),
 		normalizedSourceKey,
@@ -90,19 +90,6 @@ async function persistHistoricalExchangeRate(args: {
 	sellPrice?: number | null;
 }) {
 	const normalizedDate = normalizeCalendarDate(args.date);
-	const existingRate = await prisma.historicalExchangeRate.findFirst({
-		where: {
-			baseCurrency: USD_BASE_CURRENCY,
-			quoteCurrency: args.quoteCurrency.toUpperCase(),
-			source: args.source,
-			sourceKey: args.sourceKey,
-			rateDate: {
-				gte: normalizedDate.toDate(),
-				lte: normalizedDate.endOf('day').toDate(),
-			},
-		},
-	});
-
 	const payload = {
 		baseCurrency: USD_BASE_CURRENCY,
 		quoteCurrency: args.quoteCurrency.toUpperCase(),
@@ -113,14 +100,19 @@ async function persistHistoricalExchangeRate(args: {
 		sellPrice: args.sellPrice ?? null,
 	};
 
-	const storedRate = existingRate
-		? await prisma.historicalExchangeRate.update({
-				where: { id: existingRate.id },
-				data: payload,
-			})
-		: await prisma.historicalExchangeRate.create({
-				data: payload,
-			});
+	const storedRate = await prisma.historicalExchangeRate.upsert({
+		where: {
+			baseCurrency_quoteCurrency_source_sourceKey_rateDate: {
+				baseCurrency: payload.baseCurrency,
+				quoteCurrency: payload.quoteCurrency,
+				source: payload.source,
+				sourceKey: payload.sourceKey,
+				rateDate: payload.rateDate,
+			},
+		},
+		create: payload,
+		update: payload,
+	});
 
 	const cacheKey = getHistoricalExchangeRateCacheKey(
 		payload.quoteCurrency,

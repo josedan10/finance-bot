@@ -17,6 +17,7 @@ import {
 	resolveDashboardBudgetPreferences,
 } from '../src/lib/dashboard-budget-preferences';
 import { BaseTransactions, mapTransactionType } from '../modules/base-transactions/base-transactions.module';
+import { normalizeArsUsdExchangeHouse } from '../src/helpers/rate.helper';
 import { areSentryTestEndpointsEnabled } from '../src/lib/sentry-test';
 import { captureException, flushSentry, isSentryEnabled } from '../src/lib/sentry';
 import { getSecurityDashboardAllowedRoles } from '../src/lib/security-access';
@@ -636,12 +637,13 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 		const latestRate = await prisma.dailyExchangeRate.findFirst({
 			orderBy: { date: 'desc' },
 		});
+		const normalizedArsHouse = normalizeArsUsdExchangeHouse(config.ARS_USD_EXCHANGE_HOUSE);
 		const latestArsRate = await prisma.historicalExchangeRate.findFirst({
 			where: {
 				baseCurrency: 'USD',
 				quoteCurrency: 'ARS',
 				source: 'argentinadatos',
-				sourceKey: config.ARS_USD_EXCHANGE_HOUSE,
+				sourceKey: normalizedArsHouse,
 			},
 			orderBy: { rateDate: 'desc' },
 		});
@@ -658,8 +660,8 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 				latestArsRate === null
 					? null
 					: {
-							buy: Number(latestArsRate.buyPrice ?? 0),
-							sell: Number(latestArsRate.sellPrice ?? 0),
+							buy: latestArsRate.buyPrice != null ? Number(latestArsRate.buyPrice) : null,
+							sell: latestArsRate.sellPrice != null ? Number(latestArsRate.sellPrice) : null,
 							house: latestArsRate.sourceKey,
 							date: latestArsRate.rateDate.toISOString().split('T')[0],
 					  },

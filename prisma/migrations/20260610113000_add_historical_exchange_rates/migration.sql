@@ -5,8 +5,8 @@ CREATE TABLE `HistoricalExchangeRate` (
   `source` VARCHAR(30) NOT NULL,
   `sourceKey` VARCHAR(30) NOT NULL,
   `rateDate` DATETIME(3) NOT NULL,
-  `buyPrice` DECIMAL(10, 2) NULL,
-  `sellPrice` DECIMAL(10, 2) NULL,
+  `buyPrice` DECIMAL(10, 6) NULL,
+  `sellPrice` DECIMAL(10, 6) NULL,
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updatedAt` DATETIME(3) NOT NULL,
 

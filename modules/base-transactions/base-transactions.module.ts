@@ -169,7 +169,8 @@ class BaseTransactionsModule {
 			if (converted !== null) {
 				finalAmount = converted;
 				originalCurrencyAmount = Number(args.amount);
-				exchangeRateUsed = Number(historicalRate?.sellPrice ?? 0) || null;
+				const normalizedSellPrice = Number(historicalRate.sellPrice);
+				exchangeRateUsed = Number.isFinite(normalizedSellPrice) ? normalizedSellPrice : null;
 				exchangeRateSource = historicalRate?.source ?? null;
 				exchangeRateSourceKey = historicalRate?.sourceKey ?? null;
 			}
@@ -225,8 +226,6 @@ class BaseTransactionsModule {
 		const currency = splittedData.find((d) => d.includes('currency='))?.split('=')?.[1];
 		const date = splittedData.find((d) => d.includes('date='))?.split('=')?.[1] || dayjs().toISOString();
 
-		let amountInUSD: number | null;
-
 		if (!amount || !description || !paymentMethodName || !type || !categoryName) {
 			const sampleData =
 				'amount=100; desc=My description; method=Mercantil Venezuela; type=debit; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
@@ -236,14 +235,6 @@ class BaseTransactionsModule {
 		const normalizedType = mapTransactionType(type);
 		if (!normalizedType) {
 			throw new Error(`Invalid transaction type: ${type}`);
-		}
-
-		if (currency && currency === 'VES') {
-			amountInUSD = await this._VESToUSDWithExchangeRateByDate(date, Number(amount));
-		} else if (currency && currency === 'ARS') {
-			amountInUSD = await this._ARSToUSDWithExchangeRateByDate(date, Number(amount));
-		} else {
-			amountInUSD = Number(amount);
 		}
 
 		const pmCacheKey = `payment_method:${userId}:${paymentMethodName}`;
@@ -294,19 +285,18 @@ class BaseTransactionsModule {
 
 		const { transaction } = await this.safeCreateTransaction({
 			userId,
-			amount: amountInUSD ?? Number(amount),
+			amount: Number(amount),
 			description,
 			type: normalizedType,
 			date: date ? dayjs(date).toDate() : dayjs().toDate(),
 			currency: currency || 'USD',
-			originalCurrencyAmount: currency !== 'USD' ? Number(amount) : null,
 			paymentMethodId: paymentMethod.id,
 			categoryId: category.id,
 		});
 
 		// Check budget thresholds and send notifications (async, non-blocking)
 		if (type === 'expense' || type === 'debit') {
-			NotificationFactory.notifyBudgetThreshold(userId, category.id, Number(amountInUSD)).catch((error) => {
+			NotificationFactory.notifyBudgetThreshold(userId, category.id, Number(transaction.amount)).catch((error) => {
 				logger.error('Failed to check budget notifications', {
 					error: error instanceof Error ? error.message : 'Unknown error',
 					userId,
