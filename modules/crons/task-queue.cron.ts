@@ -18,7 +18,7 @@ import { processReceiptOcrJob } from '../ai-assistant/receipt-ocr-job-processor.
 import { fetchAndStoreArsUsdRateByDate } from '../../src/helpers/rate.helper';
 
 const CRON_EXPRESSIONS = {
-	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10 * * 1-5',
+	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10,16 * * 1-5',
 	updateExchangeRate: process.env.CRON_UPDATE_EXCHANGE_RATE || '0 * * * 1-5',
 	updateTransactionsTable: process.env.CRON_UPDATE_TRANSACTIONS || '0 9 * * 0-6',
 	checkGmailEmails: process.env.CRON_CHECK_GMAIL || '0 */30 * * 1-5',
@@ -170,7 +170,7 @@ export class TaskQueueModule {
 					data: {
 						monitorPrice: Number(prices.monitor),
 						bcvPrice: Number(prices.bcv),
-						date: dayjs().startOf('day').toDate(),
+						date: new Date(),
 					},
 				});
 			} catch (error: unknown) {
