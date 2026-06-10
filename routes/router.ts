@@ -1796,9 +1796,14 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 			return res.status(400).json({ message: 'Invalid overflow assignment request' });
 		}
 
+		const normalizedSourceCategoryId = sourceCategoryId;
+		const normalizedTargetCategoryId = targetCategoryId;
+		const normalizedMonth = month;
+		const normalizedYear = year;
+
 		const categories = await prisma.category.findMany({
 			where: {
-				id: { in: [sourceCategoryId, targetCategoryId] },
+				id: { in: [normalizedSourceCategoryId, normalizedTargetCategoryId] },
 				userId: req.user.id,
 			},
 		});
@@ -1811,20 +1816,20 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 			where: {
 				userId_sourceCategoryId_month_year: {
 					userId: req.user.id,
-					sourceCategoryId,
-					month,
-					year,
+					sourceCategoryId: normalizedSourceCategoryId,
+					month: normalizedMonth,
+					year: normalizedYear,
 				},
 			},
 			update: {
-				targetCategoryId,
+				targetCategoryId: normalizedTargetCategoryId,
 			},
 			create: {
 				userId: req.user.id,
-				sourceCategoryId,
-				targetCategoryId,
-				month,
-				year,
+				sourceCategoryId: normalizedSourceCategoryId,
+				targetCategoryId: normalizedTargetCategoryId,
+				month: normalizedMonth,
+				year: normalizedYear,
 			},
 		});
 
@@ -1851,9 +1856,9 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 			INNER JOIN Category source ON source.id = a.sourceCategoryId
 			INNER JOIN Category target ON target.id = a.targetCategoryId
 			WHERE a.userId = ${req.user.id}
-			  AND a.sourceCategoryId = ${sourceCategoryId}
-			  AND a.month = ${month}
-			  AND a.year = ${year}
+			  AND a.sourceCategoryId = ${normalizedSourceCategoryId}
+			  AND a.month = ${normalizedMonth}
+			  AND a.year = ${normalizedYear}
 			LIMIT 1
 		`);
 
@@ -1917,39 +1922,47 @@ router.post('/api/budgets/carryover-transfers', requireAuth, async (req: Request
 			return res.status(400).json({ message: 'Invalid carry-over transfer request' });
 		}
 
+		const normalizedSourceCategoryId = sourceCategoryId;
+		const normalizedTargetCategoryId = targetCategoryId;
+
 		const now = new Date();
 		const month = now.getMonth() + 1;
 		const year = now.getFullYear();
 
-		const [sourcePeriod, targetPeriod] = await Promise.all([
-			prisma.budgetPeriod.findUnique({
+		const [categories, sourcePeriod, targetPeriod] = await Promise.all([
+			prisma.category.findMany({
 				where: {
-					categoryId_year_month: {
-						categoryId: sourceCategoryId,
-						month,
-						year,
-					},
+					id: { in: [normalizedSourceCategoryId, normalizedTargetCategoryId] },
+					userId: req.user.id,
 				},
-				include: { category: true },
+				select: { id: true },
 			}),
 			prisma.budgetPeriod.findUnique({
 				where: {
 					categoryId_year_month: {
-						categoryId: targetCategoryId,
+						categoryId: normalizedSourceCategoryId,
 						month,
 						year,
 					},
 				},
-				include: { category: true },
+			}),
+			prisma.budgetPeriod.findUnique({
+				where: {
+					categoryId_year_month: {
+						categoryId: normalizedTargetCategoryId,
+						month,
+						year,
+					},
+				},
 			}),
 		]);
 
-		if (!sourcePeriod || !targetPeriod) {
-			return res.status(404).json({ message: 'Budget period not found for one of the categories' });
+		if (categories.length !== 2) {
+			return res.status(404).json({ message: 'Category not found' });
 		}
 
-		if (sourcePeriod.category.userId !== req.user.id || targetPeriod.category.userId !== req.user.id) {
-			return res.status(404).json({ message: 'Category not found' });
+		if (!sourcePeriod || !targetPeriod) {
+			return res.status(404).json({ message: 'Budget period not found for one of the categories' });
 		}
 
 		const availableCarryOver = Number(sourcePeriod.carryOver ?? 0);
@@ -1972,8 +1985,8 @@ router.post('/api/budgets/carryover-transfers', requireAuth, async (req: Request
 			message: 'Carry-over transferred successfully',
 			month,
 			year,
-			sourceCategoryId,
-			targetCategoryId,
+			sourceCategoryId: normalizedSourceCategoryId,
+			targetCategoryId: normalizedTargetCategoryId,
 			amount,
 		});
 	} catch (error) {
