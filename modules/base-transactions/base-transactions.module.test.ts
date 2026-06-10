@@ -190,6 +190,70 @@ describe('BaseTransactions', () => {
 				})
 			}));
 		});
+
+		it('should normalize ARS amounts internally using the historical sell rate', async () => {
+			prismaMock.transaction.findMany.mockResolvedValue([]);
+			prismaMock.historicalExchangeRate.findFirst.mockResolvedValue({
+				sellPrice: new Decimal(1000),
+				sourceKey: 'blue',
+			} as any);
+
+			const transaction = await createTransaction({ id: 21, amount: 2.5 as any, currency: 'ARS', originalCurrencyAmount: 2500 as any });
+			prismaMock.transaction.create.mockResolvedValue(transaction);
+
+			const result = await BaseTransactions.safeCreateTransaction({
+				userId: 1,
+				amount: 2500,
+				currency: 'ARS',
+				date: new Date('2026-06-09T00:00:00.000Z'),
+				type: 'debit',
+				description: 'ARS transaction',
+			});
+
+			expect(Number(result.transaction.amount)).toBe(2.5);
+			expect(prismaMock.transaction.create).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						amount: 2.5,
+						currency: 'ARS',
+						originalCurrencyAmount: 2500,
+					}),
+				})
+			);
+		});
+
+		it('should use a manual exchange rate override when provided for a foreign currency transaction', async () => {
+			prismaMock.transaction.findMany.mockResolvedValue([]);
+			const transaction = await createTransaction({
+				id: 22,
+				amount: 2 as any,
+				currency: 'ARS',
+				originalCurrencyAmount: 2000 as any,
+			});
+			prismaMock.transaction.create.mockResolvedValue(transaction);
+
+			await BaseTransactions.safeCreateTransaction({
+				userId: 1,
+				amount: 2000,
+				currency: 'ARS',
+				date: new Date('2026-06-09T00:00:00.000Z'),
+				type: 'debit',
+				description: 'ARS manual rate transaction',
+				exchangeRateOverride: 1000,
+			});
+
+			expect(prismaMock.transaction.create).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						amount: 2,
+						originalCurrencyAmount: 2000,
+						exchangeRateUsed: 1000,
+						exchangeRateSource: 'manual',
+						exchangeRateSourceKey: 'transaction_override',
+					}),
+				})
+			);
+		});
 	});
 });
 
@@ -462,6 +526,9 @@ describe('registerTransactionFromImages', () => {
 				telegramFileIds: 'file_id_1,file_id_2',
 				date: expect.any(Date),
 				categoryId: 1,
+				exchangeRateUsed: null,
+				exchangeRateSource: null,
+				exchangeRateSourceKey: null,
 			},
 			include: {
 				category: true,
@@ -516,6 +583,9 @@ describe('registerTransactionFromImages', () => {
 				date: expect.any(Date),
 				currency: 'VES',
 				categoryId: undefined,
+				exchangeRateUsed: null,
+				exchangeRateSource: null,
+				exchangeRateSourceKey: null,
 			},
 			include: {
 				category: true,

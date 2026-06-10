@@ -1,19 +1,30 @@
+import axios from 'axios';
 import Sinon from 'sinon';
-import { calculateUSDAmountByRate, searchRateByDate } from './rate.helper';
+import {
+	calculateUSDAmountByRate,
+	fetchAndStoreArsUsdRateByDate,
+	getArsUsdRateByDate,
+	searchHistoricalExchangeRateByDate,
+	searchRateByDate,
+} from './rate.helper';
 import { createDailyExchangeRate } from '../../prisma/factories';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prismaMock } from '../../modules/database/database.module.mock';
 import { mockRedisClient } from '../../modules/database/redis.module.mock';
 
+jest.mock('axios');
+
 const sandbox = Sinon.createSandbox();
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+afterEach(() => {
+	sandbox.resetHistory();
+	sandbox.reset();
+	sandbox.restore();
+	jest.clearAllMocks();
+});
 
 describe('searchRateByDate', () => {
-	afterEach(() => {
-		sandbox.resetHistory();
-		sandbox.reset();
-		sandbox.restore();
-		jest.clearAllMocks();
-	});
 	// Returns a DailyExchangeRate object when a valid date is provided
 	it('should return a DailyExchangeRate object when a valid date is provided', async () => {
 		const validDate = '2022-01-01';
@@ -91,5 +102,95 @@ describe('calculateUSDAmountByRate', () => {
 
 		// Assert
 		expect(result).toBeNaN();
+	});
+});
+
+describe('historical ARS/USD rates', () => {
+	it('should return a stored ARS/USD historical rate from prisma/cache lookup', async () => {
+		const expectedRate = {
+			id: 1,
+			baseCurrency: 'USD',
+			quoteCurrency: 'ARS',
+			source: 'argentinadatos',
+			sourceKey: 'blue',
+			rateDate: new Date('2026-06-09T00:00:00.000Z'),
+			buyPrice: new Decimal(1100),
+			sellPrice: new Decimal(1125),
+			createdAt: new Date('2026-06-09T00:00:00.000Z'),
+			updatedAt: new Date('2026-06-09T00:00:00.000Z'),
+		};
+		mockRedisClient.get.mockResolvedValueOnce(null);
+		prismaMock.historicalExchangeRate.findFirst.mockResolvedValue(expectedRate as any);
+
+		const result = await searchHistoricalExchangeRateByDate('ARS', '2026-06-09', 'blue');
+
+		expect(result).toEqual(expectedRate);
+		expect(prismaMock.historicalExchangeRate.findFirst).toHaveBeenCalledTimes(1);
+	});
+
+	it('should fetch and persist the ARS/USD historical rate from ArgentinaDatos', async () => {
+		mockedAxios.get.mockResolvedValueOnce({
+			data: {
+				moneda: 'USD',
+				casa: 'blue',
+				fecha: '2026-06-09',
+				compra: 1100,
+				venta: 1125,
+			},
+		} as any);
+		prismaMock.historicalExchangeRate.upsert.mockResolvedValue({
+			id: 10,
+			baseCurrency: 'USD',
+			quoteCurrency: 'ARS',
+			source: 'argentinadatos',
+			sourceKey: 'blue',
+			rateDate: new Date('2026-06-09T00:00:00.000Z'),
+			buyPrice: new Decimal(1100),
+			sellPrice: new Decimal(1125),
+			createdAt: new Date('2026-06-09T00:00:00.000Z'),
+			updatedAt: new Date('2026-06-09T00:00:00.000Z'),
+		} as any);
+
+		const result = await fetchAndStoreArsUsdRateByDate('2026-06-09', 'blue');
+
+		expect(mockedAxios.get).toHaveBeenCalledWith(
+			expect.stringContaining('/v1/cotizaciones/dolares/blue/2026/06/09'),
+			expect.objectContaining({ timeout: 5000 })
+		);
+		expect(prismaMock.historicalExchangeRate.upsert).toHaveBeenCalledTimes(1);
+		expect(Number(result?.sellPrice)).toBe(1125);
+	});
+
+	it('should fall back to previous days when the requested historical ARS/USD date is unavailable', async () => {
+		mockRedisClient.get.mockResolvedValue(null);
+		prismaMock.historicalExchangeRate.findFirst.mockResolvedValue(null);
+		mockedAxios.get
+			.mockRejectedValueOnce({ response: { status: 404 } } as any)
+			.mockResolvedValueOnce({
+				data: {
+					moneda: 'USD',
+					casa: 'blue',
+					fecha: '2026-06-08',
+					compra: 1000,
+					venta: 1050,
+				},
+			} as any);
+		prismaMock.historicalExchangeRate.upsert.mockResolvedValue({
+			id: 11,
+			baseCurrency: 'USD',
+			quoteCurrency: 'ARS',
+			source: 'argentinadatos',
+			sourceKey: 'blue',
+			rateDate: new Date('2026-06-08T00:00:00.000Z'),
+			buyPrice: new Decimal(1000),
+			sellPrice: new Decimal(1050),
+			createdAt: new Date('2026-06-08T00:00:00.000Z'),
+			updatedAt: new Date('2026-06-08T00:00:00.000Z'),
+		} as any);
+
+		const result = await getArsUsdRateByDate('2026-06-09', 'blue');
+
+		expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+		expect(Number(result?.sellPrice)).toBe(1050);
 	});
 });

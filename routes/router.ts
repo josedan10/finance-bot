@@ -17,6 +17,7 @@ import {
 	resolveDashboardBudgetPreferences,
 } from '../src/lib/dashboard-budget-preferences';
 import { BaseTransactions, mapTransactionType } from '../modules/base-transactions/base-transactions.module';
+import { normalizeArsUsdExchangeHouse } from '../src/helpers/rate.helper';
 import { areSentryTestEndpointsEnabled } from '../src/lib/sentry-test';
 import { captureException, flushSentry, isSentryEnabled } from '../src/lib/sentry';
 import { getSecurityDashboardAllowedRoles } from '../src/lib/security-access';
@@ -612,6 +613,9 @@ router.get('/api/transactions', requireAuth, async (req: Request, res: Response)
 			longitude: tx.longitude === null ? undefined : Number(tx.longitude),
 			googleMapsUrl: tx.googleMapsUrl ?? undefined,
 			currency: tx.currency,
+			exchangeRateUsed: tx.exchangeRateUsed === null ? undefined : Number(tx.exchangeRateUsed),
+			exchangeRateSource: tx.exchangeRateSource ?? undefined,
+			exchangeRateSourceKey: tx.exchangeRateSourceKey ?? undefined,
 			reviewed: tx.reviewed,
 		}));
 
@@ -633,6 +637,16 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 		const latestRate = await prisma.dailyExchangeRate.findFirst({
 			orderBy: { date: 'desc' },
 		});
+		const normalizedArsHouse = normalizeArsUsdExchangeHouse(config.ARS_USD_EXCHANGE_HOUSE);
+		const latestArsRate = await prisma.historicalExchangeRate.findFirst({
+			where: {
+				baseCurrency: 'USD',
+				quoteCurrency: 'ARS',
+				source: 'argentinadatos',
+				sourceKey: normalizedArsHouse,
+			},
+			orderBy: { rateDate: 'desc' },
+		});
 
 		if (!latestRate) {
 			return res.status(404).json({ message: 'No exchange rates found' });
@@ -642,6 +656,15 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 			bcv: Number(latestRate.bcvPrice || 0),
 			monitor: Number(latestRate.monitorPrice || 0),
 			date: latestRate.date.toISOString().split('T')[0],
+			ars:
+				latestArsRate === null
+					? null
+					: {
+							buy: latestArsRate.buyPrice != null ? Number(latestArsRate.buyPrice) : null,
+							sell: latestArsRate.sellPrice != null ? Number(latestArsRate.sellPrice) : null,
+							house: latestArsRate.sourceKey,
+							date: latestArsRate.rateDate.toISOString().split('T')[0],
+					  },
 		});
 	} catch (error) {
 		logger.error('Failed to fetch latest exchange rates', { error });
@@ -651,7 +674,7 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 
 router.post('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
-		const { date, description, amount, category, type, paymentMethodId, currency, manualDescription, locationName, latitude, longitude, googleMapsUrl } = req.body as {
+		const { date, description, amount, category, type, paymentMethodId, currency, manualDescription, locationName, latitude, longitude, googleMapsUrl, exchangeRateOverride } = req.body as {
 			date?: string;
 			description?: string;
 			amount?: number;
@@ -664,6 +687,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			latitude?: number;
 			longitude?: number;
 			googleMapsUrl?: string;
+			exchangeRateOverride?: number;
 		};
 
 
@@ -733,6 +757,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			latitude: normalizeOptionalCoordinate(latitude),
 			longitude: normalizeOptionalCoordinate(longitude),
 			googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
+			exchangeRateOverride,
 			reviewed: true,
 		});
 
@@ -755,6 +780,9 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			longitude: transaction.longitude === null ? undefined : Number(transaction.longitude),
 			googleMapsUrl: transaction.googleMapsUrl ?? undefined,
 			reviewed: transaction.reviewed,
+			exchangeRateUsed: transaction.exchangeRateUsed === null ? undefined : Number(transaction.exchangeRateUsed),
+			exchangeRateSource: transaction.exchangeRateSource ?? undefined,
+			exchangeRateSourceKey: transaction.exchangeRateSourceKey ?? undefined,
 		});
 	} catch (error) {
 		logger.error('Failed to create transaction', { error, userId: req.user.id });
@@ -958,6 +986,7 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			latitude,
 			longitude,
 			googleMapsUrl,
+			exchangeRateOverride,
 		} = req.body as {
 			date?: string;
 			description?: string;
@@ -972,6 +1001,7 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			latitude?: number | null;
 			longitude?: number | null;
 			googleMapsUrl?: string;
+			exchangeRateOverride?: number | null;
 		};
 
 		if (
@@ -1034,14 +1064,21 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 
 		const normalizedLatitude = normalizeOptionalCoordinate(latitude);
 		const normalizedLongitude = normalizeOptionalCoordinate(longitude);
+		const normalizedAmounts = await BaseTransactions.normalizeTransactionAmount({
+			amount: Number(amount),
+			currency: currency.trim().toUpperCase(),
+			date: new Date(date),
+			exchangeRateOverride,
+		});
 
 		const updated = await prisma.transaction.update({
 			where: { id: existingTransaction.id },
 			data: {
+				amount: normalizedAmounts.amount,
+				currency: normalizedAmounts.currency,
+				originalCurrencyAmount: normalizedAmounts.originalCurrencyAmount,
 				date: new Date(date),
 				description: description.trim(),
-				amount: Number(amount),
-				currency: currency.trim().toUpperCase(),
 				categoryId: matchedCategory.id,
 				paymentMethodId: resolvedPaymentMethodId,
 				type: type === 'income' ? 'credit' : 'debit',
@@ -1051,6 +1088,9 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 				latitude: normalizedLatitude,
 				longitude: normalizedLongitude,
 				googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
+				exchangeRateUsed: normalizedAmounts.exchangeRateUsed,
+				exchangeRateSource: normalizedAmounts.exchangeRateSource,
+				exchangeRateSourceKey: normalizedAmounts.exchangeRateSourceKey,
 				reviewed: true,
 				reviewedAt: new Date(),
 			},
@@ -1078,6 +1118,9 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			longitude: updated.longitude === null ? undefined : Number(updated.longitude),
 			googleMapsUrl: updated.googleMapsUrl ?? undefined,
 			currency: updated.currency,
+			exchangeRateUsed: updated.exchangeRateUsed === null ? undefined : Number(updated.exchangeRateUsed),
+			exchangeRateSource: updated.exchangeRateSource ?? undefined,
+			exchangeRateSourceKey: updated.exchangeRateSourceKey ?? undefined,
 			reviewed: updated.reviewed,
 		});
 	} catch (error) {
@@ -1451,6 +1494,9 @@ router.patch('/api/transactions/:id/review', requireAuth, async (req: Request, r
 			googleMapsUrl: updated.googleMapsUrl ?? undefined,
 			currency: updated.currency,
 			reviewed: updated.reviewed,
+			exchangeRateUsed: updated.exchangeRateUsed === null ? undefined : Number(updated.exchangeRateUsed),
+			exchangeRateSource: updated.exchangeRateSource ?? undefined,
+			exchangeRateSourceKey: updated.exchangeRateSourceKey ?? undefined,
 		});
 	} catch (error) {
 		logger.error('Failed to mark transaction as reviewed', { error, userId: req.user.id });

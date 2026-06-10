@@ -140,6 +140,9 @@ model Transaction {
   googleMapsUrl          String?        @db.VarChar(500)
   isAnnually             Boolean        @default(false)
   originalCurrencyAmount Decimal?       @db.Decimal(10, 2)
+  exchangeRateUsed       Decimal?       @db.Decimal(10, 6)
+  exchangeRateSource     String?        @db.VarChar(30)
+  exchangeRateSourceKey  String?        @db.VarChar(30)
   telegramFileIds        String?        @db.VarChar(255)
   reviewed               Boolean        @default(false)
   reviewedAt             DateTime?
@@ -217,6 +220,23 @@ model DailyExchangeRate {
   createdAt    DateTime @default(now())
 
   @@index([date])
+}
+
+model HistoricalExchangeRate {
+  id            Int      @id @default(autoincrement())
+  baseCurrency  String   @db.VarChar(3)
+  quoteCurrency String   @db.VarChar(3)
+  source        String   @db.VarChar(30)
+  sourceKey     String   @db.VarChar(30)
+  rateDate      DateTime
+  buyPrice      Decimal? @db.Decimal(10, 6)
+  sellPrice     Decimal? @db.Decimal(10, 6)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([baseCurrency, quoteCurrency, source, sourceKey, rateDate])
+  @@index([quoteCurrency, rateDate])
+  @@index([source, sourceKey, rateDate])
 }
 
 model ProcessedEmail {
