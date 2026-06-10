@@ -251,14 +251,14 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 				data: categoryUpdateData as never
 			});
 
-			let updatedCarryOver: number | null = null;
-			if (currentCarryOver !== undefined) {
-				const normalizedCarryOver = normalizeOptionalAmount(currentCarryOver);
-				if (normalizedCarryOver === undefined) {
-					throw new Error('Invalid current carry-over value');
-				}
+				let updatedCarryOver: number | null = null;
+				if (currentCarryOver !== undefined) {
+					const normalizedCarryOver = normalizeOptionalAmount(currentCarryOver);
+					if (normalizedCarryOver === undefined || normalizedCarryOver === null) {
+						throw new Error('Invalid current carry-over value');
+					}
 
-				const period = await BudgetRollover.getOrCreateCurrentPeriod(id);
+					const period = await BudgetRollover.getOrCreateCurrentPeriod(id);
 				if (!period) {
 					throw new Error('Budget period not found');
 				}

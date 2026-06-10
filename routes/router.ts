@@ -1782,24 +1782,24 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 			year?: number;
 		};
 
+		const normalizedSourceCategoryId: number = Number(sourceCategoryId);
+		const normalizedTargetCategoryId: number = Number(targetCategoryId);
+		const normalizedMonth: number = Number(month);
+		const normalizedYear: number = Number(year);
+
 		if (
-			!sourceCategoryId ||
-			!targetCategoryId ||
-			sourceCategoryId === targetCategoryId ||
-			!Number.isInteger(month) ||
-			month < 1 ||
-			month > 12 ||
-			!Number.isInteger(year) ||
-			year < 2000 ||
-			year > 2100
+			!Number.isInteger(normalizedSourceCategoryId) ||
+			!Number.isInteger(normalizedTargetCategoryId) ||
+			normalizedSourceCategoryId === normalizedTargetCategoryId ||
+			!Number.isInteger(normalizedMonth) ||
+			normalizedMonth < 1 ||
+			normalizedMonth > 12 ||
+			!Number.isInteger(normalizedYear) ||
+			normalizedYear < 2000 ||
+			normalizedYear > 2100
 		) {
 			return res.status(400).json({ message: 'Invalid overflow assignment request' });
 		}
-
-		const normalizedSourceCategoryId = sourceCategoryId;
-		const normalizedTargetCategoryId = targetCategoryId;
-		const normalizedMonth = month;
-		const normalizedYear = year;
 
 		const categories = await prisma.category.findMany({
 			where: {
@@ -1922,8 +1922,8 @@ router.post('/api/budgets/carryover-transfers', requireAuth, async (req: Request
 			return res.status(400).json({ message: 'Invalid carry-over transfer request' });
 		}
 
-		const normalizedSourceCategoryId = sourceCategoryId;
-		const normalizedTargetCategoryId = targetCategoryId;
+		const normalizedSourceCategoryId = Number(sourceCategoryId);
+		const normalizedTargetCategoryId = Number(targetCategoryId);
 
 		const now = new Date();
 		const month = now.getMonth() + 1;
