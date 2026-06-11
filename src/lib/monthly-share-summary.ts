@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { PrismaModule as prisma } from '../../modules/database/database.module';
 import { BudgetRollover } from '../../modules/budgets/budget-rollover.service';
+import { isBudgetOverflowTransferTransaction } from './budget-overflow-transfers';
 
 export interface SharedMonthlySummaryPayload {
   token: string;
@@ -88,13 +89,14 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
     }),
   ]);
 
+  const visibleTransactions = transactions.filter((transaction) => !isBudgetOverflowTransferTransaction(transaction.referenceId));
   const income = roundAmount(
-    transactions
+    visibleTransactions
       .filter((transaction) => transaction.type === 'income')
       .reduce((sum, transaction) => sum + Number(transaction.amount ?? 0), 0)
   );
   const expenses = roundAmount(
-    transactions
+    visibleTransactions
       .filter((transaction) => transaction.type === 'expense')
       .reduce((sum, transaction) => sum + Number(transaction.amount ?? 0), 0)
   );
@@ -110,8 +112,21 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
     .map((category) => {
       const spent = roundAmount(
         transactions
-          .filter((transaction) => transaction.type === 'expense' && transaction.categoryId === category.id)
-          .reduce((sum, transaction) => sum + Number(transaction.amount ?? 0), 0)
+          .filter((transaction) => transaction.categoryId === category.id)
+          .reduce((sum, transaction) => {
+            const amount = Number(transaction.amount ?? 0);
+            const isTransfer = isBudgetOverflowTransferTransaction(transaction.referenceId);
+
+            if (transaction.type === 'expense') {
+              return sum + amount;
+            }
+
+            if (isTransfer) {
+              return sum - amount;
+            }
+
+            return sum;
+          }, 0)
       );
       const limit = roundAmount(Number(category.amountLimit ?? 0));
       const carryOver = roundAmount(Number(budgetPeriods.get(category.id)?.carryOver ?? 0));
@@ -136,7 +151,7 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
     .sort((left, right) => right.spent - left.spent);
 
   const spendingByCategory = new Map<string, number>();
-  for (const transaction of transactions) {
+  for (const transaction of visibleTransactions) {
     if (transaction.type !== 'expense') continue;
     const categoryName = transaction.category?.name ?? 'Other';
     spendingByCategory.set(categoryName, roundAmount((spendingByCategory.get(categoryName) ?? 0) + Number(transaction.amount ?? 0)));

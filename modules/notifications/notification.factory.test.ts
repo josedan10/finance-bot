@@ -89,9 +89,9 @@ describe('NotificationFactory', () => {
       name: 'Food', 
       amountLimit: new Decimal(1000) 
     } as any);
-    prismaMock.transaction.aggregate.mockResolvedValue({ 
-      _sum: { amount: new Decimal(500) } 
-    } as any);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { type: 'expense', amount: new Decimal(500), referenceId: null },
+    ] as any);
 
     budgetCheckerMock.checkThreshold.mockResolvedValue([
       { categoryId: 1, categoryName: 'Food', threshold: 50, newPercentage: 50 }

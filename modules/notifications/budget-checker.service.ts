@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { IBudgetChecker } from './types';
 import { ThresholdCrossed, DEFAULT_THRESHOLDS } from '../../src/enums/notifications';
 import { BudgetRollover } from '../budgets/budget-rollover.service';
+import { isBudgetOverflowTransferTransaction } from '../../src/lib/budget-overflow-transfers';
 
 export class BudgetCheckerService implements IBudgetChecker {
   private prisma: PrismaClient;
@@ -44,11 +45,10 @@ export class BudgetCheckerService implements IBudgetChecker {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     // 4. Calculate total spending this month
-    const spending = await this.prisma.transaction.aggregate({
+    const spending = await this.prisma.transaction.findMany({
       where: {
         userId,
         categoryId,
-        type: 'expense',
         cashLot: {
           is: null,
         },
@@ -56,12 +56,25 @@ export class BudgetCheckerService implements IBudgetChecker {
           gte: startOfMonth,
         },
       },
-      _sum: {
+      select: {
+        type: true,
         amount: true,
+        referenceId: true,
       },
     });
 
-    const totalSpent = (spending._sum.amount?.toNumber() || 0) + newTransactionAmount;
+    const totalSpent = spending.reduce((sum, transaction) => {
+      const amount = transaction.amount?.toNumber() || 0;
+      if (transaction.type === 'expense') {
+        return sum + amount;
+      }
+
+      if (isBudgetOverflowTransferTransaction(transaction.referenceId)) {
+        return sum - amount;
+      }
+
+      return sum;
+    }, 0) + newTransactionAmount;
     
     // 5. Calculate percentage based on Effective Budget (Limit + CarryOver)
     const budgetLimit = category.amountLimit.toNumber();
