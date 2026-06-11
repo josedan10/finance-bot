@@ -2446,7 +2446,7 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 			return res.status(404).json({ message: 'Budget data not found' });
 		}
 
-		const sourceOverage = Math.max(sourceState.rawSpent - sourceState.effectiveBudget, 0);
+		const sourceOverage = Math.max(sourceState.rawSpent - sourceState.limit, 0);
 		if (sourceOverage <= 0) {
 			return res.status(400).json({ message: 'Source budget is not over the limit' });
 		}
