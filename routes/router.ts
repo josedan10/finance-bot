@@ -247,7 +247,7 @@ function mapTransactionResponse(tx: TransactionWithCashLots, fallbackCategory?: 
 					createdAt: allocation.createdAt.toISOString(),
 					cashLot: {
 						id: String(allocation.cashLot.id),
-						withdrawalDate: allocation.cashLot.withdrawalTransaction!.date.toISOString(),
+						withdrawalDate: allocation.cashLot.withdrawalTransaction?.date.toISOString() ?? null,
 						sourceAmount: Number(allocation.cashLot.sourceAmount ?? 0),
 						sourceCurrency: allocation.cashLot.sourceCurrency,
 						destinationAmount: Number(allocation.cashLot.destinationAmount ?? 0),
@@ -255,15 +255,17 @@ function mapTransactionResponse(tx: TransactionWithCashLots, fallbackCategory?: 
 						exchangeRate: Number(allocation.cashLot.exchangeRate ?? 0),
 						remainingAmount: Number(allocation.cashLot.remainingAmount ?? 0),
 						migrationStatus: allocation.cashLot.migrationStatus,
-						withdrawalTransaction: {
-							id: String(allocation.cashLot.withdrawalTransaction!.id),
-							date: allocation.cashLot.withdrawalTransaction!.date.toISOString(),
-							description: allocation.cashLot.withdrawalTransaction!.description ?? 'No description',
-							amount: Number(allocation.cashLot.withdrawalTransaction!.amount ?? 0),
-							currency: allocation.cashLot.withdrawalTransaction!.currency,
-							category: allocation.cashLot.withdrawalTransaction!.category?.name ?? 'Other',
-							paymentMethod: allocation.cashLot.withdrawalTransaction!.paymentMethod?.name ?? 'Other',
-						},
+						withdrawalTransaction: allocation.cashLot.withdrawalTransaction
+							? {
+									id: String(allocation.cashLot.withdrawalTransaction.id),
+									date: allocation.cashLot.withdrawalTransaction.date.toISOString(),
+									description: allocation.cashLot.withdrawalTransaction.description ?? 'No description',
+									amount: Number(allocation.cashLot.withdrawalTransaction.amount ?? 0),
+									currency: allocation.cashLot.withdrawalTransaction.currency,
+									category: allocation.cashLot.withdrawalTransaction.category?.name ?? 'Other',
+									paymentMethod: allocation.cashLot.withdrawalTransaction.paymentMethod?.name ?? 'Other',
+							  }
+							: null,
 					},
 				})),
 	};
@@ -893,6 +895,10 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 				: Number(cashWithdrawalDestinationAmount);
 
 		if (isCashWithdrawal) {
+			if (normalizedType !== 'debit') {
+				return res.status(400).json({ message: 'Withdrawal transactions must be registered as expenses' });
+			}
+
 			if (!paymentMethodId) {
 				return res.status(400).json({ message: 'Withdrawal requires a source payment method' });
 			}
@@ -1281,6 +1287,11 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			return res.status(400).json({ message: 'Missing required fields' });
 		}
 
+		const normalizedType = mapTransactionType(type);
+		if (!normalizedType) {
+			return res.status(400).json({ message: 'Missing or invalid required fields' });
+		}
+
 		let normalizedLocationMetadata;
 		try {
 			normalizedLocationMetadata = normalizeTransactionLocationMetadata({
@@ -1303,6 +1314,10 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			cashWithdrawalDestinationAmount === undefined || cashWithdrawalDestinationAmount === null
 				? null
 				: Number(cashWithdrawalDestinationAmount);
+
+		if (isCashWithdrawal && normalizedType !== 'debit') {
+			return res.status(400).json({ message: 'Withdrawal transactions must be registered as expenses' });
+		}
 
 		const updatedTransaction = await prisma.$transaction(async (tx) => {
 			const existingTransaction = await loadTransactionWithCashLots(tx, id, req.user.id);
@@ -1360,7 +1375,7 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 					description: description.trim(),
 					categoryId: matchedCategory.id,
 					paymentMethodId: resolvedPaymentMethodId,
-					type: type === 'income' ? 'credit' : 'debit',
+					type: normalizedType,
 					referenceId: referenceId?.trim() || null,
 					manualDescription: normalizedLocationMetadata.manualDescription,
 					locationName: normalizedLocationMetadata.locationName,

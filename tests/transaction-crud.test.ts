@@ -36,15 +36,7 @@ jest.mock('../modules/cash-lots/cash-lot.service', () => ({
 	},
 }));
 
-const cashLotServiceMock = CashLotServiceInstance as unknown as {
-	createWithdrawalCashLot: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
-	updateWithdrawalCashLot: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
-	allocateCashExpense: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
-	restoreExpenseAllocations: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
-	deleteWithdrawalCashLot: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
-	getWithdrawalLotByTransactionId: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
-	getExpenseAllocations: jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
-};
+const cashLotServiceMock = jest.mocked(CashLotServiceInstance);
 
 describe('Transaction API (CRUD)', () => {
 	beforeEach(() => {
@@ -55,7 +47,8 @@ describe('Transaction API (CRUD)', () => {
 				throw new Error('Expected transaction callback');
 			}
 
-			return callback(prismaMock as never);
+			const transactionCallback = callback as (client: typeof prismaMock) => unknown;
+			return transactionCallback(prismaMock);
 		});
 	});
 
@@ -589,10 +582,11 @@ describe('Transaction API (CRUD)', () => {
 			paymentMethodId: paymentMethod.id,
 			categoryId: category.id,
 		} as never);
-		const withdrawalLot = {
-			id: 1,
-			withdrawalTransactionId: withdrawalTransaction.id,
-			withdrawalDate: withdrawalTransaction.date,
+			const withdrawalLot = {
+				id: 1,
+				userId: 1,
+				withdrawalTransactionId: withdrawalTransaction.id,
+				withdrawalDate: withdrawalTransaction.date,
 			sourceAmount: new Decimal(100),
 			sourceCurrency: 'USD',
 			destinationAmount: new Decimal(120000),
@@ -841,10 +835,11 @@ describe('Transaction API (CRUD)', () => {
 			categoryId: category.id,
 			paymentMethodId: paymentMethod.id,
 		} as never);
-		const withdrawalLot = {
-			id: 9,
-			withdrawalTransactionId: withdrawalTransaction.id,
-			withdrawalDate: withdrawalTransaction.date,
+			const withdrawalLot = {
+				id: 9,
+				userId: 1,
+				withdrawalTransactionId: withdrawalTransaction.id,
+				withdrawalDate: withdrawalTransaction.date,
 			sourceAmount: new Decimal(100),
 			sourceCurrency: 'USD',
 			destinationAmount: new Decimal(120000),

@@ -10,26 +10,33 @@ Withdrawals are no longer treated as spending. Instead, each withdrawal creates 
 
 ### CashLot
 
-- `id`
-- `withdrawalTransactionId`
-- `sourceAmount`
-- `sourceCurrency`
-- `destinationAmount`
-- `destinationCurrency`
-- `exchangeRate`
-- `remainingAmount`
-- `migrationStatus`
-- `createdAt`
-- `updatedAt`
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `number` | Unique identifier for the cash lot. |
+| `userId` | `number` | Tenant identifier for multi-tenant isolation. |
+| `withdrawalTransactionId` | `number \| null` | Linked withdrawal transaction. |
+| `withdrawalDate` | `ISO8601 timestamp` | Date used for FIFO ordering. |
+| `sourceAmount` | `number` | Original source currency amount withdrawn from the account. |
+| `sourceCurrency` | `string` | Source currency code, usually the account currency. |
+| `destinationAmount` | `number` | Cash amount received in the destination currency. |
+| `destinationCurrency` | `string` | Destination currency code for the cash lot. |
+| `exchangeRate` | `number` | Exchange rate applied when the lot was created. |
+| `remainingAmount` | `number` | Unused destination currency still available in the lot. |
+| `migrationStatus` | `linked \| unlinked` | `linked` means the withdrawal was safely associated with a lot and can be used in automatic allocation. `unlinked` means the record could not be safely associated, so it is excluded from automatic allocation and downstream cash consumption. |
+| `createdAt` | `ISO8601 timestamp` | Timestamp when the lot was created. |
+| `updatedAt` | `ISO8601 timestamp` | Timestamp when the lot was last updated. |
 
 ### CashLotAllocation
 
-- `id`
-- `cashLotId`
-- `expenseTransactionId`
-- `allocatedAmount`
-- `exchangeRate`
-- `createdAt`
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `number` | Unique identifier for the allocation record. |
+| `userId` | `number` | Tenant identifier for multi-tenant isolation. |
+| `cashLotId` | `number` | Foreign key to the cash lot that funded the expense. |
+| `expenseTransactionId` | `number` | Linked expense transaction. |
+| `allocatedAmount` | `number` | Amount of destination currency consumed from the lot. |
+| `exchangeRate` | `number` | Exchange rate applied at allocation time. |
+| `createdAt` | `ISO8601 timestamp` | Timestamp when the allocation was created. |
 
 ## Allocation Logic
 
@@ -76,9 +83,9 @@ If the user spends `20000 ARS`, the system consumes from the oldest available AR
 - **Partial consumption**: the lot remains available with a reduced `remainingAmount`.
 - **Full consumption**: the lot balance reaches zero and remains linked for history.
 - **Expense larger than one lot**: allocates across multiple lots.
-- **Cash refunds**: should be recorded as a cash inflow transaction and re-linked manually if needed.
-- **Cash transaction edits**: allocation records are restored and recalculated.
-- **Cash transaction deletion**: allocation records are restored to their source lots.
+- **Cash refunds**: record the refund as a cash inflow transaction and relink manually if needed.
+- **When editing a cash transaction**: restore the previous allocation records and recalculate them from the updated expense.
+- **On deletion of a cash transaction**: restore allocation records to their source lots before removing the transaction.
 - **Withdrawal deletion**: blocked when the withdrawal has already funded cash expenses.
 - **Insufficient cash balance**: the transaction is rejected until enough cash lots exist.
 

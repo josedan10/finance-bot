@@ -205,6 +205,7 @@ model CashLot {
 
   @@index([userId], map: "CashLot_userId_fkey")
   @@index([destinationCurrency, withdrawalDate], map: "CashLot_destinationCurrency_withdrawalDate_idx")
+  @@index([userId, destinationCurrency, migrationStatus, withdrawalDate, id], map: "CashLot_user_dest_migration_withdrawal_id_idx")
 }
 
 model CashLotAllocation {

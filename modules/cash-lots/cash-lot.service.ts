@@ -161,6 +161,7 @@ export class CashLotService {
 
 		const hasAllocations = existingCashLot.allocations.length > 0;
 		const hasCoreChanges =
+			new Date(existingCashLot.withdrawalDate).getTime() !== new Date(transaction.date).getTime() ||
 			roundMoney(toNumber(existingCashLot.sourceAmount)) !== sourceAmount ||
 			normalizeCurrency(existingCashLot.sourceCurrency) !== sourceCurrency ||
 			roundMoney(toNumber(existingCashLot.destinationAmount)) !== destinationAmount ||
@@ -242,12 +243,20 @@ export class CashLotService {
 
 			const updatedRemainingAmount = roundMoney(toNumber(lot.remainingAmount) - allocation.allocatedAmount);
 
-			await db.cashLot.update({
-				where: { id: lot.id },
+			const updateResult = await db.cashLot.updateMany({
+				where: {
+					id: lot.id,
+					userId: transaction.userId,
+					remainingAmount: lot.remainingAmount,
+				},
 				data: {
 					remainingAmount: new Decimal(updatedRemainingAmount),
 				},
 			});
+
+			if (updateResult.count !== 1) {
+				throw new AppError('Cash lot allocation failed because the selected lot changed before it could be consumed', 409);
+			}
 
 			await db.cashLotAllocation.create({
 				data: {
@@ -301,12 +310,20 @@ export class CashLotService {
 				.filter((allocation) => allocation.cashLotId === cashLot.id)
 				.reduce((sum, allocation) => sum + toNumber(allocation.allocatedAmount), 0);
 
-			await db.cashLot.update({
-				where: { id: cashLot.id },
+			const updateResult = await db.cashLot.updateMany({
+				where: {
+					id: cashLot.id,
+					userId,
+					remainingAmount: cashLot.remainingAmount,
+				},
 				data: {
 					remainingAmount: new Decimal(roundMoney(toNumber(cashLot.remainingAmount) + allocatedAmount)),
 				},
 			});
+
+			if (updateResult.count !== 1) {
+				throw new AppError('Cash lot restoration failed because the selected lot changed before it could be restored', 409);
+			}
 		}
 
 		await db.cashLotAllocation.deleteMany({

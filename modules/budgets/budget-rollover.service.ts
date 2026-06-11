@@ -48,7 +48,7 @@ export class BudgetRolloverService {
 		// 3. Create rollover from previous month if cumulative
 		let carryOver = 0;
 		if (category.isCumulative) {
-			carryOver = await this.calculateRollover(categoryId, month, year);
+			carryOver = await this.calculateRollover(categoryId, category.userId, month, year);
 		}
 
 		try {
@@ -99,9 +99,10 @@ export class BudgetRolloverService {
 				where: { id: { in: uniqueCategoryIds } },
 				select: {
 					id: true,
+					userId: true,
 					isCumulative: true,
 				},
-			}),
+			}) as Promise<Array<{ id: number; userId: number; isCumulative: boolean }>>,
 		]);
 
 		for (const period of existingPeriods) {
@@ -115,7 +116,7 @@ export class BudgetRolloverService {
 			for (const category of missingCategories) {
 				let carryOver = 0;
 				if (category.isCumulative) {
-					carryOver = await this.calculateRollover(category.id, month, year);
+					carryOver = await this.calculateRollover(category.id, category.userId, month, year);
 				}
 
 				missingPeriodData.push({
@@ -154,6 +155,7 @@ export class BudgetRolloverService {
 	 */
 	async calculateRollover(
 		categoryId: number,
+		userId: number,
 		targetMonth: number,
 		targetYear: number,
 		visited = new Set<string>()
@@ -190,6 +192,7 @@ export class BudgetRolloverService {
 
 		const spending = await this._db.transaction.aggregate({
 			where: {
+				userId,
 				categoryId,
 				type: 'expense',
 				cashLot: {
@@ -238,14 +241,14 @@ export class BudgetRolloverService {
 
 		if (visited.has(key)) return 0;
 
-		const hasEarlierActivity = await this.hasBudgetActivityBefore(category.id, prevYear, prevMonth);
+		const hasEarlierActivity = await this.hasBudgetActivityBefore(category.id, category.userId, prevYear, prevMonth);
 		if (!hasEarlierActivity) return 0;
 
 		visited.add(key);
-		return this.calculateRollover(category.id, prevMonth, prevYear, visited);
+		return this.calculateRollover(category.id, category.userId, prevMonth, prevYear, visited);
 	}
 
-	private async hasBudgetActivityBefore(categoryId: number, year: number, month: number): Promise<boolean> {
+	private async hasBudgetActivityBefore(categoryId: number, userId: number, year: number, month: number): Promise<boolean> {
 		const [olderPeriod, olderTransaction] = await Promise.all([
 			this._db.budgetPeriod.findFirst({
 				where: {
@@ -256,6 +259,7 @@ export class BudgetRolloverService {
 			}),
 			this._db.transaction.findFirst({
 				where: {
+					userId,
 					categoryId,
 					type: 'expense',
 					cashLot: {
@@ -302,14 +306,14 @@ export class BudgetRolloverService {
 		let totalIncoming = 0;
 
 		for (const rule of rules) {
-			const sourceSurplus = await this.calculateSourceSurplus(rule.sourceCategoryId, targetMonth, targetYear);
+			const sourceSurplus = await this.calculateSourceSurplus(rule.sourceCategoryId, userId, targetMonth, targetYear);
 			totalIncoming += sourceSurplus;
 		}
 
 		return totalIncoming;
 	}
 
-	private async calculateSourceSurplus(categoryId: number, targetMonth: number, targetYear: number): Promise<number> {
+	private async calculateSourceSurplus(categoryId: number, userId: number, targetMonth: number, targetYear: number): Promise<number> {
 		const prevDate = dayjs(`${targetYear}-${targetMonth}-01`).subtract(1, 'month');
 		const prevMonth = prevDate.month() + 1;
 		const prevYear = prevDate.year();
@@ -334,6 +338,7 @@ export class BudgetRolloverService {
 
 		const spending = await this._db.transaction.aggregate({
 			where: {
+				userId,
 				categoryId,
 				type: 'expense',
 				cashLot: {

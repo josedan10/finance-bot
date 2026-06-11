@@ -63,4 +63,41 @@ describe('CashLotAllocationService', () => {
 			},
 		]);
 	});
+
+	it('breaks same-day tie by lower lot id first', () => {
+		const result = CashLotAllocationService.allocateFifo(
+			[
+				{
+					id: 9,
+					remainingAmount: 50_000,
+					exchangeRate: 1_200,
+					withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+				},
+				{
+					id: 3,
+					remainingAmount: 50_000,
+					exchangeRate: 1_250,
+					withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+				},
+			],
+			60_000
+		);
+
+		expect(result.totalAllocated).toBe(60_000);
+		expect(result.remainingAmount).toBe(0);
+		expect(result.allocations).toEqual([
+			{
+				cashLotId: 3,
+				allocatedAmount: 50_000,
+				exchangeRate: 1_250,
+				sourceEquivalentAmount: 40,
+			},
+			{
+				cashLotId: 9,
+				allocatedAmount: 10_000,
+				exchangeRate: 1_200,
+				sourceEquivalentAmount: 8.33,
+			},
+		]);
+	});
 });

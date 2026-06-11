@@ -17,6 +17,7 @@ CREATE TABLE `CashLot` (
   UNIQUE INDEX `CashLot_withdrawalTransactionId_key`(`withdrawalTransactionId`),
   INDEX `CashLot_userId_fkey`(`userId`),
   INDEX `CashLot_destinationCurrency_withdrawalDate_idx`(`destinationCurrency`, `withdrawalDate`),
+  INDEX `CashLot_user_dest_migration_withdrawal_id_idx`(`userId`, `destinationCurrency`, `migrationStatus`, `withdrawalDate`, `id`),
 
   CONSTRAINT `CashLot_userId_fkey`
     FOREIGN KEY (`userId`) REFERENCES `User`(`id`)
@@ -70,7 +71,20 @@ INSERT INTO `CashLot` (
 )
 SELECT
   t.`userId`,
-  t.`id`,
+  CASE
+    WHEN (
+      LOWER(COALESCE(t.`description`, '')) LIKE '%withdraw%'
+      OR LOWER(COALESCE(t.`description`, '')) LIKE '%withdrawal%'
+      OR LOWER(COALESCE(t.`description`, '')) LIKE '%atm%'
+      OR LOWER(COALESCE(t.`description`, '')) LIKE '%retiro%'
+      OR LOWER(COALESCE(t.`description`, '')) LIKE '%cash out%'
+      OR LOWER(COALESCE(t.`description`, '')) LIKE '%cash withdrawal%'
+    )
+    AND COALESCE(t.`amount`, 0) > 0
+    AND COALESCE(t.`originalCurrencyAmount`, 0) > 0
+    THEN t.`id`
+    ELSE NULL
+  END,
   t.`date`,
   COALESCE(t.`amount`, 0),
   'USD',
