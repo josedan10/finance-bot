@@ -38,6 +38,8 @@ import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, 
 import { normalizeOptionalCoordinate, normalizeTransactionLocationMetadata } from '../src/lib/transaction-location';
 import { buildSharedMonthlySummary, createShareToken, isValidShareMonth } from '../src/lib/monthly-share-summary';
 import { createRedisRateLimitMiddleware } from '../src/lib/redis-rate-limit';
+import { CashLotServiceInstance } from '../modules/cash-lots/cash-lot.service';
+import { AppError } from '../src/lib/appError';
 
 const router = express.Router();
 const publicMonthlySummaryRateLimit = createRedisRateLimitMiddleware({
@@ -118,6 +120,169 @@ function normalizeCategoryKeyword(value: unknown): string | null {
 
 function isValidDate(value: Date): boolean {
 	return !Number.isNaN(value.getTime());
+}
+
+const transactionCashLotInclude = {
+	allocations: {
+		include: {
+			expenseTransaction: {
+				include: {
+					category: true,
+					paymentMethod: true,
+				},
+			},
+		},
+		orderBy: {
+			createdAt: 'asc' as const,
+		},
+	},
+	withdrawalTransaction: {
+		include: {
+			category: true,
+			paymentMethod: true,
+		},
+	},
+} as const;
+
+const transactionCashLotAllocationInclude = {
+	cashLot: {
+		include: {
+			withdrawalTransaction: {
+				include: {
+					category: true,
+					paymentMethod: true,
+				},
+			},
+		},
+	},
+} as const;
+
+const transactionWithCashLotsInclude = {
+	category: true,
+	paymentMethod: true,
+	cashLot: {
+		include: transactionCashLotInclude,
+	},
+	cashLotAllocations: {
+		include: transactionCashLotAllocationInclude,
+	},
+} as const;
+
+type TransactionWithCashLots = Prisma.TransactionGetPayload<{
+	include: typeof transactionWithCashLotsInclude;
+}>;
+
+function mapTransactionResponse(tx: TransactionWithCashLots, fallbackCategory?: string) {
+	const cashLot = tx.cashLot;
+
+	return {
+		id: String(tx.id),
+		date: tx.date.toISOString(),
+		description: tx.description ?? 'No description',
+		amount: Number(tx.amount ?? 0),
+		originalCurrencyAmount: Number(tx.originalCurrencyAmount ?? 0),
+		category: tx.category?.name ?? fallbackCategory ?? 'Other',
+		paymentMethod: tx.paymentMethod?.name ?? 'Other',
+		paymentMethodId: tx.paymentMethodId,
+		type: tx.type === 'credit' ? 'income' : 'expense',
+		source: 'manual',
+		referenceId: tx.referenceId ?? undefined,
+		manualDescription: tx.manualDescription ?? undefined,
+		locationName: tx.locationName ?? undefined,
+		latitude: tx.latitude === null ? undefined : Number(tx.latitude),
+		longitude: tx.longitude === null ? undefined : Number(tx.longitude),
+		googleMapsUrl: tx.googleMapsUrl ?? undefined,
+		currency: tx.currency,
+		exchangeRateUsed: tx.exchangeRateUsed === null ? undefined : Number(tx.exchangeRateUsed),
+		exchangeRateSource: tx.exchangeRateSource ?? undefined,
+		exchangeRateSourceKey: tx.exchangeRateSourceKey ?? undefined,
+		reviewed: tx.reviewed,
+		cashLot: cashLot
+			? {
+					id: String(cashLot.id),
+					withdrawalTransactionId: cashLot.withdrawalTransactionId === null ? null : String(cashLot.withdrawalTransactionId),
+					withdrawalDate: cashLot.withdrawalDate.toISOString(),
+					sourceAmount: Number(cashLot.sourceAmount ?? 0),
+					sourceCurrency: cashLot.sourceCurrency,
+					destinationAmount: Number(cashLot.destinationAmount ?? 0),
+					destinationCurrency: cashLot.destinationCurrency,
+					exchangeRate: Number(cashLot.exchangeRate ?? 0),
+					remainingAmount: Number(cashLot.remainingAmount ?? 0),
+					migrationStatus: cashLot.migrationStatus,
+					createdAt: cashLot.createdAt.toISOString(),
+					updatedAt: cashLot.updatedAt.toISOString(),
+					allocations: cashLot.allocations.map((allocation) => ({
+						id: String(allocation.id),
+						cashLotId: String(allocation.cashLotId),
+						expenseTransactionId: String(allocation.expenseTransactionId),
+						allocatedAmount: Number(allocation.allocatedAmount ?? 0),
+						exchangeRate: Number(allocation.exchangeRate ?? 0),
+						sourceEquivalentAmount:
+							Number(allocation.exchangeRate ?? 0) > 0
+								? Math.round((Number(allocation.allocatedAmount ?? 0) / Number(allocation.exchangeRate ?? 0)) * 100) / 100
+								: 0,
+						createdAt: allocation.createdAt.toISOString(),
+						expenseTransaction: {
+							id: String(allocation.expenseTransaction.id),
+							date: allocation.expenseTransaction.date.toISOString(),
+							description: allocation.expenseTransaction.description ?? 'No description',
+							amount: Number(allocation.expenseTransaction.amount ?? 0),
+							currency: allocation.expenseTransaction.currency,
+							category: allocation.expenseTransaction.category?.name ?? 'Other',
+							paymentMethod: allocation.expenseTransaction.paymentMethod?.name ?? 'Other',
+						},
+					})),
+				}
+			: undefined,
+				cashLotAllocations: tx.cashLotAllocations.map((allocation) => ({
+					id: String(allocation.id),
+					cashLotId: String(allocation.cashLotId),
+					expenseTransactionId: String(allocation.expenseTransactionId),
+					allocatedAmount: Number(allocation.allocatedAmount ?? 0),
+					exchangeRate: Number(allocation.exchangeRate ?? 0),
+					sourceEquivalentAmount:
+						Number(allocation.exchangeRate ?? 0) > 0
+							? Math.round((Number(allocation.allocatedAmount ?? 0) / Number(allocation.exchangeRate ?? 0)) * 100) / 100
+							: 0,
+					createdAt: allocation.createdAt.toISOString(),
+					cashLot: {
+						id: String(allocation.cashLot.id),
+						withdrawalDate: allocation.cashLot.withdrawalTransaction?.date.toISOString() ?? null,
+						sourceAmount: Number(allocation.cashLot.sourceAmount ?? 0),
+						sourceCurrency: allocation.cashLot.sourceCurrency,
+						destinationAmount: Number(allocation.cashLot.destinationAmount ?? 0),
+						destinationCurrency: allocation.cashLot.destinationCurrency,
+						exchangeRate: Number(allocation.cashLot.exchangeRate ?? 0),
+						remainingAmount: Number(allocation.cashLot.remainingAmount ?? 0),
+						migrationStatus: allocation.cashLot.migrationStatus,
+						withdrawalTransaction: allocation.cashLot.withdrawalTransaction
+							? {
+									id: String(allocation.cashLot.withdrawalTransaction.id),
+									date: allocation.cashLot.withdrawalTransaction.date.toISOString(),
+									description: allocation.cashLot.withdrawalTransaction.description ?? 'No description',
+									amount: Number(allocation.cashLot.withdrawalTransaction.amount ?? 0),
+									currency: allocation.cashLot.withdrawalTransaction.currency,
+									category: allocation.cashLot.withdrawalTransaction.category?.name ?? 'Other',
+									paymentMethod: allocation.cashLot.withdrawalTransaction.paymentMethod?.name ?? 'Other',
+							  }
+							: null,
+					},
+				})),
+	};
+}
+
+async function loadTransactionWithCashLots(
+	db: Prisma.TransactionClient | typeof prisma,
+	transactionId: number,
+	userId: number
+): Promise<TransactionWithCashLots | null> {
+	return db.transaction.findFirst({
+		where: {
+			id: transactionId,
+			userId,
+		},
+		include: transactionWithCashLotsInclude,
+	});
 }
 
 function pickBestKeywordCategory(
@@ -597,35 +762,10 @@ router.get('/api/transactions', requireAuth, async (req: Request, res: Response)
 				paymentMethodId: paymentMethodId ? Number(paymentMethodId) : undefined,
 			},
 			orderBy: { date: 'desc' },
-			include: { 
-				category: true,
-				paymentMethod: true,
-			},
+			include: transactionWithCashLotsInclude,
 		});
 
-		const mapped = transactions.map((tx) => ({
-			id: String(tx.id),
-			date: tx.date.toISOString(),
-			description: tx.description ?? 'No description',
-			amount: Number(tx.amount ?? 0),
-			originalCurrencyAmount: Number(tx.originalCurrencyAmount ?? 0),
-			category: tx.category?.name ?? 'Other',
-			paymentMethod: tx.paymentMethod?.name ?? 'Other',
-			paymentMethodId: tx.paymentMethodId,
-			type: tx.type === 'credit' ? 'income' : 'expense',
-			source: 'manual',
-			referenceId: tx.referenceId ?? undefined,
-			manualDescription: tx.manualDescription ?? undefined,
-			locationName: tx.locationName ?? undefined,
-			latitude: tx.latitude === null ? undefined : Number(tx.latitude),
-			longitude: tx.longitude === null ? undefined : Number(tx.longitude),
-			googleMapsUrl: tx.googleMapsUrl ?? undefined,
-			currency: tx.currency,
-			exchangeRateUsed: tx.exchangeRateUsed === null ? undefined : Number(tx.exchangeRateUsed),
-			exchangeRateSource: tx.exchangeRateSource ?? undefined,
-			exchangeRateSourceKey: tx.exchangeRateSourceKey ?? undefined,
-			reviewed: tx.reviewed,
-		}));
+		const mapped = transactions.map((tx) => mapTransactionResponse(tx));
 
 		res.status(200).json(mapped);
 	} catch (error) {
@@ -682,7 +822,25 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 
 router.post('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
-		const { date, description, amount, category, type, paymentMethodId, currency, manualDescription, locationName, latitude, longitude, googleMapsUrl, exchangeRateOverride } = req.body as {
+		const {
+			date,
+			description,
+			amount,
+			category,
+			type,
+			paymentMethodId,
+			currency,
+			manualDescription,
+			locationName,
+			latitude,
+			longitude,
+			googleMapsUrl,
+			exchangeRateOverride,
+			isCashWithdrawal,
+			cashWithdrawalDestinationAmount,
+			cashWithdrawalDestinationCurrency,
+			cashWithdrawalExchangeRate,
+		} = req.body as {
 			date?: string;
 			description?: string;
 			amount?: number;
@@ -696,6 +854,10 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			longitude?: number;
 			googleMapsUrl?: string;
 			exchangeRateOverride?: number;
+			isCashWithdrawal?: boolean;
+			cashWithdrawalDestinationAmount?: number;
+			cashWithdrawalDestinationCurrency?: string;
+			cashWithdrawalExchangeRate?: number;
 		};
 
 
@@ -721,6 +883,47 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			});
 		}
 
+		const normalizedCashWithdrawalDestinationCurrency =
+			typeof cashWithdrawalDestinationCurrency === 'string' ? cashWithdrawalDestinationCurrency.trim().toUpperCase() : '';
+		const normalizedCashWithdrawalExchangeRate =
+			cashWithdrawalExchangeRate === undefined || cashWithdrawalExchangeRate === null
+				? null
+				: Number(cashWithdrawalExchangeRate);
+		const normalizedCashWithdrawalDestinationAmount =
+			cashWithdrawalDestinationAmount === undefined || cashWithdrawalDestinationAmount === null
+				? null
+				: Number(cashWithdrawalDestinationAmount);
+
+		if (isCashWithdrawal) {
+			if (normalizedType !== 'debit') {
+				return res.status(400).json({ message: 'Withdrawal transactions must be registered as expenses' });
+			}
+
+			if (!paymentMethodId) {
+				return res.status(400).json({ message: 'Withdrawal requires a source payment method' });
+			}
+
+			if (
+				!normalizedCashWithdrawalDestinationCurrency ||
+				!Number.isFinite(normalizedCashWithdrawalExchangeRate) ||
+				normalizedCashWithdrawalExchangeRate === null ||
+				normalizedCashWithdrawalExchangeRate <= 0
+			) {
+				return res.status(400).json({
+					message: 'Withdrawal destination currency and exchange rate are required',
+				});
+			}
+
+			if (
+				normalizedCashWithdrawalDestinationAmount !== null &&
+				(!Number.isFinite(normalizedCashWithdrawalDestinationAmount) || normalizedCashWithdrawalDestinationAmount <= 0)
+			) {
+				return res.status(400).json({
+					message: 'Withdrawal destination amount must be a positive number when provided',
+				});
+			}
+		}
+
 		// 1. Match Category
 		const matchedCategory = await prisma.category.findFirst({
 			where: { name: category, userId: req.user.id },
@@ -738,6 +941,10 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 				return res.status(400).json({ message: 'Invalid payment method' });
 			}
 		} else {
+			if (isCashWithdrawal) {
+				return res.status(400).json({ message: 'Withdrawal requires a source payment method' });
+			}
+
 			// Fallback to "Cash"
 			let cashMethod = await prisma.paymentMethod.findFirst({
 				where: { name: 'Cash', userId: req.user.id }
@@ -751,48 +958,73 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 		}
 
 		// 3. Handle Creation via Gatekeeper (Deduplication & Normalization)
-		const { transaction } = await BaseTransactions.safeCreateTransaction({
-			userId: req.user.id,
-			date: new Date(date),
-			description,
-			amount,
-			currency: currency || 'USD',
-			type: normalizedType,
-			categoryId: matchedCategory?.id,
-			paymentMethodId: finalPaymentMethodId,
-			manualDescription: normalizedLocationMetadata.manualDescription,
-			locationName: normalizedLocationMetadata.locationName,
-			latitude: normalizeOptionalCoordinate(latitude),
-			longitude: normalizeOptionalCoordinate(longitude),
-			googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
-			exchangeRateOverride,
-			reviewed: true,
+		const createdTransaction = await prisma.$transaction(async (tx) => {
+			const { transaction, isDuplicate } = await BaseTransactions.safeCreateTransaction(
+				{
+					userId: req.user.id,
+					date: new Date(date),
+					description,
+					amount,
+					currency: currency || 'USD',
+					type: normalizedType,
+					categoryId: matchedCategory?.id,
+					paymentMethodId: finalPaymentMethodId,
+					manualDescription: normalizedLocationMetadata.manualDescription,
+					locationName: normalizedLocationMetadata.locationName,
+					latitude: normalizeOptionalCoordinate(latitude),
+					longitude: normalizeOptionalCoordinate(longitude),
+					googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
+					exchangeRateOverride,
+					reviewed: true,
+				},
+				tx
+			);
+
+			if (isDuplicate) {
+				const duplicateTransaction = await loadTransactionWithCashLots(tx, transaction.id, req.user.id);
+				return duplicateTransaction;
+			}
+
+			if (isCashWithdrawal) {
+				const destinationAmount =
+					normalizedCashWithdrawalDestinationAmount ??
+					Math.round(Number(amount) * Number(normalizedCashWithdrawalExchangeRate) * 100) / 100;
+
+				await CashLotServiceInstance.createWithdrawalCashLot(
+					transaction,
+					{
+						destinationAmount,
+						destinationCurrency: normalizedCashWithdrawalDestinationCurrency,
+						exchangeRate: Number(normalizedCashWithdrawalExchangeRate),
+						migrationStatus: 'linked',
+					},
+					tx
+				);
+			} else {
+				const paymentMethod = await tx.paymentMethod.findFirst({
+					where: {
+						id: finalPaymentMethodId ?? undefined,
+						userId: req.user.id,
+					},
+				});
+
+				if (normalizedType === 'debit' && paymentMethod?.name === 'Cash') {
+					await CashLotServiceInstance.allocateCashExpense(transaction, tx);
+				}
+			}
+
+			return loadTransactionWithCashLots(tx, transaction.id, req.user.id);
 		});
 
-		res.status(201).json({
-			id: String(transaction.id),
-			date: transaction.date.toISOString(),
-			description: transaction.description ?? 'No description',
-			amount: Number(transaction.amount ?? 0),
-			originalCurrencyAmount: Number(transaction.originalCurrencyAmount ?? 0),
-			currency: transaction.currency,
-			category: transaction.category?.name ?? category,
-			paymentMethod: transaction.paymentMethod?.name ?? 'Other',
-			paymentMethodId: transaction.paymentMethodId,
-			type,
-			source: 'manual',
-			referenceId: transaction.referenceId ?? undefined,
-			manualDescription: transaction.manualDescription ?? undefined,
-			locationName: transaction.locationName ?? undefined,
-			latitude: transaction.latitude === null ? undefined : Number(transaction.latitude),
-			longitude: transaction.longitude === null ? undefined : Number(transaction.longitude),
-			googleMapsUrl: transaction.googleMapsUrl ?? undefined,
-			reviewed: transaction.reviewed,
-			exchangeRateUsed: transaction.exchangeRateUsed === null ? undefined : Number(transaction.exchangeRateUsed),
-			exchangeRateSource: transaction.exchangeRateSource ?? undefined,
-			exchangeRateSourceKey: transaction.exchangeRateSourceKey ?? undefined,
-		});
+		if (!createdTransaction) {
+			return res.status(500).json({ message: 'Failed to create transaction' });
+		}
+
+		res.status(201).json(mapTransactionResponse(createdTransaction, category));
 	} catch (error) {
+		if (error instanceof AppError) {
+			return res.status(error.statusCode).json({ message: error.message });
+		}
 		logger.error('Failed to create transaction', { error, userId: req.user.id });
 		res.status(500).json({ message: 'Failed to create transaction' });
 	}
@@ -967,12 +1199,35 @@ router.delete('/api/transactions/:id', requireAuth, async (req: Request, res: Re
 			return res.status(400).json({ message: 'Invalid transaction id' });
 		}
 
-		await prisma.transaction.deleteMany({
-			where: { id, userId: req.user.id },
+		const existingTransaction = await loadTransactionWithCashLots(prisma, id, req.user.id);
+		if (!existingTransaction) {
+			return res.status(404).json({ message: 'Transaction not found' });
+		}
+
+		await prisma.$transaction(async (tx) => {
+			const transaction = await loadTransactionWithCashLots(tx, id, req.user.id);
+			if (!transaction) {
+				throw new AppError('Transaction not found', 404);
+			}
+
+			if (transaction.cashLot) {
+				await CashLotServiceInstance.deleteWithdrawalCashLot(transaction.id, req.user.id, tx);
+			}
+
+			if (transaction.cashLotAllocations.length > 0) {
+				await CashLotServiceInstance.restoreExpenseAllocations(transaction.id, req.user.id, tx);
+			}
+
+			await tx.transaction.delete({
+				where: { id: transaction.id },
+			});
 		});
 
 		res.status(204).send();
 	} catch (error) {
+		if (error instanceof AppError) {
+			return res.status(error.statusCode).json({ message: error.message });
+		}
 		res.status(500).json({ message: 'Failed to delete transaction' });
 	}
 });
@@ -995,6 +1250,10 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			longitude,
 			googleMapsUrl,
 			exchangeRateOverride,
+			isCashWithdrawal,
+			cashWithdrawalDestinationAmount,
+			cashWithdrawalDestinationCurrency,
+			cashWithdrawalExchangeRate,
 		} = req.body as {
 			date?: string;
 			description?: string;
@@ -1010,6 +1269,10 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			longitude?: number | null;
 			googleMapsUrl?: string;
 			exchangeRateOverride?: number | null;
+			isCashWithdrawal?: boolean;
+			cashWithdrawalDestinationAmount?: number | null;
+			cashWithdrawalDestinationCurrency?: string;
+			cashWithdrawalExchangeRate?: number | null;
 		};
 
 		if (
@@ -1024,6 +1287,11 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			return res.status(400).json({ message: 'Missing required fields' });
 		}
 
+		const normalizedType = mapTransactionType(type);
+		if (!normalizedType) {
+			return res.status(400).json({ message: 'Missing or invalid required fields' });
+		}
+
 		let normalizedLocationMetadata;
 		try {
 			normalizedLocationMetadata = normalizeTransactionLocationMetadata({
@@ -1036,102 +1304,159 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 				message: error instanceof Error ? error.message : 'Invalid location metadata',
 			});
 		}
+		const normalizedCashWithdrawalDestinationCurrency =
+			typeof cashWithdrawalDestinationCurrency === 'string' ? cashWithdrawalDestinationCurrency.trim().toUpperCase() : '';
+		const normalizedCashWithdrawalExchangeRate =
+			cashWithdrawalExchangeRate === undefined || cashWithdrawalExchangeRate === null
+				? null
+				: Number(cashWithdrawalExchangeRate);
+		const normalizedCashWithdrawalDestinationAmount =
+			cashWithdrawalDestinationAmount === undefined || cashWithdrawalDestinationAmount === null
+				? null
+				: Number(cashWithdrawalDestinationAmount);
 
-		const existingTransaction = await prisma.transaction.findFirst({
-			where: { id, userId: req.user.id },
-		});
-
-		if (!existingTransaction) {
-			return res.status(404).json({ message: 'Transaction not found' });
+		if (isCashWithdrawal && normalizedType !== 'debit') {
+			return res.status(400).json({ message: 'Withdrawal transactions must be registered as expenses' });
 		}
 
-		let matchedCategory = await prisma.category.findFirst({
-			where: { name: category.trim(), userId: req.user.id },
-		});
+		const updatedTransaction = await prisma.$transaction(async (tx) => {
+			const existingTransaction = await loadTransactionWithCashLots(tx, id, req.user.id);
+			if (!existingTransaction) {
+				throw new AppError('Transaction not found', 404);
+			}
 
-		if (!matchedCategory) {
-			matchedCategory = await prisma.category.create({
-				data: { name: category.trim(), userId: req.user.id },
+			let matchedCategory = await tx.category.findFirst({
+				where: { name: category.trim(), userId: req.user.id },
 			});
-		}
 
-		const resolvedPaymentMethodId =
-			typeof paymentMethodId === 'number' && Number.isFinite(paymentMethodId) && paymentMethodId > 0
-				? paymentMethodId
+			if (!matchedCategory) {
+				matchedCategory = await tx.category.create({
+					data: { name: category.trim(), userId: req.user.id },
+				});
+			}
+
+			const resolvedPaymentMethodId =
+				typeof paymentMethodId === 'number' && Number.isFinite(paymentMethodId) && paymentMethodId > 0
+					? paymentMethodId
+					: existingTransaction.paymentMethodId;
+
+			if (resolvedPaymentMethodId) {
+				const paymentMethod = await tx.paymentMethod.findFirst({
+					where: { id: resolvedPaymentMethodId, userId: req.user.id },
+				});
+
+				if (!paymentMethod) {
+					throw new AppError('Payment method not found', 404);
+				}
+			}
+
+			const currentPaymentMethod = resolvedPaymentMethodId
+				? await tx.paymentMethod.findFirst({
+						where: { id: resolvedPaymentMethodId, userId: req.user.id },
+				  })
 				: null;
 
-		if (resolvedPaymentMethodId) {
-			const paymentMethod = await prisma.paymentMethod.findFirst({
-				where: { id: resolvedPaymentMethodId, userId: req.user.id },
+			const normalizedLatitude = normalizeOptionalCoordinate(latitude);
+			const normalizedLongitude = normalizeOptionalCoordinate(longitude);
+			const normalizedAmounts = await BaseTransactions.normalizeTransactionAmount({
+				amount: Number(amount),
+				currency: currency.trim().toUpperCase(),
+				date: new Date(date),
+				exchangeRateOverride,
 			});
 
-			if (!paymentMethod) {
-				return res.status(404).json({ message: 'Payment method not found' });
+			const updated = await tx.transaction.update({
+				where: { id: existingTransaction.id },
+				data: {
+					amount: normalizedAmounts.amount,
+					currency: normalizedAmounts.currency,
+					originalCurrencyAmount: normalizedAmounts.originalCurrencyAmount,
+					date: new Date(date),
+					description: description.trim(),
+					categoryId: matchedCategory.id,
+					paymentMethodId: resolvedPaymentMethodId,
+					type: normalizedType,
+					referenceId: referenceId?.trim() || null,
+					manualDescription: normalizedLocationMetadata.manualDescription,
+					locationName: normalizedLocationMetadata.locationName,
+					latitude: normalizedLatitude,
+					longitude: normalizedLongitude,
+					googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
+					exchangeRateUsed: normalizedAmounts.exchangeRateUsed,
+					exchangeRateSource: normalizedAmounts.exchangeRateSource,
+					exchangeRateSourceKey: normalizedAmounts.exchangeRateSourceKey,
+					reviewed: true,
+					reviewedAt: new Date(),
+				},
+				include: transactionWithCashLotsInclude,
+			});
+
+			if (existingTransaction.cashLotAllocations.length > 0) {
+				await CashLotServiceInstance.restoreExpenseAllocations(existingTransaction.id, req.user.id, tx);
 			}
+
+			const shouldMaintainWithdrawalCashLot =
+				Boolean(existingTransaction.cashLot) || Boolean(isCashWithdrawal);
+
+			if (shouldMaintainWithdrawalCashLot) {
+				if (
+					!normalizedCashWithdrawalDestinationCurrency &&
+					!existingTransaction.cashLot &&
+					!isCashWithdrawal
+				) {
+					throw new AppError('Withdrawal destination currency is required', 400);
+				}
+
+				const withdrawalDestinationAmount =
+					normalizedCashWithdrawalDestinationAmount ??
+					(Math.round(Number(amount) * Number(
+						normalizedCashWithdrawalExchangeRate ??
+							(existingTransaction.cashLot ? Number(existingTransaction.cashLot.exchangeRate ?? 0) : 0)
+					) * 100) / 100);
+				const withdrawalDestinationCurrency =
+					normalizedCashWithdrawalDestinationCurrency ||
+					(existingTransaction.cashLot ? existingTransaction.cashLot.destinationCurrency : '');
+				const withdrawalExchangeRate =
+					normalizedCashWithdrawalExchangeRate ??
+					(existingTransaction.cashLot ? Number(existingTransaction.cashLot.exchangeRate ?? 0) : null);
+
+				if (
+					!Number.isFinite(withdrawalDestinationAmount) ||
+					withdrawalDestinationAmount <= 0 ||
+					!withdrawalDestinationCurrency ||
+					!Number.isFinite(withdrawalExchangeRate) ||
+					withdrawalExchangeRate === null ||
+					withdrawalExchangeRate <= 0
+				) {
+					throw new AppError('Withdrawal destination amount, currency and exchange rate are required', 400);
+				}
+
+				await CashLotServiceInstance.updateWithdrawalCashLot(
+					updated,
+					{
+						destinationAmount: withdrawalDestinationAmount,
+						destinationCurrency: withdrawalDestinationCurrency,
+						exchangeRate: withdrawalExchangeRate,
+						migrationStatus: existingTransaction.cashLot?.migrationStatus === 'unlinked' ? 'unlinked' : 'linked',
+					},
+					tx
+				);
+			} else if (type === 'expense' && currentPaymentMethod?.name === 'Cash') {
+				await CashLotServiceInstance.allocateCashExpense(updated, tx);
+			}
+
+			return loadTransactionWithCashLots(tx, updated.id, req.user.id);
+		});
+
+		if (!updatedTransaction) {
+			return res.status(500).json({ message: 'Failed to update transaction' });
 		}
 
-		const normalizedLatitude = normalizeOptionalCoordinate(latitude);
-		const normalizedLongitude = normalizeOptionalCoordinate(longitude);
-		const normalizedAmounts = await BaseTransactions.normalizeTransactionAmount({
-			amount: Number(amount),
-			currency: currency.trim().toUpperCase(),
-			date: new Date(date),
-			exchangeRateOverride,
-		});
-
-		const updated = await prisma.transaction.update({
-			where: { id: existingTransaction.id },
-			data: {
-				amount: normalizedAmounts.amount,
-				currency: normalizedAmounts.currency,
-				originalCurrencyAmount: normalizedAmounts.originalCurrencyAmount,
-				date: new Date(date),
-				description: description.trim(),
-				categoryId: matchedCategory.id,
-				paymentMethodId: resolvedPaymentMethodId,
-				type: type === 'income' ? 'credit' : 'debit',
-				referenceId: referenceId?.trim() || null,
-				manualDescription: normalizedLocationMetadata.manualDescription,
-				locationName: normalizedLocationMetadata.locationName,
-				latitude: normalizedLatitude,
-				longitude: normalizedLongitude,
-				googleMapsUrl: normalizedLocationMetadata.googleMapsUrl,
-				exchangeRateUsed: normalizedAmounts.exchangeRateUsed,
-				exchangeRateSource: normalizedAmounts.exchangeRateSource,
-				exchangeRateSourceKey: normalizedAmounts.exchangeRateSourceKey,
-				reviewed: true,
-				reviewedAt: new Date(),
-			},
-			include: {
-				category: true,
-				paymentMethod: true,
-			},
-		});
-
-		return res.status(200).json({
-			id: String(updated.id),
-			date: updated.date.toISOString(),
-			description: updated.description ?? 'No description',
-			amount: Number(updated.amount ?? 0),
-			originalCurrencyAmount: Number(updated.originalCurrencyAmount ?? 0),
-			category: updated.category?.name ?? category,
-			paymentMethod: updated.paymentMethod?.name ?? 'Other',
-			paymentMethodId: updated.paymentMethodId,
-			type: updated.type === 'credit' ? 'income' : 'expense',
-			source: 'manual',
-			referenceId: updated.referenceId ?? undefined,
-			manualDescription: updated.manualDescription ?? undefined,
-			locationName: updated.locationName ?? undefined,
-			latitude: updated.latitude === null ? undefined : Number(updated.latitude),
-			longitude: updated.longitude === null ? undefined : Number(updated.longitude),
-			googleMapsUrl: updated.googleMapsUrl ?? undefined,
-			currency: updated.currency,
-			exchangeRateUsed: updated.exchangeRateUsed === null ? undefined : Number(updated.exchangeRateUsed),
-			exchangeRateSource: updated.exchangeRateSource ?? undefined,
-			exchangeRateSourceKey: updated.exchangeRateSourceKey ?? undefined,
-			reviewed: updated.reviewed,
-		});
+		return res.status(200).json(mapTransactionResponse(updatedTransaction, category));
 	} catch (error) {
+		if (error instanceof AppError) {
+			return res.status(error.statusCode).json({ message: error.message });
+		}
 		logger.error('Failed to update transaction', { error, userId: req.user.id });
 		return res.status(500).json({ message: 'Failed to update transaction' });
 	}

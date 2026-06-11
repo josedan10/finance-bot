@@ -111,6 +111,9 @@ export class NotificationFactory implements INotificationFactory {
           userId,
           categoryId,
           type: 'expense',
+          cashLot: {
+            is: null,
+          },
           date: { gte: startOfMonth },
         },
         _sum: { amount: true },

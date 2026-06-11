@@ -17,6 +17,7 @@ describe('BudgetRolloverService', () => {
 			// Mock category limit
 			prismaMock.category.findUnique.mockResolvedValue({
 				id: categoryId,
+				userId: 1,
 				amountLimit: new Decimal(100),
 				isCumulative: true,
 			} as any);
@@ -31,7 +32,7 @@ describe('BudgetRolloverService', () => {
 				_sum: { amount: new Decimal(80) },
 			} as any);
 
-			const carryOver = await BudgetRollover.calculateRollover(categoryId, targetMonth, targetYear);
+			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, targetMonth, targetYear);
 
 			// March: $100 limit - $80 spent = $20 carryOver for April
 			expect(carryOver).toBe(20);
@@ -63,7 +64,7 @@ describe('BudgetRolloverService', () => {
 				.mockResolvedValueOnce({ _sum: { amount: new Decimal(40) } } as any)
 				.mockResolvedValueOnce({ _sum: { amount: new Decimal(50) } } as any);
 
-			const carryOver = await BudgetRollover.calculateRollover(categoryId, 6, targetYear);
+			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, 6, targetYear);
 
 			expect(carryOver).toBe(130);
 		});
@@ -71,6 +72,7 @@ describe('BudgetRolloverService', () => {
 		it('should include previous carry-over in calculation', async () => {
 			prismaMock.category.findUnique.mockResolvedValue({
 				id: categoryId,
+				userId: 1,
 				amountLimit: new Decimal(100),
 				isCumulative: true,
 			} as any);
@@ -85,7 +87,7 @@ describe('BudgetRolloverService', () => {
 				_sum: { amount: new Decimal(120) },
 			} as any);
 
-			const carryOver = await BudgetRollover.calculateRollover(categoryId, targetMonth, targetYear);
+			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, targetMonth, targetYear);
 
 			// March: ($100 limit + $50 carryOver) - $120 spent = $30 carryOver for April
 			expect(carryOver).toBe(30);
@@ -94,6 +96,7 @@ describe('BudgetRolloverService', () => {
 		it('should return 0 if there was a deficit (no negative carry-over)', async () => {
 			prismaMock.category.findUnique.mockResolvedValue({
 				id: categoryId,
+				userId: 1,
 				amountLimit: new Decimal(100),
 			} as any);
 
@@ -106,7 +109,7 @@ describe('BudgetRolloverService', () => {
 				_sum: { amount: new Decimal(110) },
 			} as any);
 
-			const carryOver = await BudgetRollover.calculateRollover(categoryId, targetMonth, targetYear);
+			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, targetMonth, targetYear);
 
 			expect(carryOver).toBe(0);
 		});
@@ -149,7 +152,7 @@ describe('BudgetRolloverService', () => {
 				.mockResolvedValueOnce({ _sum: { amount: new Decimal(70) } } as any)
 				.mockResolvedValueOnce({ _sum: { amount: new Decimal(25) } } as any);
 
-			const carryOver = await BudgetRollover.calculateRollover(targetCategoryId, targetMonth, targetYear);
+			const carryOver = await BudgetRollover.calculateRollover(targetCategoryId, 1, targetMonth, targetYear);
 
 			expect(carryOver).toBe(65);
 		});
@@ -170,7 +173,7 @@ describe('BudgetRolloverService', () => {
 
 		it('should create a new period with carry-over if it does not exist', async () => {
 			prismaMock.budgetPeriod.findUnique.mockResolvedValue(null); // First call: check existing
-			prismaMock.category.findUnique.mockResolvedValue({ id: categoryId, isCumulative: true, amountLimit: new Decimal(100), name: 'Pets' } as any);
+			prismaMock.category.findUnique.mockResolvedValue({ id: categoryId, userId: 1, isCumulative: true, amountLimit: new Decimal(100), name: 'Pets' } as any);
 			
 			// Mock rollover calculation (March to April)
 			prismaMock.budgetPeriod.findUnique.mockResolvedValueOnce(null) // JIT check
@@ -202,8 +205,8 @@ describe('BudgetRolloverService', () => {
 				] as any);
 
 			prismaMock.category.findMany.mockResolvedValue([
-				{ id: 10, isCumulative: true },
-				{ id: 11, isCumulative: false },
+				{ id: 10, userId: 1, isCumulative: true },
+				{ id: 11, userId: 1, isCumulative: false },
 			] as any);
 
 			prismaMock.transaction.aggregate.mockResolvedValue({ _sum: { amount: new Decimal(75) } } as any);

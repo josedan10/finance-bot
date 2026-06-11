@@ -73,6 +73,9 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
           gte: startDate,
           lt: endDate,
         },
+        cashLot: {
+          is: null,
+        },
       },
       include: {
         category: true,
