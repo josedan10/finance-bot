@@ -8,6 +8,7 @@ import { BudgetCheckerService } from './budget-checker.service';
 import { NotificationPreferenceService } from './notification-preference.service';
 import { PrismaClient } from '@prisma/client';
 import logger from '../../src/lib/logger';
+import { isBudgetOverflowTransferTransaction } from '../../src/lib/budget-overflow-transfers';
 
 export class NotificationFactory implements INotificationFactory {
   private emailService: INotificationService;
@@ -106,20 +107,34 @@ export class NotificationFactory implements INotificationFactory {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       
-      const spending = await this.prisma.transaction.aggregate({
+      const spending = await this.prisma.transaction.findMany({
         where: {
           userId,
           categoryId,
-          type: 'expense',
           cashLot: {
             is: null,
           },
           date: { gte: startOfMonth },
         },
-        _sum: { amount: true },
+        select: {
+          type: true,
+          amount: true,
+          referenceId: true,
+        },
       });
 
-      const totalSpent = (spending._sum.amount?.toNumber() || 0);
+      const totalSpent = spending.reduce((sum, transaction) => {
+        const amount = transaction.amount?.toNumber() || 0;
+        if (transaction.type === 'expense') {
+          return sum + amount;
+        }
+
+        if (isBudgetOverflowTransferTransaction(transaction.referenceId)) {
+          return sum - amount;
+        }
+
+        return sum;
+      }, 0);
       const percentage = (totalSpent / category.amountLimit.toNumber()) * 100;
 
       // 7. Send notifications for each crossed threshold

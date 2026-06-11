@@ -2,6 +2,10 @@ import { BudgetPeriod, Category, Prisma, PrismaClient } from '@prisma/client';
 import dayjs from 'dayjs';
 import { PrismaModule as prisma } from '../database/database.module';
 import logger from '../../src/lib/logger';
+import {
+	BUDGET_OVERFLOW_TRANSFER_REFERENCE_PREFIX,
+	isBudgetOverflowTransferTransaction,
+} from '../../src/lib/budget-overflow-transfers';
 
 interface BudgetFallbackRuleRow {
 	id: number;
@@ -190,11 +194,10 @@ export class BudgetRolloverService {
 		const startDate = prevDate.startOf('month').toDate();
 		const endDate = prevDate.endOf('month').toDate();
 
-		const spending = await this._db.transaction.aggregate({
+		const transactions = await this._db.transaction.findMany({
 			where: {
 				userId,
 				categoryId,
-				type: 'expense',
 				cashLot: {
 					is: null,
 				},
@@ -203,12 +206,25 @@ export class BudgetRolloverService {
 					lte: endDate,
 				},
 			},
-			_sum: {
+			select: {
+				type: true,
 				amount: true,
+				referenceId: true,
 			},
 		});
 
-		const totalSpent = Number(spending._sum.amount || 0);
+		const totalSpent = transactions.reduce((sum, transaction) => {
+			const amount = Number(transaction.amount ?? 0);
+			if (transaction.type === 'expense') {
+				return sum + amount;
+			}
+
+			if (isBudgetOverflowTransferTransaction(transaction.referenceId)) {
+				return sum - amount;
+			}
+
+			return sum;
+		}, 0);
 		const surplus = (baseLimit + baseCarryOver) - totalSpent;
 		const positiveSurplus = Math.max(0, surplus);
 
@@ -261,11 +277,20 @@ export class BudgetRolloverService {
 				where: {
 					userId,
 					categoryId,
-					type: 'expense',
-					cashLot: {
-						is: null,
-					},
 					date: { lt: dayjs(`${year}-${month}-01`).startOf('month').toDate() },
+					OR: [
+						{
+							type: 'expense',
+							cashLot: {
+								is: null,
+							},
+						},
+							{
+								referenceId: {
+									startsWith: BUDGET_OVERFLOW_TRANSFER_REFERENCE_PREFIX,
+								},
+							},
+					],
 				},
 				select: { id: true },
 			}),
@@ -336,11 +361,10 @@ export class BudgetRolloverService {
 		const startDate = prevDate.startOf('month').toDate();
 		const endDate = prevDate.endOf('month').toDate();
 
-		const spending = await this._db.transaction.aggregate({
+		const spending = await this._db.transaction.findMany({
 			where: {
 				userId,
 				categoryId,
-				type: 'expense',
 				cashLot: {
 					is: null,
 				},
@@ -349,14 +373,28 @@ export class BudgetRolloverService {
 					lte: endDate,
 				},
 			},
-			_sum: {
+			select: {
+				type: true,
 				amount: true,
+				referenceId: true,
 			},
 		});
 
 		const baseLimit = Number(category.amountLimit);
 		const baseCarryOver = await this.getPreviousCarryOver(category, targetMonth, targetYear, prevPeriod);
-		const totalSpent = Number(spending._sum.amount || 0);
+		const totalSpent = spending.reduce((sum, transaction) => {
+			const amount = Number(transaction.amount ?? 0);
+
+			if (transaction.type === 'expense') {
+				return sum + amount;
+			}
+
+			if (isBudgetOverflowTransferTransaction(transaction.referenceId)) {
+				return sum - amount;
+			}
+
+			return sum;
+		}, 0);
 		const surplus = (baseLimit + baseCarryOver) - totalSpent;
 
 		return Math.max(0, surplus);

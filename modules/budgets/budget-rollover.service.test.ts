@@ -6,6 +6,7 @@ import { beforeEach } from '@jest/globals';
 describe('BudgetRolloverService', () => {
 	beforeEach(() => {
 		prismaMock.$queryRaw.mockResolvedValue([] as any);
+		prismaMock.transaction.findMany.mockReset();
 	});
 
 	describe('calculateRollover', () => {
@@ -28,9 +29,9 @@ describe('BudgetRolloverService', () => {
 			} as any);
 
 			// Mock March spending: $80
-			prismaMock.transaction.aggregate.mockResolvedValue({
-				_sum: { amount: new Decimal(80) },
-			} as any);
+			prismaMock.transaction.findMany.mockResolvedValue([
+				{ type: 'expense', amount: new Decimal(80), referenceId: null },
+			] as any);
 
 			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, targetMonth, targetYear);
 
@@ -59,10 +60,10 @@ describe('BudgetRolloverService', () => {
 			// March spent 80 => April carryOver 20
 			// April spent 40 with carryOver 20 => May carryOver 80
 			// May spent 50 with carryOver 80 => June carryOver 130
-			prismaMock.transaction.aggregate
-				.mockResolvedValueOnce({ _sum: { amount: new Decimal(80) } } as any)
-				.mockResolvedValueOnce({ _sum: { amount: new Decimal(40) } } as any)
-				.mockResolvedValueOnce({ _sum: { amount: new Decimal(50) } } as any);
+			prismaMock.transaction.findMany
+				.mockResolvedValueOnce([{ type: 'expense', amount: new Decimal(80), referenceId: null }] as any)
+				.mockResolvedValueOnce([{ type: 'expense', amount: new Decimal(40), referenceId: null }] as any)
+				.mockResolvedValueOnce([{ type: 'expense', amount: new Decimal(50), referenceId: null }] as any);
 
 			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, 6, targetYear);
 
@@ -83,9 +84,9 @@ describe('BudgetRolloverService', () => {
 			} as any);
 
 			// March spent $120
-			prismaMock.transaction.aggregate.mockResolvedValue({
-				_sum: { amount: new Decimal(120) },
-			} as any);
+			prismaMock.transaction.findMany.mockResolvedValue([
+				{ type: 'expense', amount: new Decimal(120), referenceId: null },
+			] as any);
 
 			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, targetMonth, targetYear);
 
@@ -105,9 +106,9 @@ describe('BudgetRolloverService', () => {
 			} as any);
 
 			// March spent $110
-			prismaMock.transaction.aggregate.mockResolvedValue({
-				_sum: { amount: new Decimal(110) },
-			} as any);
+			prismaMock.transaction.findMany.mockResolvedValue([
+				{ type: 'expense', amount: new Decimal(110), referenceId: null },
+			] as any);
 
 			const carryOver = await BudgetRollover.calculateRollover(categoryId, 1, targetMonth, targetYear);
 
@@ -148,9 +149,9 @@ describe('BudgetRolloverService', () => {
 				.mockResolvedValueOnce({ carryOver: new Decimal(0) } as any)
 				.mockResolvedValueOnce({ carryOver: new Decimal(0) } as any);
 
-			prismaMock.transaction.aggregate
-				.mockResolvedValueOnce({ _sum: { amount: new Decimal(70) } } as any)
-				.mockResolvedValueOnce({ _sum: { amount: new Decimal(25) } } as any);
+			prismaMock.transaction.findMany
+				.mockResolvedValueOnce([{ type: 'expense', amount: new Decimal(70), referenceId: null }] as any)
+				.mockResolvedValueOnce([{ type: 'expense', amount: new Decimal(25), referenceId: null }] as any);
 
 			const carryOver = await BudgetRollover.calculateRollover(targetCategoryId, 1, targetMonth, targetYear);
 
@@ -179,7 +180,9 @@ describe('BudgetRolloverService', () => {
 			prismaMock.budgetPeriod.findUnique.mockResolvedValueOnce(null) // JIT check
 				.mockResolvedValueOnce(null); // Prev period check in calculateRollover
 			
-			prismaMock.transaction.aggregate.mockResolvedValue({ _sum: { amount: new Decimal(70) } } as any);
+			prismaMock.transaction.findMany.mockResolvedValue([
+				{ type: 'expense', amount: new Decimal(70), referenceId: null },
+			] as any);
 
 			const newPeriod = { id: 2, categoryId, month: 4, year: 2026, carryOver: new Decimal(30) };
 			prismaMock.budgetPeriod.create.mockResolvedValue(newPeriod as any);
@@ -209,7 +212,9 @@ describe('BudgetRolloverService', () => {
 				{ id: 11, userId: 1, isCumulative: false },
 			] as any);
 
-			prismaMock.transaction.aggregate.mockResolvedValue({ _sum: { amount: new Decimal(75) } } as any);
+			prismaMock.transaction.findMany.mockResolvedValue([
+				{ type: 'expense', amount: new Decimal(75), referenceId: null },
+			] as any);
 			prismaMock.budgetPeriod.createMany.mockResolvedValue({ count: 1 } as any);
 
 			const result = await BudgetRollover.getOrCreateCurrentPeriods([10, 11], new Date('2026-06-15'));

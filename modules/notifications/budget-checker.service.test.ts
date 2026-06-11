@@ -38,9 +38,9 @@ describe('BudgetCheckerService', () => {
 
   it('should detect 50% threshold crossing', async () => {
     prismaMock.category.findFirst.mockResolvedValue(mockCategory as any);
-    prismaMock.transaction.aggregate.mockResolvedValue({
-      _sum: { amount: new Decimal(450) },
-    } as any);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { type: 'expense', amount: new Decimal(450), referenceId: null },
+    ] as any);
     prismaMock.notificationPreference.findUnique.mockResolvedValue(null);
     prismaMock.notificationLog.findFirst.mockResolvedValue(null);
 
@@ -54,9 +54,9 @@ describe('BudgetCheckerService', () => {
 
   it('should detect 90% threshold crossing', async () => {
     prismaMock.category.findFirst.mockResolvedValue(mockCategory as any);
-    prismaMock.transaction.aggregate.mockResolvedValue({
-      _sum: { amount: new Decimal(850) },
-    } as any);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { type: 'expense', amount: new Decimal(850), referenceId: null },
+    ] as any);
     prismaMock.notificationPreference.findUnique.mockResolvedValue(null);
     prismaMock.notificationLog.findFirst.mockResolvedValue(null);
 
@@ -69,9 +69,9 @@ describe('BudgetCheckerService', () => {
 
   it('should honor custom user thresholds', async () => {
     prismaMock.category.findFirst.mockResolvedValue(mockCategory as any);
-    prismaMock.transaction.aggregate.mockResolvedValue({
-      _sum: { amount: new Decimal(750) },
-    } as any);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { type: 'expense', amount: new Decimal(750), referenceId: null },
+    ] as any);
     prismaMock.notificationPreference.findUnique.mockResolvedValue({
       userId: 1,
       thresholds: JSON.stringify([80]), // Only 80%
@@ -92,9 +92,9 @@ describe('BudgetCheckerService', () => {
 
   it('should not return threshold if recently notified (deduplication)', async () => {
     prismaMock.category.findFirst.mockResolvedValue(mockCategory as any);
-    prismaMock.transaction.aggregate.mockResolvedValue({
-      _sum: { amount: new Decimal(550) },
-    } as any);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { type: 'expense', amount: new Decimal(550), referenceId: null },
+    ] as any);
     prismaMock.notificationPreference.findUnique.mockResolvedValue(null);
     
     // Mock a recent notification for 50%

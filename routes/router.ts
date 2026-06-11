@@ -37,9 +37,14 @@ import {
 import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, normalizeOptionalTargetDate } from '../src/lib/budget-normalizers';
 import { normalizeOptionalCoordinate, normalizeTransactionLocationMetadata } from '../src/lib/transaction-location';
 import { buildSharedMonthlySummary, createShareToken, isValidShareMonth } from '../src/lib/monthly-share-summary';
+import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
 import { createRedisRateLimitMiddleware } from '../src/lib/redis-rate-limit';
 import { CashLotServiceInstance } from '../modules/cash-lots/cash-lot.service';
 import { AppError } from '../src/lib/appError';
+import {
+	buildBudgetOverflowTransferReference,
+	isBudgetOverflowTransferTransaction,
+} from '../src/lib/budget-overflow-transfers';
 
 const router = express.Router();
 const publicMonthlySummaryRateLimit = createRedisRateLimitMiddleware({
@@ -282,6 +287,292 @@ async function loadTransactionWithCashLots(
 			userId,
 		},
 		include: transactionWithCashLotsInclude,
+	});
+}
+
+type BudgetOverflowTransferTransaction = {
+	id: number;
+	type: 'income' | 'expense';
+	amount: Prisma.Decimal | number | null;
+	categoryId: number | null;
+	referenceId: string | null;
+};
+
+type BudgetOverflowState = {
+	limit: number;
+	carryOver: number;
+	effectiveBudget: number;
+	rawSpent: number;
+	adjustedSpent: number;
+};
+
+function getBudgetOverflowTransactionAmount(transaction: BudgetOverflowTransferTransaction): number {
+	return Number(transaction.amount ?? 0);
+}
+
+function getBudgetOverflowTransactionStateImpact(transaction: BudgetOverflowTransferTransaction): {
+	rawSpentDelta: number;
+	adjustedSpentDelta: number;
+} {
+	const amount = getBudgetOverflowTransactionAmount(transaction);
+	const isTransfer = isBudgetOverflowTransferTransaction(transaction.referenceId);
+
+	if (transaction.type === 'expense') {
+		return {
+			rawSpentDelta: isTransfer ? 0 : amount,
+			adjustedSpentDelta: amount,
+		};
+	}
+
+	if (isTransfer) {
+		return {
+			rawSpentDelta: 0,
+			adjustedSpentDelta: -amount,
+		};
+	}
+
+	return {
+		rawSpentDelta: 0,
+		adjustedSpentDelta: 0,
+	};
+}
+
+function calculateBudgetOverflowState(
+	transactions: BudgetOverflowTransferTransaction[],
+	limit: number,
+	carryOver: number
+): BudgetOverflowState {
+	const effectiveBudget = limit + carryOver;
+	const { rawSpent, adjustedSpent } = transactions.reduce(
+		(accumulator, transaction) => {
+			const impact = getBudgetOverflowTransactionStateImpact(transaction);
+			accumulator.rawSpent += impact.rawSpentDelta;
+			accumulator.adjustedSpent += impact.adjustedSpentDelta;
+			return accumulator;
+		},
+		{ rawSpent: 0, adjustedSpent: 0 }
+	);
+
+	return {
+		limit,
+		carryOver,
+		effectiveBudget,
+		rawSpent,
+		adjustedSpent,
+	};
+}
+
+async function loadMonthlyBudgetOverflowStates(
+	db: Prisma.TransactionClient | typeof prisma,
+	userId: number,
+	month: number,
+	year: number
+): Promise<Map<number, BudgetOverflowState>> {
+	const startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+	const endDate = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+	const [categories, periods, transactions] = await Promise.all([
+		db.category.findMany({
+			where: {
+				userId,
+				amountLimit: {
+					gt: 0,
+				},
+			},
+			select: {
+				id: true,
+				amountLimit: true,
+			},
+		}),
+		BudgetRollover.getOrCreateCurrentPeriods(
+			(await db.category.findMany({
+				where: {
+					userId,
+					amountLimit: {
+						gt: 0,
+					},
+				},
+				select: {
+					id: true,
+				},
+			})).map((category) => category.id),
+			new Date(Date.UTC(year, month - 1, 1, 12, 0, 0, 0))
+		),
+		db.transaction.findMany({
+			where: {
+				userId,
+				date: {
+					gte: startDate,
+					lt: endDate,
+				},
+				cashLot: {
+					is: null,
+				},
+			},
+			select: {
+				id: true,
+				type: true,
+				amount: true,
+				categoryId: true,
+				referenceId: true,
+			},
+		}),
+	]);
+
+	const transactionsByCategoryId = new Map<number, BudgetOverflowTransferTransaction[]>();
+	for (const transaction of transactions) {
+		if (transaction.categoryId == null) {
+			continue;
+		}
+
+		const next = transactionsByCategoryId.get(transaction.categoryId) ?? [];
+		next.push(transaction as BudgetOverflowTransferTransaction);
+		transactionsByCategoryId.set(transaction.categoryId, next);
+	}
+
+	const stateByCategoryId = new Map<number, BudgetOverflowState>();
+	for (const category of categories) {
+		const carryOver = Number(periods.get(category.id)?.carryOver ?? 0);
+		const categoryTransactions = transactionsByCategoryId.get(category.id) ?? [];
+		stateByCategoryId.set(
+			category.id,
+			calculateBudgetOverflowState(categoryTransactions, Number(category.amountLimit ?? 0), carryOver)
+		);
+	}
+
+	return stateByCategoryId;
+}
+
+async function upsertOverflowTransferTransactions(
+	tx: Prisma.TransactionClient,
+	params: {
+		userId: number;
+		sourceCategoryId: number;
+		sourceCategoryName: string;
+		targetCategoryId: number;
+		targetCategoryName: string;
+		month: number;
+		year: number;
+		amount: number;
+	}
+): Promise<{ incomeTransactionId: number; expenseTransactionId: number }> {
+	const transferDate = new Date(Date.UTC(params.year, params.month - 1, 1, 12, 0, 0, 0));
+	const incomeReferenceId = buildBudgetOverflowTransferReference(
+		params.userId,
+		params.sourceCategoryId,
+		params.month,
+		params.year,
+		'income'
+	);
+	const expenseReferenceId = buildBudgetOverflowTransferReference(
+		params.userId,
+		params.sourceCategoryId,
+		params.month,
+		params.year,
+		'expense'
+	);
+
+	const [incomeTransaction, expenseTransaction] = await Promise.all([
+		tx.transaction.findFirst({
+			where: {
+				userId: params.userId,
+				referenceId: incomeReferenceId,
+			},
+			select: { id: true },
+		}),
+		tx.transaction.findFirst({
+			where: {
+				userId: params.userId,
+				referenceId: expenseReferenceId,
+			},
+			select: { id: true },
+		}),
+	]);
+
+	const incomeDescription = `Budget overflow transfer from ${params.targetCategoryName} to ${params.sourceCategoryName}`;
+	const expenseDescription = `Budget overflow transfer from ${params.sourceCategoryName} to ${params.targetCategoryName}`;
+
+	const incomePayload = {
+		userId: params.userId,
+		date: transferDate,
+		description: incomeDescription,
+		amount: params.amount,
+		currency: 'USD',
+		type: 'income' as const,
+		categoryId: params.sourceCategoryId,
+		referenceId: incomeReferenceId,
+		manualDescription: `Overflow transfer from ${params.targetCategoryName}`,
+	};
+
+	const expensePayload = {
+		userId: params.userId,
+		date: transferDate,
+		description: expenseDescription,
+		amount: params.amount,
+		currency: 'USD',
+		type: 'expense' as const,
+		categoryId: params.targetCategoryId,
+		referenceId: expenseReferenceId,
+		manualDescription: `Overflow transfer to ${params.targetCategoryName}`,
+	};
+
+	const { userId: _incomeUserId, ...incomeUpdatePayload } = incomePayload;
+	const { userId: _expenseUserId, ...expenseUpdatePayload } = expensePayload;
+
+	const createdIncomeTransaction = incomeTransaction
+		? await tx.transaction.update({
+				where: { id: incomeTransaction.id },
+				data: incomeUpdatePayload,
+		  })
+		: await tx.transaction.create({
+				data: incomePayload,
+		  });
+
+	const createdExpenseTransaction = expenseTransaction
+		? await tx.transaction.update({
+				where: { id: expenseTransaction.id },
+				data: expenseUpdatePayload,
+		  })
+		: await tx.transaction.create({
+				data: expensePayload,
+		  });
+
+	return {
+		incomeTransactionId: createdIncomeTransaction.id,
+		expenseTransactionId: createdExpenseTransaction.id,
+	};
+}
+
+async function deleteOverflowTransferTransactions(
+	tx: Prisma.TransactionClient,
+	params: {
+		userId: number;
+		sourceCategoryId: number;
+		month: number;
+		year: number;
+	}
+): Promise<void> {
+	const incomeReferenceId = buildBudgetOverflowTransferReference(
+		params.userId,
+		params.sourceCategoryId,
+		params.month,
+		params.year,
+		'income'
+	);
+	const expenseReferenceId = buildBudgetOverflowTransferReference(
+		params.userId,
+		params.sourceCategoryId,
+		params.month,
+		params.year,
+		'expense'
+	);
+
+	await tx.transaction.deleteMany({
+		where: {
+			userId: params.userId,
+			referenceId: {
+				in: [incomeReferenceId, expenseReferenceId],
+			},
+		},
 	});
 }
 
@@ -2137,57 +2428,78 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 			return res.status(404).json({ message: 'Category not found' });
 		}
 
-		await prisma.budgetOverflowAssignment.upsert({
-			where: {
-				userId_sourceCategoryId_month_year: {
+		const sourceCategory = categories.find((category) => category.id === normalizedSourceCategoryId);
+		const targetCategory = categories.find((category) => category.id === normalizedTargetCategoryId);
+		if (!sourceCategory || !targetCategory) {
+			return res.status(404).json({ message: 'Category not found' });
+		}
+		const overflowStateByCategoryId = await loadMonthlyBudgetOverflowStates(
+			prisma,
+			req.user.id,
+			normalizedMonth,
+			normalizedYear
+		);
+
+		const sourceState = overflowStateByCategoryId.get(normalizedSourceCategoryId);
+		const targetState = overflowStateByCategoryId.get(normalizedTargetCategoryId);
+		if (!sourceState || !targetState) {
+			return res.status(404).json({ message: 'Budget data not found' });
+		}
+
+		const sourceOverage = Math.max(sourceState.rawSpent - sourceState.effectiveBudget, 0);
+		if (sourceOverage <= 0) {
+			return res.status(400).json({ message: 'Source budget is not over the limit' });
+		}
+
+		const targetAvailable = Number(targetState.effectiveBudget - targetState.adjustedSpent);
+		if (targetAvailable < sourceOverage) {
+			return res.status(400).json({ message: 'Target budget does not have enough available funds' });
+		}
+
+		const assignment = await prisma.$transaction(async (tx) => {
+			const currentAssignment = await tx.budgetOverflowAssignment.upsert({
+				where: {
+					userId_sourceCategoryId_month_year: {
+						userId: req.user.id,
+						sourceCategoryId: normalizedSourceCategoryId,
+						month: normalizedMonth,
+						year: normalizedYear,
+					},
+				},
+				update: {
+					targetCategoryId: normalizedTargetCategoryId,
+				},
+				create: {
 					userId: req.user.id,
 					sourceCategoryId: normalizedSourceCategoryId,
+					targetCategoryId: normalizedTargetCategoryId,
 					month: normalizedMonth,
 					year: normalizedYear,
 				},
-			},
-			update: {
-				targetCategoryId: normalizedTargetCategoryId,
-			},
-			create: {
+			});
+
+			const transferTransactionIds = await upsertOverflowTransferTransactions(tx, {
 				userId: req.user.id,
 				sourceCategoryId: normalizedSourceCategoryId,
+				sourceCategoryName: sourceCategory.name,
 				targetCategoryId: normalizedTargetCategoryId,
+				targetCategoryName: targetCategory.name,
 				month: normalizedMonth,
 				year: normalizedYear,
-			},
+				amount: sourceOverage,
+			});
+
+			return {
+				...currentAssignment,
+				transferAmount: sourceOverage,
+				sourceCategoryName: sourceCategory.name,
+				targetCategoryName: targetCategory.name,
+				incomeTransactionId: transferTransactionIds.incomeTransactionId,
+				expenseTransactionId: transferTransactionIds.expenseTransactionId,
+			};
 		});
 
-		const assignment = await prisma.$queryRaw<
-			Array<{
-				id: number;
-				sourceCategoryId: number;
-				sourceCategoryName: string;
-				targetCategoryId: number;
-				targetCategoryName: string;
-				month: number;
-				year: number;
-			}>
-		>(Prisma.sql`
-			SELECT
-				a.id,
-				a.sourceCategoryId,
-				source.name AS sourceCategoryName,
-				a.targetCategoryId,
-				target.name AS targetCategoryName,
-				a.month,
-				a.year
-			FROM BudgetOverflowAssignment a
-			INNER JOIN Category source ON source.id = a.sourceCategoryId
-			INNER JOIN Category target ON target.id = a.targetCategoryId
-			WHERE a.userId = ${req.user.id}
-			  AND a.sourceCategoryId = ${normalizedSourceCategoryId}
-			  AND a.month = ${normalizedMonth}
-			  AND a.year = ${normalizedYear}
-			LIMIT 1
-		`);
-
-		return res.status(200).json(assignment[0]);
+		return res.status(200).json(assignment);
 	} catch (error) {
 		logger.error('Failed to save budget overflow assignment', { error, userId: req.user.id });
 		return res.status(500).json({ message: 'Failed to save budget overflow assignment' });
@@ -2212,13 +2524,22 @@ router.delete('/api/budgets/overflow-assignments/:sourceCategoryId', requireAuth
 			return res.status(400).json({ message: 'Invalid overflow assignment request' });
 		}
 
-		await prisma.budgetOverflowAssignment.deleteMany({
-			where: {
+		await prisma.$transaction(async (tx) => {
+			await tx.budgetOverflowAssignment.deleteMany({
+				where: {
+					userId: req.user.id,
+					sourceCategoryId,
+					month,
+					year,
+				},
+			});
+
+			await deleteOverflowTransferTransactions(tx, {
 				userId: req.user.id,
 				sourceCategoryId,
 				month,
 				year,
-			},
+			});
 		});
 
 		return res.status(204).send();
