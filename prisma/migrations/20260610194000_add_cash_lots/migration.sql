@@ -14,14 +14,15 @@ CREATE TABLE `CashLot` (
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updatedAt` DATETIME(3) NOT NULL,
 
-  UNIQUE INDEX `CashLot_withdrawalTransactionId_key`(`withdrawalTransactionId`),
-  INDEX `CashLot_userId_fkey`(`userId`),
-  INDEX `CashLot_destinationCurrency_withdrawalDate_idx`(`destinationCurrency`, `withdrawalDate`),
-  INDEX `CashLot_user_dest_migration_withdrawal_id_idx`(`userId`, `destinationCurrency`, `migrationStatus`, `withdrawalDate`, `id`),
+	  UNIQUE INDEX `CashLot_withdrawalTransactionId_key`(`withdrawalTransactionId`),
+	  INDEX `CashLot_userId_fkey`(`userId`),
+	  INDEX `CashLot_destinationCurrency_withdrawalDate_idx`(`destinationCurrency`, `withdrawalDate`),
+	  INDEX `CashLot_user_dest_migration_withdrawal_id_idx`(`userId`, `destinationCurrency`, `migrationStatus`, `withdrawalDate`, `id`),
+	  PRIMARY KEY (`id`),
 
-  CONSTRAINT `CashLot_userId_fkey`
-    FOREIGN KEY (`userId`) REFERENCES `User`(`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+	  CONSTRAINT `CashLot_userId_fkey`
+	    FOREIGN KEY (`userId`) REFERENCES `User`(`id`)
+	    ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `CashLot_withdrawalTransactionId_fkey`
     FOREIGN KEY (`withdrawalTransactionId`) REFERENCES `Transaction`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
@@ -37,13 +38,14 @@ CREATE TABLE `CashLotAllocation` (
   `exchangeRate` DECIMAL(10, 6) NOT NULL,
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-  UNIQUE INDEX `cash_lot_allocation_uq`(`cashLotId`, `expenseTransactionId`),
-  INDEX `CashLotAllocation_userId_fkey`(`userId`),
-  INDEX `CashLotAllocation_expenseTransactionId_fkey`(`expenseTransactionId`),
+	  UNIQUE INDEX `cash_lot_allocation_uq`(`cashLotId`, `expenseTransactionId`),
+	  INDEX `CashLotAllocation_userId_fkey`(`userId`),
+	  INDEX `CashLotAllocation_expenseTransactionId_fkey`(`expenseTransactionId`),
+	  PRIMARY KEY (`id`),
 
-  CONSTRAINT `CashLotAllocation_userId_fkey`
-    FOREIGN KEY (`userId`) REFERENCES `User`(`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+	  CONSTRAINT `CashLotAllocation_userId_fkey`
+	    FOREIGN KEY (`userId`) REFERENCES `User`(`id`)
+	    ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `CashLotAllocation_cashLotId_fkey`
     FOREIGN KEY (`cashLotId`) REFERENCES `CashLot`(`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
