@@ -2590,6 +2590,56 @@ router.post('/api/monthly-summaries/share', requireAuth, async (req: Request, re
 	}
 });
 
+router.get('/api/monthly-summaries/share/status', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const month = Number(req.query.month);
+		const year = Number(req.query.year);
+
+		if (!isValidShareMonth(month, year)) {
+			return res.status(400).json({ message: 'month must be 1-12 and year must be valid' });
+		}
+
+		const share = await prisma.sharedMonthlySummary.findFirst({
+			where: {
+				userId: req.user.id,
+				month,
+				year,
+				revokedAt: null,
+			},
+			orderBy: {
+				createdAt: 'desc',
+			},
+		});
+
+		if (!share || (share.expiresAt && share.expiresAt.getTime() < Date.now())) {
+			return res.status(200).json({
+				shared: false,
+				month,
+				year,
+				token: null,
+				title: null,
+				createdAt: null,
+				expiresAt: null,
+				sharePath: null,
+			});
+		}
+
+		return res.status(200).json({
+			shared: true,
+			month: share.month,
+			year: share.year,
+			token: share.token,
+			title: share.title,
+			createdAt: share.createdAt.toISOString(),
+			expiresAt: share.expiresAt ? share.expiresAt.toISOString() : null,
+			sharePath: `/share/${share.token}`,
+		});
+	} catch (error) {
+		logger.error('Failed to fetch shared monthly summary status', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to fetch shared monthly summary status' });
+	}
+});
+
 router.get('/api/public/monthly-summaries/:token', publicMonthlySummaryRateLimit, async (req: Request, res: Response) => {
 	try {
 		const token = String(req.params.token || '').trim();
