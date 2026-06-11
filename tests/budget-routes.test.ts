@@ -373,7 +373,7 @@ describe('Budget Routes', () => {
 		expect(prismaMock.$transaction).toHaveBeenCalled();
 	});
 
-		it('should delete the overflow assignment and its transfer transactions', async () => {
+	it('should delete the overflow assignment and its transfer transactions', async () => {
 		prismaMock.$transaction.mockImplementation(async (callback: unknown) =>
 			Promise.resolve().then(() => {
 				if (typeof callback !== 'function') {
