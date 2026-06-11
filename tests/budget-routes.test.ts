@@ -218,7 +218,7 @@ describe('Budget Routes', () => {
 			targetCategoryId: 22,
 			month: 6,
 			year: 2026,
-			transferAmount: 10,
+			transferAmount: 20,
 			sourceCategoryName: 'Food',
 			targetCategoryName: 'Travel',
 			incomeTransactionId: 101,
@@ -273,6 +273,104 @@ describe('Budget Routes', () => {
 		expect(response.status).toBe(400);
 		expect(response.body).toEqual({ message: 'Target budget does not have enough available funds' });
 		expect(prismaMock.$transaction).not.toHaveBeenCalled();
+	});
+
+	it('should allow overflow assignments when source exceeds the base limit but not limit plus carry-over', async () => {
+		const sourceCategory = createCategory({
+			id: 41,
+			userId: 1,
+			name: 'Food',
+			amountLimit: new Decimal(100),
+		});
+		const targetCategory = createCategory({
+			id: 42,
+			userId: 1,
+			name: 'Travel',
+			amountLimit: new Decimal(200),
+		});
+
+		mockGetOrCreateCurrentPeriods.mockResolvedValue(
+			new Map([
+				[41, { carryOver: new Decimal(50) }],
+				[42, { carryOver: new Decimal(0) }],
+			]) as never
+		);
+
+		prismaMock.category.findMany.mockResolvedValue([sourceCategory, targetCategory] as never);
+		prismaMock.transaction.findMany.mockResolvedValue([
+			{
+				id: 5,
+				type: 'expense',
+				amount: new Decimal(120),
+				categoryId: 41,
+				referenceId: null,
+			},
+			{
+				id: 6,
+				type: 'expense',
+				amount: new Decimal(50),
+				categoryId: 42,
+				referenceId: null,
+			},
+		] as never);
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) =>
+			Promise.resolve().then(() => {
+				if (typeof callback !== 'function') {
+					throw new Error('Expected transaction callback');
+				}
+
+				const transactionMock = {
+					findFirst: jest.fn(async (): Promise<{ id: number } | null> => null),
+					create: jest.fn(async (args: { data: { type?: string } }) => ({
+						id: args.data.type === 'income' ? 201 : 202,
+					})),
+					update: jest.fn(async () => ({ id: 0 })),
+				};
+
+				const txMock = {
+					budgetOverflowAssignment: {
+						upsert: jest.fn(async (): Promise<{
+							id: number;
+							userId: number;
+							sourceCategoryId: number;
+							targetCategoryId: number;
+							month: number;
+							year: number;
+						}> => ({
+							id: 8,
+							userId: 1,
+							sourceCategoryId: 41,
+							targetCategoryId: 42,
+							month: 6,
+							year: 2026,
+						})),
+					},
+					transaction: transactionMock,
+				} as unknown as Prisma.TransactionClient;
+
+				// eslint-disable-next-line n/no-callback-literal
+				return callback(txMock);
+			})
+		);
+
+		const response = await request(app)
+			.post('/api/budgets/overflow-assignments')
+			.send({ sourceCategoryId: 41, targetCategoryId: 42, month: 6, year: 2026 });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			id: 8,
+			sourceCategoryId: 41,
+			targetCategoryId: 42,
+			month: 6,
+			year: 2026,
+			transferAmount: 20,
+			sourceCategoryName: 'Food',
+			targetCategoryName: 'Travel',
+			incomeTransactionId: 201,
+			expenseTransactionId: 202,
+		});
+		expect(prismaMock.$transaction).toHaveBeenCalled();
 	});
 
 	it('should delete the overflow assignment and its transfer transactions', async () => {
