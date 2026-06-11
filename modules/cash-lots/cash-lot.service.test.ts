@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { CashLotService } from './cash-lot.service';
+import { CashLotAllocationService } from './allocation.service';
 import { AppError } from '../../src/lib/appError';
 
 type TestTransaction = {
@@ -21,6 +22,7 @@ describe('CashLotService', () => {
 	beforeEach(() => {
 		service = new CashLotService();
 		db = mockDeep<PrismaClient>();
+		jest.restoreAllMocks();
 		jest.clearAllMocks();
 	});
 
@@ -77,6 +79,107 @@ describe('CashLotService', () => {
 			id: 1,
 			destinationAmount: new Decimal(120000),
 		});
+	});
+
+	it('returns withdrawal lot details by transaction id', async () => {
+		db.cashLot.findFirst.mockResolvedValue({
+			id: 99,
+			userId: 1,
+			withdrawalTransactionId: 77,
+			withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+			sourceAmount: new Decimal(100),
+			sourceCurrency: 'USD',
+			destinationAmount: new Decimal(120000),
+			destinationCurrency: 'ARS',
+			exchangeRate: new Decimal(1200),
+			remainingAmount: new Decimal(120000),
+			migrationStatus: 'linked',
+			createdAt: new Date('2026-04-01T10:00:00.000Z'),
+			updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+			allocations: [],
+			withdrawalTransaction: null,
+		} as never);
+
+		const lot = await service.getWithdrawalLotByTransactionId(77, 1, db as never);
+
+		expect(lot).toMatchObject({
+			id: 99,
+			withdrawalTransactionId: 77,
+		});
+		expect(db.cashLot.findFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					withdrawalTransactionId: 77,
+					userId: 1,
+				},
+			})
+		);
+	});
+
+	it('returns expense allocations by transaction id', async () => {
+		db.cashLotAllocation.findMany.mockResolvedValue([
+			{
+				id: 1,
+				userId: 1,
+				cashLotId: 99,
+				expenseTransactionId: 88,
+				allocatedAmount: new Decimal(5000),
+				exchangeRate: new Decimal(1200),
+				createdAt: new Date('2026-04-02T10:00:00.000Z'),
+				cashLot: {
+					id: 99,
+					userId: 1,
+					withdrawalTransactionId: 77,
+					withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+					sourceAmount: new Decimal(100),
+					sourceCurrency: 'USD',
+					destinationAmount: new Decimal(120000),
+					destinationCurrency: 'ARS',
+					exchangeRate: new Decimal(1200),
+					remainingAmount: new Decimal(115000),
+					migrationStatus: 'linked',
+					createdAt: new Date('2026-04-01T10:00:00.000Z'),
+					updatedAt: new Date('2026-04-02T10:00:00.000Z'),
+					withdrawalTransaction: null,
+				},
+			},
+		] as never);
+
+		const allocations = await service.getExpenseAllocations(88, 1, db as never);
+
+		expect(allocations).toHaveLength(1);
+		expect(db.cashLotAllocation.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					expenseTransactionId: 88,
+					userId: 1,
+				},
+			})
+		);
+	});
+
+	it('throws when creating a withdrawal cash lot with non-positive values', async () => {
+		const transaction: TestTransaction = {
+			id: 13,
+			userId: 1,
+			date: new Date('2026-04-01T10:00:00.000Z'),
+			currency: 'USD',
+			amount: new Decimal(100),
+			originalCurrencyAmount: new Decimal(100),
+		} as never;
+
+		await expect(
+			service.createWithdrawalCashLot(
+				transaction as never,
+				{
+					destinationAmount: 0,
+					destinationCurrency: 'ARS',
+					exchangeRate: 1200,
+				},
+				db as never
+			)
+		).rejects.toMatchObject({ statusCode: 400 });
+		expect(db.cashLot.create).not.toHaveBeenCalled();
 	});
 
 	it('updates an existing withdrawal cash lot when no allocations exist', async () => {
@@ -160,6 +263,50 @@ describe('CashLotService', () => {
 			destinationAmount: new Decimal(130000),
 			remainingAmount: new Decimal(130000),
 		});
+	});
+
+	it('creates a withdrawal cash lot when updating and no cash lot exists yet', async () => {
+		const transaction: TestTransaction = {
+			id: 14,
+			userId: 1,
+			date: new Date('2026-04-03T10:00:00.000Z'),
+			currency: 'USD',
+			amount: new Decimal(100),
+			originalCurrencyAmount: new Decimal(100),
+		} as never;
+
+		db.cashLot.findFirst.mockResolvedValue(null);
+		db.cashLot.create.mockResolvedValue({
+			id: 15,
+			userId: 1,
+			withdrawalTransactionId: 14,
+			withdrawalDate: transaction.date,
+			sourceAmount: new Decimal(100),
+			sourceCurrency: 'USD',
+			destinationAmount: new Decimal(120000),
+			destinationCurrency: 'ARS',
+			exchangeRate: new Decimal(1200),
+			remainingAmount: new Decimal(120000),
+			migrationStatus: 'linked',
+			createdAt: transaction.date,
+			updatedAt: transaction.date,
+		} as never);
+
+		const result = await service.updateWithdrawalCashLot(
+			transaction as never,
+			{
+				destinationAmount: 120000,
+				destinationCurrency: 'ARS',
+				exchangeRate: 1200,
+			},
+			db as never
+		);
+
+		expect(result).toMatchObject({
+			id: 15,
+			destinationAmount: new Decimal(120000),
+		});
+		expect(db.cashLot.create).toHaveBeenCalledTimes(1);
 	});
 
 	it('rejects withdrawal date edits when allocations already exist', async () => {
@@ -272,6 +419,88 @@ describe('CashLotService', () => {
 		});
 		expect(db.cashLot.updateMany).toHaveBeenCalledTimes(2);
 		expect(db.cashLotAllocation.create).toHaveBeenCalledTimes(2);
+	});
+
+	it('throws when a selected cash lot disappears during allocation', async () => {
+		const transaction: TestTransaction = {
+			id: 23,
+			userId: 1,
+			date: new Date('2026-04-02T12:00:00.000Z'),
+			currency: 'ARS',
+			amount: new Decimal(10000),
+			originalCurrencyAmount: new Decimal(10000),
+		} as never;
+
+		db.cashLot.findMany.mockResolvedValue([
+			{
+				id: 1,
+				userId: 1,
+				withdrawalTransactionId: 10,
+				withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+				sourceAmount: new Decimal(100),
+				sourceCurrency: 'USD',
+				destinationAmount: new Decimal(120000),
+				destinationCurrency: 'ARS',
+				exchangeRate: new Decimal(1200),
+				remainingAmount: new Decimal(120000),
+				migrationStatus: 'linked',
+				createdAt: new Date('2026-04-01T10:00:00.000Z'),
+				updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+			},
+		] as never);
+		db.cashLot.updateMany.mockResolvedValue({ count: 0 });
+
+		await expect(service.allocateCashExpense(transaction as never, db as never)).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(db.cashLotAllocation.create).not.toHaveBeenCalled();
+	});
+
+	it('throws when an allocation references a missing lot', async () => {
+		const transaction: TestTransaction = {
+			id: 24,
+			userId: 1,
+			date: new Date('2026-04-02T12:00:00.000Z'),
+			currency: 'ARS',
+			amount: new Decimal(10000),
+			originalCurrencyAmount: new Decimal(10000),
+		} as never;
+
+		db.cashLot.findMany.mockResolvedValue([
+			{
+				id: 1,
+				userId: 1,
+				withdrawalTransactionId: 10,
+				withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+				sourceAmount: new Decimal(100),
+				sourceCurrency: 'USD',
+				destinationAmount: new Decimal(120000),
+				destinationCurrency: 'ARS',
+				exchangeRate: new Decimal(1200),
+				remainingAmount: new Decimal(120000),
+				migrationStatus: 'linked',
+				createdAt: new Date('2026-04-01T10:00:00.000Z'),
+				updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+			},
+		] as never);
+		jest.spyOn(CashLotAllocationService, 'allocateFifo').mockReturnValue({
+			allocations: [
+				{
+					cashLotId: 999,
+					allocatedAmount: 10000,
+					exchangeRate: 1200,
+					sourceEquivalentAmount: 8.33,
+				},
+			],
+			remainingAmount: 0,
+			totalAllocated: 10000,
+		});
+
+		await expect(service.allocateCashExpense(transaction as never, db as never)).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(db.cashLot.updateMany).not.toHaveBeenCalled();
+		expect(db.cashLotAllocation.create).not.toHaveBeenCalled();
 	});
 
 	it('returns a zero allocation result for zero-amount cash expenses', async () => {
@@ -392,6 +621,53 @@ describe('CashLotService', () => {
 		});
 	});
 
+	it('returns zero restorations when an expense has no allocations', async () => {
+		db.cashLotAllocation.findMany.mockResolvedValue([] as never);
+
+		const restored = await service.restoreExpenseAllocations(999, 1, db as never);
+
+		expect(restored).toBe(0);
+		expect(db.cashLot.updateMany).not.toHaveBeenCalled();
+		expect(db.cashLotAllocation.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it('throws when restoring a cash lot that changed concurrently', async () => {
+		db.cashLotAllocation.findMany.mockResolvedValue([
+			{
+				id: 1,
+				userId: 1,
+				cashLotId: 10,
+				expenseTransactionId: 20,
+				allocatedAmount: new Decimal(50000),
+				exchangeRate: new Decimal(1200),
+				createdAt: new Date('2026-04-02T12:00:00.000Z'),
+			},
+		] as never);
+		db.cashLot.findMany.mockResolvedValue([
+			{
+				id: 10,
+				userId: 1,
+				withdrawalTransactionId: 5,
+				withdrawalDate: new Date('2026-04-01T10:00:00.000Z'),
+				sourceAmount: new Decimal(100),
+				sourceCurrency: 'USD',
+				destinationAmount: new Decimal(120000),
+				destinationCurrency: 'ARS',
+				exchangeRate: new Decimal(1200),
+				remainingAmount: new Decimal(25000),
+				migrationStatus: 'linked',
+				createdAt: new Date('2026-04-01T10:00:00.000Z'),
+				updatedAt: new Date('2026-04-02T12:00:00.000Z'),
+			},
+		] as never);
+		db.cashLot.updateMany.mockResolvedValue({ count: 0 });
+
+		await expect(service.restoreExpenseAllocations(20, 1, db as never)).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(db.cashLotAllocation.deleteMany).not.toHaveBeenCalled();
+	});
+
 	it('blocks withdrawal deletion when the lot is already used', async () => {
 		db.cashLot.findFirst.mockResolvedValue({
 			id: 1,
@@ -409,5 +685,14 @@ describe('CashLotService', () => {
 		} as never);
 
 		await expect(service.deleteWithdrawalCashLot(10, 1, db as never)).rejects.toBeInstanceOf(AppError);
+	});
+
+	it('returns null when trying to delete a withdrawal cash lot that does not exist', async () => {
+		db.cashLot.findFirst.mockResolvedValue(null);
+
+		const result = await service.deleteWithdrawalCashLot(999, 1, db as never);
+
+		expect(result).toBeNull();
+		expect(db.cashLot.delete).not.toHaveBeenCalled();
 	});
 });
