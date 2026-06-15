@@ -2447,13 +2447,44 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 		}
 
 		const sourceOverage = Math.max(sourceState.rawSpent - sourceState.limit, 0);
-		if (sourceOverage <= 0) {
-			return res.status(400).json({ message: 'Source budget is not over the limit' });
+		const targetOverage = Math.max(targetState.rawSpent - targetState.limit, 0);
+		const sourceAvailable = Number(sourceState.effectiveBudget - sourceState.adjustedSpent);
+		const targetAvailable = Number(targetState.effectiveBudget - targetState.adjustedSpent);
+
+		let transferPlan:
+			| {
+					sourceCategoryId: number;
+					sourceCategoryName: string;
+					targetCategoryId: number;
+					targetCategoryName: string;
+					amount: number;
+			  }
+			| null = null;
+
+		if (sourceOverage > 0 && targetAvailable >= sourceOverage) {
+			transferPlan = {
+				sourceCategoryId: normalizedSourceCategoryId,
+				sourceCategoryName: sourceCategory.name,
+				targetCategoryId: normalizedTargetCategoryId,
+				targetCategoryName: targetCategory.name,
+				amount: sourceOverage,
+			};
+		} else if (targetOverage > 0 && sourceAvailable >= targetOverage) {
+			transferPlan = {
+				sourceCategoryId: normalizedTargetCategoryId,
+				sourceCategoryName: targetCategory.name,
+				targetCategoryId: normalizedSourceCategoryId,
+				targetCategoryName: sourceCategory.name,
+				amount: targetOverage,
+			};
 		}
 
-		const targetAvailable = Number(targetState.effectiveBudget - targetState.adjustedSpent);
-		if (targetAvailable < sourceOverage) {
-			return res.status(400).json({ message: 'Target budget does not have enough available funds' });
+		if (!transferPlan) {
+			if (sourceOverage <= 0 && targetOverage <= 0) {
+				return res.status(400).json({ message: 'At least one budget must be over the limit to create an overflow assignment' });
+			}
+
+			return res.status(400).json({ message: 'The donor budget does not have enough available funds' });
 		}
 
 		const assignment = await prisma.$transaction(async (tx) => {
@@ -2461,18 +2492,18 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 				where: {
 					userId_sourceCategoryId_month_year: {
 						userId: req.user.id,
-						sourceCategoryId: normalizedSourceCategoryId,
+						sourceCategoryId: transferPlan.sourceCategoryId,
 						month: normalizedMonth,
 						year: normalizedYear,
 					},
 				},
 				update: {
-					targetCategoryId: normalizedTargetCategoryId,
+					targetCategoryId: transferPlan.targetCategoryId,
 				},
 				create: {
 					userId: req.user.id,
-					sourceCategoryId: normalizedSourceCategoryId,
-					targetCategoryId: normalizedTargetCategoryId,
+					sourceCategoryId: transferPlan.sourceCategoryId,
+					targetCategoryId: transferPlan.targetCategoryId,
 					month: normalizedMonth,
 					year: normalizedYear,
 				},
@@ -2480,20 +2511,20 @@ router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Reques
 
 			const transferTransactionIds = await upsertOverflowTransferTransactions(tx, {
 				userId: req.user.id,
-				sourceCategoryId: normalizedSourceCategoryId,
-				sourceCategoryName: sourceCategory.name,
-				targetCategoryId: normalizedTargetCategoryId,
-				targetCategoryName: targetCategory.name,
+				sourceCategoryId: transferPlan.sourceCategoryId,
+				sourceCategoryName: transferPlan.sourceCategoryName,
+				targetCategoryId: transferPlan.targetCategoryId,
+				targetCategoryName: transferPlan.targetCategoryName,
 				month: normalizedMonth,
 				year: normalizedYear,
-				amount: sourceOverage,
+				amount: transferPlan.amount,
 			});
 
 			return {
 				...currentAssignment,
-				transferAmount: sourceOverage,
-				sourceCategoryName: sourceCategory.name,
-				targetCategoryName: targetCategory.name,
+				transferAmount: transferPlan.amount,
+				sourceCategoryName: transferPlan.sourceCategoryName,
+				targetCategoryName: transferPlan.targetCategoryName,
 				incomeTransactionId: transferTransactionIds.incomeTransactionId,
 				expenseTransactionId: transferTransactionIds.expenseTransactionId,
 			};
