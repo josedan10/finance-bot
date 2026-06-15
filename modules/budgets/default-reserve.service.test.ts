@@ -351,8 +351,9 @@ describe('DefaultReserveService', () => {
 		expect(categoryUpdateMock).toHaveBeenCalledWith({
 			where: { id: 88 },
 			data: {
-				currentAmount: 220,
+				currentAmount: expect.anything(),
 			},
 		});
+		expect(categoryUpdateMock.mock.calls[0][0].data.currentAmount.toString()).toBe('220');
 	});
 });

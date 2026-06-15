@@ -190,6 +190,53 @@ describe('Budget Routes', () => {
 		});
 	});
 
+	it('should preserve an existing default reserve when the update omits isDefaultReserve', async () => {
+		const category = createCategory({
+			id: 33,
+			userId: 1,
+			name: 'Emergency reserve',
+			amountLimit: new Decimal(100),
+			budgetType: 'reserve',
+			isDefaultReserve: true,
+		});
+		const updatedCategory = createCategory({
+			...category,
+			isDefaultReserve: true,
+		});
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.category.update.mockResolvedValue(updatedCategory);
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) =>
+			Promise.resolve().then(() => {
+				if (typeof callback !== 'function') {
+					throw new Error('Expected transaction callback');
+				}
+
+				// eslint-disable-next-line n/no-callback-literal
+				return callback({
+					category: {
+						updateMany: jest.fn(),
+						findFirst: jest.fn().mockResolvedValue(category as never),
+						update: jest.fn().mockResolvedValue(updatedCategory as never),
+					},
+				});
+			})
+		);
+
+		const response = await request(app)
+			.put('/api/budgets/33')
+			.send({ limit: 100, type: 'reserve' });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			id: String(updatedCategory.id),
+			category: updatedCategory.name,
+			limit: 100,
+			type: 'reserve',
+			isDefaultReserve: true,
+		});
+	});
+
 	it('should return the backend-calculated monthly budget overview for overflow routing', async () => {
 		const bills = createCategory({
 			id: 18,

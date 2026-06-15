@@ -114,10 +114,11 @@ export class DefaultReserveService {
 				return concurrentAllocation;
 			}
 
+			const currentAmount = new Prisma.Decimal(category.currentAmount ?? 0);
 			await tx.category.update({
 				where: { id: category.id },
 				data: {
-					currentAmount: Number(category.currentAmount ?? 0) + surplus,
+					currentAmount: currentAmount.add(surplus),
 				},
 			});
 

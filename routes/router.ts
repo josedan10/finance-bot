@@ -2277,7 +2277,12 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 		}
 
 		const normalizedBudgetType = type !== undefined ? normalizeBudgetType(type) : (category.budgetType || 'spending');
-		const normalizedIsDefaultReserve = !!isDefaultReserve && normalizedBudgetType === 'reserve';
+		if (isDefaultReserve !== undefined && typeof isDefaultReserve !== 'boolean') {
+			return res.status(400).json({ message: 'Invalid default reserve value' });
+		}
+		const normalizedIsDefaultReserve = isDefaultReserve !== undefined
+			? isDefaultReserve && normalizedBudgetType === 'reserve'
+			: (normalizedBudgetType === 'reserve' ? Boolean(category.isDefaultReserve) : false);
 		const updateData: Prisma.CategoryUpdateInput = {
 			amountLimit: limit,
 			budgetType: normalizedBudgetType,

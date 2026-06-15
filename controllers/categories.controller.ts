@@ -111,7 +111,10 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 		const normalizedCurrentAmount = normalizeOptionalAmount(currentAmount);
 		const normalizedDueDay = normalizeOptionalDueDay(dueDay);
 		const normalizedTargetDate = normalizeOptionalTargetDate(targetDate);
-		const normalizedIsDefaultReserve = !!isDefaultReserve && normalizedBudgetType === 'reserve';
+		if (isDefaultReserve !== undefined && typeof isDefaultReserve !== 'boolean') {
+			throw new Error('Invalid default reserve value');
+		}
+		const normalizedIsDefaultReserve = isDefaultReserve === true && normalizedBudgetType === 'reserve';
 
 		const result = await prisma.$transaction(async (tx) => {
 			if (normalizedIsDefaultReserve) {
@@ -190,6 +193,10 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 			res.status(400).json({ message: 'A category with this name already exists' });
 			return;
 		}
+		if (error instanceof Error && error.message === 'Invalid default reserve value') {
+			res.status(400).json({ message: error.message });
+			return;
+		}
 		logger.error('Failed to create category', { userId: req.user.id, error });
 		res.status(500).json({ message: 'Failed to create category' });
 	}
@@ -252,7 +259,12 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 			const normalizedDueDay = normalizeOptionalDueDay(dueDay);
 			const normalizedTargetDate = normalizeOptionalTargetDate(targetDate);
 			const normalizedBudgetType = budgetType !== undefined ? normalizeBudgetType(budgetType) : existing.budgetType;
-			const normalizedIsDefaultReserve = !!isDefaultReserve && normalizedBudgetType === 'reserve';
+			if (isDefaultReserve !== undefined && typeof isDefaultReserve !== 'boolean') {
+				throw new Error('Invalid default reserve value');
+			}
+			const normalizedIsDefaultReserve = isDefaultReserve !== undefined
+				? isDefaultReserve && normalizedBudgetType === 'reserve'
+				: (normalizedBudgetType === 'reserve' ? Boolean(existing.isDefaultReserve) : false);
 
 			if (normalizedIsDefaultReserve) {
 				await tx.category.updateMany({
@@ -363,6 +375,10 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 		}
 		if (error instanceof Error && error.message === 'Budget period not found') {
 			res.status(404).json({ message: error.message });
+			return;
+		}
+		if (error instanceof Error && error.message === 'Invalid default reserve value') {
+			res.status(400).json({ message: error.message });
 			return;
 		}
 		logger.error('Failed to update category', { userId: req.user.id, id, error });
