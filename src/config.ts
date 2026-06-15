@@ -103,6 +103,7 @@ export const config = {
 		10_000
 	),
 	TRUSTED_PROXIES: process.env.TRUSTED_PROXIES || 'loopback',
+	SECURITY_ALERTS_ENABLED: parseBoolean(process.env.SECURITY_ALERTS_ENABLED, process.env.NODE_ENV === 'production'),
 	SECURITY_DASHBOARD_ALLOWED_ROLES: parseCsvList(process.env.SECURITY_DASHBOARD_ALLOWED_ROLES, ['dev']),
 	SECURITY_DASHBOARD_ROUTE: parseRoutePath(process.env.SECURITY_DASHBOARD_ROUTE, '/ops/security-monitor'),
 	SECURITY_SUSPICIOUS_WINDOW_MS: parseIntegerInRange(process.env.SECURITY_SUSPICIOUS_WINDOW_MS, 300_000, 1_000, 86_400_000),

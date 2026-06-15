@@ -4,6 +4,7 @@ import * as nodemailer from 'nodemailer';
 import { PrismaModule as prisma } from '../../modules/database/database.module';
 import logger from './logger';
 import { redisClient } from './redis';
+import { config } from '../config';
 import {
 	checkActiveSecurityBlock,
 	persistSecurityEvent,
@@ -325,7 +326,7 @@ async function handleSuspiciousActivity(
 }
 
 async function sendSecurityAlert(alert: SecurityAlert): Promise<void> {
-	if (process.env.NODE_ENV === 'test') {
+	if (!config.SECURITY_ALERTS_ENABLED) {
 		return;
 	}
 
