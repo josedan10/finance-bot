@@ -258,19 +258,19 @@ describe('BaseTransactions', () => {
 });
 
 describe('mapTransactionType', () => {
-	it('should map api and internal income types to credit', () => {
-		expect(mapTransactionType('income')).toBe('credit');
-		expect(mapTransactionType('credit')).toBe('credit');
+	it('should map api and internal income types to income', () => {
+		expect(mapTransactionType('income')).toBe('income');
+		expect(mapTransactionType('credit')).toBe('income');
 	});
 
-	it('should map api and internal expense types to debit', () => {
-		expect(mapTransactionType('expense')).toBe('debit');
-		expect(mapTransactionType('debit')).toBe('debit');
+	it('should map api and internal expense types to expense', () => {
+		expect(mapTransactionType('expense')).toBe('expense');
+		expect(mapTransactionType('debit')).toBe('expense');
 	});
 
 	it('should reject invalid or differently-cased values', () => {
 		expect(mapTransactionType('garbage')).toBeNull();
-		expect(mapTransactionType('Income')).toBeNull();
+		expect(mapTransactionType('Income')).toBe('income');
 		expect(mapTransactionType(undefined)).toBeNull();
 	});
 });
@@ -380,16 +380,16 @@ describe('registerManualTransactions', () => {
 	// Tests that the method throws an error if any required field is missing
 	it('should throw an error if any required field is missing', async () => {
 		// Arrange
-		const data = ['amount=100;', 'desc=My description;', 'method=Mercantil Venezuela;', 'type=debit;', 'FOOD/HOME'];
+		const data = ['amount=100;', 'desc=My description;', 'method=Mercantil Venezuela;', 'type=expense;', 'FOOD/HOME'];
 		const sampleData =
-			'amount=100; desc=My description; method=Mercantil Venezuela; type=debit; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
+			'amount=100; desc=My description; method=Mercantil Venezuela; type=expense; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
 
 		// Act & Assert
 		await expect(BaseTransactions.registerManualTransactions(data, 1)).rejects.toThrow(
 			`Invalid data: ${data}... Try with ${sampleData}`
 		);
 
-		const data1 = ['100;', 'My description;', 'Mercantil Venezuela;', 'debit;', 'FOOD/HOME'];
+		const data1 = ['100;', 'My description;', 'Mercantil Venezuela;', 'expense;', 'FOOD/HOME'];
 
 		await expect(BaseTransactions.registerManualTransactions(data1, 1)).rejects.toThrow(
 			`Invalid data: ${data1}... Try with ${sampleData}`
@@ -521,7 +521,7 @@ describe('registerTransactionFromImages', () => {
 				amount: 538.53,
 				originalCurrencyAmount: 538.53,
 				description: 'my petshop TOTAL 538.53 image text 3',
-				type: 'debit',
+				type: 'expense',
 				currency: 'VES',
 				telegramFileIds: 'file_id_1,file_id_2',
 				date: expect.any(Date),
@@ -578,7 +578,7 @@ describe('registerTransactionFromImages', () => {
 				amount: 538.53,
 				originalCurrencyAmount: 538.53,
 				description: 'my petshop TOTAL 538.53 image text 3',
-				type: 'debit',
+				type: 'expense',
 				telegramFileIds: 'file_id_1,file_id_2',
 				date: expect.any(Date),
 				currency: 'VES',

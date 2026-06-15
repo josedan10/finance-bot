@@ -9,6 +9,7 @@ import {
 	isBeloWithdrawDescription,
 } from '../../src/helpers/belo-withdraw.helper';
 import { config } from '../../src/config';
+import { normalizeTransactionType } from '../../src/lib/transaction-type';
 
 export interface OcrReceiptMatch {
 	id: number;
@@ -52,7 +53,7 @@ type ParsedReceiptFields = {
 	description: string;
 	category: string;
 	categoryId?: number;
-	type: 'credit' | 'debit';
+	type: 'income' | 'expense';
 	referenceId?: string;
 };
 
@@ -93,7 +94,7 @@ async function findMatchingBeloWithdraw(
 	const candidates = await prisma.transaction.findMany({
 		where: {
 			userId,
-			type: 'debit',
+			type: { in: ['debit', 'expense'] },
 			currency: parsed.currency,
 			date: {
 				gte: dayStart,
@@ -156,15 +157,12 @@ function buildManualReviewFallback(rawText: string): Pick<
 }
 
 function mapParsedTypeToApiType(type: string | null | undefined): 'income' | 'expense' {
-	if (!type) {
+	const normalizedType = normalizeTransactionType(type);
+	if (!normalizedType) {
 		return 'expense';
 	}
 
-	if (type === 'credit' || type === 'income') {
-		return 'income';
-	}
-
-	return 'expense';
+	return normalizedType;
 }
 
 type NormalizedReceiptDateTime = {
@@ -552,7 +550,7 @@ export async function analyzeReceiptImageForUser(params: {
 				description: aiStructuredResult.description,
 				category: structuredCategory?.name || 'Other',
 				categoryId: structuredCategory?.id,
-				type: aiStructuredResult.type === 'income' ? 'credit' : 'debit',
+				type: aiStructuredResult.type === 'income' ? 'income' : 'expense',
 				referenceId: extractedReferenceId || undefined,
 			};
 		} else {

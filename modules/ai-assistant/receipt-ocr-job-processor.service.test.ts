@@ -42,14 +42,14 @@ describe('receipt-ocr-job-processor.service', () => {
 		jest.clearAllMocks();
 		mockedPrisma.category.findMany.mockResolvedValue([]);
 		mockedPrisma.category.findUnique.mockResolvedValue({ id: 7, name: 'Other' });
-		mockedBaseTransactions.safeCreateTransaction.mockResolvedValue({
+			mockedBaseTransactions.safeCreateTransaction.mockResolvedValue({
 			transaction: {
 				id: 42,
 				date: new Date('2026-04-04T14:45:00.000Z'),
 				description: 'Coffee shop',
 				amount: 19.5,
 				currency: 'USD',
-				type: 'debit',
+				type: 'expense',
 				referenceId: 'ref-123',
 				category: { name: 'Other' },
 			},
@@ -111,7 +111,7 @@ describe('receipt-ocr-job-processor.service', () => {
 				description: 'Coffee shop',
 				amount: 19.5,
 				currency: 'USD',
-				type: 'debit',
+				type: 'expense',
 				categoryId: 7,
 			})
 		);
@@ -213,7 +213,7 @@ describe('receipt-ocr-job-processor.service', () => {
 				description: 'QR payment to Cremolatti Villa Ortuzar',
 				amount: 2.17,
 				currency: 'USD',
-				type: 'debit',
+				type: 'expense',
 				referenceId: 'ref-22',
 				category: { name: 'Food & Dining' },
 			},
@@ -344,7 +344,7 @@ describe('receipt-ocr-job-processor.service', () => {
 		expect(mockedBaseTransactions.safeCreateTransaction).toHaveBeenCalledWith(
 			expect.objectContaining({
 				date: '2026-04-07T08:30:00',
-				type: 'credit',
+				type: 'income',
 			})
 		);
 		expect(result.createdTransaction).toEqual({

@@ -3,6 +3,7 @@ import { BaseTransactions, mapTransactionType } from '../base-transactions/base-
 import { analyzeReceiptImageForUser, type ReceiptAnalysisOutput } from './receipt-analysis.service';
 import type { ReceiptOcrQueueJob } from './receipt-ocr-queue.service';
 import { AppError } from '../../src/lib/appError';
+import { normalizeTransactionType } from '../../src/lib/transaction-type';
 
 export type ReceiptAutoCreatedTransactionPreview = {
 	id: number;
@@ -197,7 +198,7 @@ function normalizeCreatedTransactionPreview(
 		amount: Number(transaction.amount || 0),
 		currency: transaction.currency,
 		category: transaction.category?.name || 'Other',
-		type: transaction.type === 'credit' ? 'income' : 'expense',
+		type: normalizeTransactionType(transaction.type) === 'income' ? 'income' : 'expense',
 		referenceId: transaction.referenceId || null,
 		isDuplicate,
 	};

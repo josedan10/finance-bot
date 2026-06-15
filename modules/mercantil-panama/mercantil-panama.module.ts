@@ -14,7 +14,7 @@ interface TransactionData {
 	referenceId: string;
 	description: string;
 	amount: number;
-	type: 'debit' | 'credit';
+	type: 'expense' | 'income';
 }
 
 interface CategoryWithKeywords {
@@ -72,7 +72,7 @@ class MercantilPanamaModule {
 			const date = new Date(`${year}-${monthNumber}-${day}`);
 			const description = transaction[1];
 			const amount = parseFloat(transaction[3]) || parseFloat(transaction[4]);
-			const type: 'debit' | 'credit' = transaction[3] !== '' ? 'debit' : 'credit';
+			const type: 'expense' | 'income' = transaction[3] !== '' ? 'expense' : 'income';
 
 			const category = categories.find((cat: CategoryWithKeywords) => {
 				return cat.categoryKeyword?.some((catKey) => {

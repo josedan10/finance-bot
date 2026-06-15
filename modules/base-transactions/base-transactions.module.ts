@@ -9,6 +9,7 @@ import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
 import { redisClient } from '../../src/lib/redis';
 import { NotificationFactory } from '../notifications/notification.module';
+import { isExpenseTransactionType, normalizeTransactionType } from '../../src/lib/transaction-type';
 
 type TransactionWithRelations = Prisma.TransactionGetPayload<{
 	include: {
@@ -53,21 +54,8 @@ type DuplicateLookupInput = {
 	referenceId?: string;
 };
 
-export function mapTransactionType(type: unknown): 'credit' | 'debit' | null {
-	if (typeof type !== 'string') {
-		return null;
-	}
-
-	switch (type.trim()) {
-		case 'income':
-		case 'credit':
-			return 'credit';
-		case 'expense':
-		case 'debit':
-			return 'debit';
-		default:
-			return null;
-	}
+export function mapTransactionType(type: unknown): 'income' | 'expense' | null {
+	return normalizeTransactionType(type);
 }
 
 class BaseTransactionsModule {
@@ -225,7 +213,7 @@ class BaseTransactionsModule {
 
 		if (!amount || !description || !paymentMethodName || !type || !categoryName) {
 			const sampleData =
-				'amount=100; desc=My description; method=Mercantil Venezuela; type=debit; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
+				'amount=100; desc=My description; method=Mercantil Venezuela; type=expense; cat=CATEGORY_NAME; currency=VES; date=2021-01-01';
 			throw new Error(`Invalid data: ${data}... Try with ${sampleData}`);
 		}
 
@@ -292,7 +280,7 @@ class BaseTransactionsModule {
 		});
 
 		// Check budget thresholds and send notifications (async, non-blocking)
-		if (type === 'expense' || type === 'debit') {
+		if (isExpenseTransactionType(type)) {
 			NotificationFactory.notifyBudgetThreshold(userId, category.id, Number(transaction.amount)).catch((error) => {
 				logger.error('Failed to check budget notifications', {
 					error: error instanceof Error ? error.message : 'Unknown error',
@@ -530,7 +518,7 @@ class BaseTransactionsModule {
 			description: words.join(' ').slice(0, config.MAX_DESCRIPTION_LENGTH),
 			category: category?.name || 'Other',
 			categoryId: category?.id,
-			type: 'debit' as const,
+			type: 'expense' as const,
 		};
 	}
 
@@ -560,7 +548,7 @@ class BaseTransactionsModule {
 			amount: finalAmount,
 			originalCurrencyAmount: parsed.originalAmount,
 			description: parsed.description,
-			type: 'debit',
+			type: 'expense',
 			date: dayjs(finalDate).toDate(),
 			currency: parsed.currency,
 			telegramFileIds: telegramFileIds.join(','),

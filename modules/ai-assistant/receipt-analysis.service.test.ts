@@ -73,7 +73,7 @@ describe('receipt-analysis.service', () => {
 			description: 'Store ABC',
 			category: 'Food',
 			categoryId: 1,
-			type: 'debit',
+			type: 'expense',
 		});
 		mockedBaseTransactions.findDuplicate.mockResolvedValue({ id: 77 } as unknown as Awaited<
 			ReturnType<typeof BaseTransactions.findDuplicate>
@@ -141,7 +141,7 @@ describe('receipt-analysis.service', () => {
 			description: 'Belo withdrawal',
 			category: 'Transfers',
 			categoryId: 1,
-			type: 'debit',
+			type: 'expense',
 		});
 		mockedBaseTransactions.findDuplicate.mockResolvedValue(null);
 		mockedPrisma.transaction.findMany.mockResolvedValue([

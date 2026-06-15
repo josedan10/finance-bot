@@ -114,8 +114,8 @@ class PaypalModule {
 
 			const date = dayjs(`${correctFormatedDate} ${correctFormatedTime}`).toDate();
 
-			const type = typeToRegister !== 'Cargo' ? 'credit' : 'debit';
-			const removeSign = type === 'debit' ? amount.replace('-', '') : amount;
+			const type = typeToRegister !== 'Cargo' ? 'income' : 'expense';
+			const removeSign = type === 'expense' ? amount.replace('-', '') : amount;
 			const cleanAmount = parseFloat(
 				removeSign.replace('.', '').replace('"', '').replace('"', '').replace('&comma;', '.')
 			);

@@ -2,7 +2,7 @@ export interface ParsedTransaction {
 	amount: number;
 	currency: string;
 	description: string;
-	type: 'debit' | 'credit';
+	type: 'expense' | 'income';
 	paymentMethod: string;
 	category?: string;
 	referenceId?: string;
@@ -49,7 +49,7 @@ const bankNotificationRule: EmailParserRule = {
 			amount,
 			currency: isVES ? 'VES' : 'USD',
 			description: descMatch?.[1]?.trim() || 'Bank transaction',
-			type: isCredit ? 'credit' : 'debit',
+			type: isCredit ? 'income' : 'expense',
 			paymentMethod: 'Mercantil Venezuela',
 			referenceId: refMatch?.[1],
 		};
@@ -84,7 +84,7 @@ const paypalReceiptRule: EmailParserRule = {
 			amount,
 			currency,
 			description: merchantMatch?.[1]?.trim() || 'PayPal transaction',
-			type: isCredit ? 'credit' : 'debit',
+			type: isCredit ? 'income' : 'expense',
 			paymentMethod: 'Paypal',
 		};
 	},
@@ -126,7 +126,7 @@ const subscriptionRule: EmailParserRule = {
 			amount,
 			currency,
 			description: serviceMatch?.[1]?.trim() || 'Subscription renewal',
-			type: 'debit' as const,
+			type: 'expense' as const,
 			paymentMethod: 'Paypal',
 			category: 'ENTERTAINMENT',
 		};
@@ -166,7 +166,7 @@ const invoiceRule: EmailParserRule = {
 			amount,
 			currency,
 			description: vendorMatch?.[1]?.trim() || 'Purchase',
-			type: 'debit' as const,
+			type: 'expense' as const,
 			paymentMethod: 'Paypal',
 			category: 'PURCHASE',
 			referenceId: refMatch?.[1],

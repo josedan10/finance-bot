@@ -50,9 +50,9 @@ export class ReportsModule {
 		return this._prisma.$queryRaw(Prisma.sql`
             SELECT 
               c.name AS category,
-              SUM(CASE WHEN t.type = 'debit' THEN t.amount ELSE 0 END) AS total_debits,
-              SUM(CASE WHEN t.type = 'credit' THEN t.amount ELSE 0 END) AS total_credits,
-              SUM(CASE WHEN t.type = 'debit' THEN t.amount ELSE -t.amount END) AS category_balance
+              SUM(CASE WHEN t.type IN ('debit', 'expense') THEN t.amount ELSE 0 END) AS total_debits,
+              SUM(CASE WHEN t.type IN ('credit', 'income') THEN t.amount ELSE 0 END) AS total_credits,
+              SUM(CASE WHEN t.type IN ('debit', 'expense') THEN t.amount ELSE -t.amount END) AS category_balance
             FROM 
               Transaction t
               LEFT JOIN Category c ON t.categoryId = c.id

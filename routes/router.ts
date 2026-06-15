@@ -36,6 +36,7 @@ import {
 } from '../src/lib/security-path-blocks';
 import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, normalizeOptionalTargetDate } from '../src/lib/budget-normalizers';
 import { normalizeOptionalCoordinate, normalizeTransactionLocationMetadata } from '../src/lib/transaction-location';
+import { normalizeTransactionType } from '../src/lib/transaction-type';
 import { buildSharedMonthlySummary, createShareToken, isValidShareMonth } from '../src/lib/monthly-share-summary';
 import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
 import { createRedisRateLimitMiddleware } from '../src/lib/redis-rate-limit';
@@ -189,7 +190,7 @@ function mapTransactionResponse(tx: TransactionWithCashLots, fallbackCategory?: 
 		category: tx.category?.name ?? fallbackCategory ?? 'Other',
 		paymentMethod: tx.paymentMethod?.name ?? 'Other',
 		paymentMethodId: tx.paymentMethodId,
-		type: tx.type === 'credit' ? 'income' : 'expense',
+		type: normalizeTransactionType(tx.type) === 'income' ? 'income' : 'expense',
 		source: 'manual',
 		referenceId: tx.referenceId ?? undefined,
 		manualDescription: tx.manualDescription ?? undefined,
@@ -316,8 +317,9 @@ function getBudgetOverflowTransactionStateImpact(transaction: BudgetOverflowTran
 } {
 	const amount = getBudgetOverflowTransactionAmount(transaction);
 	const isTransfer = isBudgetOverflowTransferTransaction(transaction.referenceId);
+	const normalizedType = normalizeTransactionType(transaction.type);
 
-	if (transaction.type === 'expense') {
+	if (normalizedType === 'expense') {
 		return {
 			rawSpentDelta: isTransfer ? 0 : amount,
 			adjustedSpentDelta: amount,
@@ -1186,7 +1188,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 				: Number(cashWithdrawalDestinationAmount);
 
 		if (isCashWithdrawal) {
-			if (normalizedType !== 'debit') {
+			if (normalizedType !== 'expense') {
 				return res.status(400).json({ message: 'Withdrawal transactions must be registered as expenses' });
 			}
 
@@ -1299,7 +1301,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 					},
 				});
 
-				if (normalizedType === 'debit' && paymentMethod?.name === 'Cash') {
+				if (normalizedType === 'expense' && paymentMethod?.name === 'Cash') {
 					await CashLotServiceInstance.allocateCashExpense(transaction, tx);
 				}
 			}
@@ -1469,7 +1471,7 @@ router.post('/api/transactions/bulk', requireAuth, async (req: Request, res: Res
 			amount: Number(t.amount),
 			category: t.category?.name,
 			paymentMethod: t.paymentMethod?.name ?? 'Other',
-			type: t.type === 'credit' ? 'income' : 'expense',
+			type: normalizeTransactionType(t.type) === 'income' ? 'income' : 'expense',
 			source: 'upload',
 			referenceId: t.referenceId,
 			currency: t.currency,
@@ -1606,7 +1608,7 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 				? null
 				: Number(cashWithdrawalDestinationAmount);
 
-		if (isCashWithdrawal && normalizedType !== 'debit') {
+		if (isCashWithdrawal && normalizedType !== 'expense') {
 			return res.status(400).json({ message: 'Withdrawal transactions must be registered as expenses' });
 		}
 
@@ -1732,7 +1734,7 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 					},
 					tx
 				);
-			} else if (type === 'expense' && currentPaymentMethod?.name === 'Cash') {
+			} else if (normalizeTransactionType(type) === 'expense' && currentPaymentMethod?.name === 'Cash') {
 				await CashLotServiceInstance.allocateCashExpense(updated, tx);
 			}
 
@@ -1886,7 +1888,7 @@ router.patch('/api/transactions/:id/categorize', requireAuth, async (req: Reques
 			category: updated.category?.name ?? category,
 			paymentMethod: updated.paymentMethod?.name ?? 'Other',
 			paymentMethodId: updated.paymentMethodId,
-			type: updated.type === 'credit' ? 'income' : 'expense',
+			type: normalizeTransactionType(updated.type) === 'income' ? 'income' : 'expense',
 			source: 'manual',
 			referenceId: updated.referenceId ?? undefined,
 			reviewed: updated.reviewed,
@@ -2108,7 +2110,7 @@ router.patch('/api/transactions/:id/review', requireAuth, async (req: Request, r
 			category: updated.category?.name ?? 'Other',
 			paymentMethod: updated.paymentMethod?.name ?? 'Other',
 			paymentMethodId: updated.paymentMethodId,
-			type: updated.type === 'credit' ? 'income' : 'expense',
+			type: normalizeTransactionType(updated.type) === 'income' ? 'income' : 'expense',
 			source: 'manual',
 			referenceId: updated.referenceId ?? undefined,
 			manualDescription: updated.manualDescription ?? undefined,

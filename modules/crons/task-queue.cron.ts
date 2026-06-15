@@ -8,6 +8,7 @@ import { ExchangeCurrencyCronServices } from './exchange-currency/exchange-curre
 import { GmailService } from '../gmail/gmail.module';
 import { emailParser } from '../gmail/email-parser';
 import { BaseTransactions } from '../base-transactions/base-transactions.module';
+import { normalizeTransactionType } from '../../src/lib/transaction-type';
 import dayjs from 'dayjs';
 import { config } from '../../src/config';
 import logger from '../../src/lib/logger';
@@ -317,7 +318,7 @@ export class TaskQueueModule {
 						if (!isDuplicate) {
 							registered++;
 							summaryLines.push(
-								`  ${parsed.type === 'debit' ? '💸' : '💰'} ${parsed.amount} ${parsed.currency} - ${parsed.description} (${ruleName})`
+								`  ${normalizeTransactionType(parsed.type) === 'expense' ? '💸' : '💰'} ${parsed.amount} ${parsed.currency} - ${parsed.description} (${ruleName})`
 							);
 						} else {
 							skipped++;
