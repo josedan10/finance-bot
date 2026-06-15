@@ -315,7 +315,7 @@ describe('receipt-ocr-job-processor.service', () => {
 				description: null,
 				amount: 15,
 				currency: 'USD',
-				type: 'credit',
+				type: 'income',
 				referenceId: null,
 				category: null,
 			},

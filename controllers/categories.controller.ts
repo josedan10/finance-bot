@@ -21,6 +21,7 @@ function mapCategoryBudgetFields(category: {
 	budgetType?: string | null;
 	targetAmount?: unknown;
 	currentAmount?: unknown;
+	isDefaultReserve?: boolean | null;
 	dueDay?: number | null;
 	targetDate?: Date | string | null;
 }) {
@@ -28,6 +29,7 @@ function mapCategoryBudgetFields(category: {
 		budgetType: normalizeBudgetType(category.budgetType),
 		targetAmount: category.targetAmount === null || category.targetAmount === undefined ? null : Number(category.targetAmount),
 		currentAmount: category.currentAmount === null || category.currentAmount === undefined ? null : Number(category.currentAmount),
+		isDefaultReserve: Boolean(category.isDefaultReserve),
 		dueDay: category.dueDay ?? null,
 		targetDate: category.targetDate ? new Date(category.targetDate).toISOString() : null,
 	};
@@ -82,7 +84,7 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
  * Creates a new category and associates keywords.
  */
 export async function createCategory(req: Request, res: Response): Promise<void> {
-	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, isDefaultReserve, dueDay, targetDate } = req.body as {
 		name: string;
 		description?: string;
 		icon?: string;
@@ -92,6 +94,7 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 		budgetType?: string;
 		targetAmount?: number | null;
 		currentAmount?: number | null;
+		isDefaultReserve?: boolean;
 		dueDay?: number | null;
 		targetDate?: string | null;
 	};
@@ -108,8 +111,25 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 		const normalizedCurrentAmount = normalizeOptionalAmount(currentAmount);
 		const normalizedDueDay = normalizeOptionalDueDay(dueDay);
 		const normalizedTargetDate = normalizeOptionalTargetDate(targetDate);
+		if (isDefaultReserve !== undefined && typeof isDefaultReserve !== 'boolean') {
+			throw new Error('Invalid default reserve value');
+		}
+		const normalizedIsDefaultReserve = isDefaultReserve === true && normalizedBudgetType === 'reserve';
 
 		const result = await prisma.$transaction(async (tx) => {
+			if (normalizedIsDefaultReserve) {
+				await tx.category.updateMany({
+					where: {
+						userId: req.user.id,
+						budgetType: 'reserve',
+						isDefaultReserve: true,
+					},
+					data: {
+						isDefaultReserve: false,
+					},
+				});
+			}
+
 			// 1. Create the category
 			const categoryCreateData = {
 					name,
@@ -119,6 +139,7 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 					budgetType: normalizedBudgetType,
 					targetAmount: normalizedTargetAmount === undefined ? null : normalizedTargetAmount,
 					currentAmount: normalizedCurrentAmount === undefined ? null : normalizedCurrentAmount,
+					isDefaultReserve: normalizedIsDefaultReserve,
 					dueDay: normalizedDueDay === undefined ? null : normalizedDueDay,
 					targetDate: normalizedTargetDate === undefined ? null : normalizedTargetDate,
 					isCumulative: !!isCumulative,
@@ -172,6 +193,10 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 			res.status(400).json({ message: 'A category with this name already exists' });
 			return;
 		}
+		if (error instanceof Error && error.message === 'Invalid default reserve value') {
+			res.status(400).json({ message: error.message });
+			return;
+		}
 		logger.error('Failed to create category', { userId: req.user.id, error });
 		res.status(500).json({ message: 'Failed to create category' });
 	}
@@ -182,7 +207,7 @@ export async function createCategory(req: Request, res: Response): Promise<void>
  */
 export async function updateCategory(req: Request, res: Response): Promise<void> {
 	const id = Number(req.params.id);
-	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, currentCarryOver, dueDay, targetDate } = req.body as {
+	const { name, description, icon, amountLimit, keywords, isCumulative, budgetType, targetAmount, currentAmount, currentCarryOver, isDefaultReserve, dueDay, targetDate } = req.body as {
 		name?: string;
 		description?: string;
 		icon?: string;
@@ -193,6 +218,7 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 		targetAmount?: number | null;
 		currentAmount?: number | null;
 		currentCarryOver?: number | null;
+		isDefaultReserve?: boolean;
 		dueDay?: number | null;
 		targetDate?: string | null;
 	};
@@ -232,6 +258,26 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 			const normalizedCurrentAmount = normalizeOptionalAmount(currentAmount);
 			const normalizedDueDay = normalizeOptionalDueDay(dueDay);
 			const normalizedTargetDate = normalizeOptionalTargetDate(targetDate);
+			const normalizedBudgetType = budgetType !== undefined ? normalizeBudgetType(budgetType) : existing.budgetType;
+			if (isDefaultReserve !== undefined && typeof isDefaultReserve !== 'boolean') {
+				throw new Error('Invalid default reserve value');
+			}
+			const normalizedIsDefaultReserve = isDefaultReserve !== undefined
+				? isDefaultReserve && normalizedBudgetType === 'reserve'
+				: (normalizedBudgetType === 'reserve' ? Boolean(existing.isDefaultReserve) : false);
+
+			if (normalizedIsDefaultReserve) {
+				await tx.category.updateMany({
+					where: {
+						userId: req.user.id,
+						budgetType: 'reserve',
+						isDefaultReserve: true,
+					},
+					data: {
+						isDefaultReserve: false,
+					},
+				});
+			}
 
 			// 1. Update category fields
 			const categoryUpdateData = {
@@ -239,9 +285,10 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 						description: description !== undefined ? description : existing.description,
 						icon: icon !== undefined ? icon : (existing as unknown as CategoryWithOptionalIcon).icon,
 						amountLimit: amountLimit !== undefined ? amountLimit : existing.amountLimit,
-						budgetType: budgetType !== undefined ? normalizeBudgetType(budgetType) : existing.budgetType,
+						budgetType: normalizedBudgetType,
 						targetAmount: normalizedTargetAmount !== undefined ? normalizedTargetAmount : existing.targetAmount,
 						currentAmount: normalizedCurrentAmount !== undefined ? normalizedCurrentAmount : existing.currentAmount,
+						isDefaultReserve: normalizedBudgetType === 'reserve' ? normalizedIsDefaultReserve : false,
 						dueDay: normalizedDueDay !== undefined ? normalizedDueDay : existing.dueDay,
 						targetDate: normalizedTargetDate !== undefined ? normalizedTargetDate : existing.targetDate,
 						isCumulative: isCumulative !== undefined ? isCumulative : existing.isCumulative,
@@ -328,6 +375,10 @@ export async function updateCategory(req: Request, res: Response): Promise<void>
 		}
 		if (error instanceof Error && error.message === 'Budget period not found') {
 			res.status(404).json({ message: error.message });
+			return;
+		}
+		if (error instanceof Error && error.message === 'Invalid default reserve value') {
+			res.status(400).json({ message: error.message });
 			return;
 		}
 		logger.error('Failed to update category', { userId: req.user.id, id, error });

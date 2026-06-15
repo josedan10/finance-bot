@@ -32,6 +32,7 @@ model User {
   shops                   Shop[]
   suscriptions            Suscription[]
   sharedMonthlySummaries  SharedMonthlySummary[]
+  monthlyReserveAllocations MonthlyReserveAllocation[]
   transactions            Transaction[]
 }
 
@@ -44,6 +45,7 @@ model Category {
   budgetType       String            @default("spending") @db.VarChar(20)
   targetAmount     Decimal?          @db.Decimal(10, 2)
   currentAmount    Decimal?          @db.Decimal(10, 2)
+  isDefaultReserve Boolean           @default(false)
   dueDay           Int?
   targetDate       DateTime?
   isCumulative     Boolean           @default(false)
@@ -58,6 +60,7 @@ model Category {
   targetFallbackRules BudgetFallbackRule[] @relation("BudgetFallbackTarget")
   sourceOverflowAssignments BudgetOverflowAssignment[] @relation("BudgetOverflowSource")
   targetOverflowAssignments BudgetOverflowAssignment[] @relation("BudgetOverflowTarget")
+  monthlyReserveAllocations MonthlyReserveAllocation[]
 
   @@unique([name, userId])
   @@index([userId], map: "Category_userId_fkey")
@@ -108,6 +111,23 @@ model BudgetPeriod {
 
   @@unique([categoryId, year, month])
   @@index([categoryId], map: "BudgetPeriod_categoryId_fkey")
+}
+
+model MonthlyReserveAllocation {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  categoryId Int
+  month      Int
+  year       Int
+  amount     Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month, year])
+  @@index([categoryId], map: "MonthlyReserveAllocation_categoryId_fkey")
+  @@index([userId], map: "MonthlyReserveAllocation_userId_fkey")
 }
 
 model Keyword {

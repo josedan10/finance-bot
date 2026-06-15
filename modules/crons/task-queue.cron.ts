@@ -17,6 +17,7 @@ import { cleanupOldReceiptProcessingImages } from '../../src/lib/receipt-image-s
 import { ReceiptOcrQueueService } from '../ai-assistant/receipt-ocr-queue.service';
 import { processReceiptOcrJob } from '../ai-assistant/receipt-ocr-job-processor.service';
 import { fetchAndStoreArsUsdRateByDate } from '../../src/helpers/rate.helper';
+import { DefaultReserve } from '../budgets/default-reserve.service';
 
 const CRON_EXPRESSIONS = {
 	createDailyTask: process.env.CRON_CREATE_DAILY_TASK || '0 10,16 * * 1-5',
@@ -26,6 +27,7 @@ const CRON_EXPRESSIONS = {
 	cleanupReceiptProcessingImages: process.env.CRON_CLEAN_RECEIPT_PROCESSING_IMAGES || '0 * * * *',
 	processReceiptOcrQueue: process.env.CRON_PROCESS_RECEIPT_OCR_QUEUE || '*/10 * * * * *',
 	syncArsUsdRate: process.env.CRON_SYNC_ARS_USD_RATE || '0 0,12 * * *',
+	syncDefaultReserve: process.env.CRON_SYNC_DEFAULT_RESERVE || '15 0 * * *',
 };
 
 export class TaskQueueModule {
@@ -70,6 +72,11 @@ export class TaskQueueModule {
 		scheduled: true,
 	});
 
+	private syncDefaultReserve = cron.schedule(CRON_EXPRESSIONS.syncDefaultReserve, this._syncDefaultReserve.bind(this), {
+		timezone: config.CRON_TIMEZONE,
+		scheduled: true,
+	});
+
 	private isProcessingReceiptQueue = false;
 
 	private async withCronLock<T>(lockName: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T | null> {
@@ -102,6 +109,7 @@ export class TaskQueueModule {
 		this.cleanupReceiptProcessingImages.start();
 		this.processReceiptOcrQueue.start();
 		this.syncArsUsdRate.start();
+		this.syncDefaultReserve.start();
 	}
 
 	private async _createDailyExchangeRateTask() {
@@ -223,6 +231,18 @@ export class TaskQueueModule {
 					error,
 					house: config.ARS_USD_EXCHANGE_HOUSE,
 				});
+			}
+		});
+	}
+
+	private async _syncDefaultReserve() {
+		await this.withCronLock('syncDefaultReserve', 900, async () => {
+			try {
+				logger.info('Running cron job to sync default reserve allocations...');
+				const allocations = await DefaultReserve.syncDefaultReserveAllocations(new Date());
+				logger.info('Default reserve sync completed', { count: allocations.length });
+			} catch (error) {
+				logger.error('Error syncing default reserve allocations', { error });
 			}
 		});
 	}

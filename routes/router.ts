@@ -364,6 +364,10 @@ function calculateBudgetOverflowState(
 	};
 }
 
+function roundAmount(value: number): number {
+	return Math.round(value * 100) / 100;
+}
+
 async function loadMonthlyBudgetOverflowStates(
 	db: Prisma.TransactionClient | typeof prisma,
 	userId: number,
@@ -2146,6 +2150,7 @@ router.get('/api/budgets', requireAuth, async (req: Request, res: Response) => {
 				type: category.budgetType || 'spending',
 				targetAmount: category.targetAmount === null ? null : Number(category.targetAmount),
 				currentAmount: category.currentAmount === null ? null : Number(category.currentAmount),
+				isDefaultReserve: Boolean(category.isDefaultReserve),
 				dueDay: category.dueDay ?? null,
 				targetDate: category.targetDate ? category.targetDate.toISOString() : null,
 			}));
@@ -2156,14 +2161,105 @@ router.get('/api/budgets', requireAuth, async (req: Request, res: Response) => {
 	}
 });
 
+router.get('/api/budgets/monthly-overview', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const month = Number(req.query.month);
+		const year = Number(req.query.year);
+
+		if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2000 || year > 2100) {
+			return res.status(400).json({ message: 'month and year are required' });
+		}
+
+		const categories = await prisma.category.findMany({
+			where: {
+				userId: req.user.id,
+				amountLimit: {
+					gt: 0,
+				},
+			},
+			select: {
+				id: true,
+				name: true,
+				amountLimit: true,
+			},
+			orderBy: {
+				name: 'asc',
+			},
+		});
+
+		const overflowStateByCategoryId = await loadMonthlyBudgetOverflowStates(
+			prisma,
+			req.user.id,
+			month,
+			year
+		);
+
+		const budgets = categories
+			.map((category) => {
+				const state = overflowStateByCategoryId.get(category.id);
+				if (!state) {
+					return null;
+				}
+
+				const overage = roundAmount(Math.max(state.rawSpent - state.limit, 0));
+				const adjustedRemaining = roundAmount(state.effectiveBudget - state.adjustedSpent);
+				const percentage = roundAmount(state.effectiveBudget > 0 ? (state.adjustedSpent / state.effectiveBudget) * 100 : 0);
+
+				return {
+					categoryId: category.id,
+					category: category.name,
+					limit: roundAmount(Number(state.limit)),
+					carryOver: roundAmount(Number(state.carryOver)),
+					effectiveBudget: roundAmount(Number(state.effectiveBudget)),
+					rawSpent: roundAmount(Number(state.rawSpent)),
+					adjustedSpent: roundAmount(Number(state.adjustedSpent)),
+					remaining: adjustedRemaining,
+					percentage,
+					overage,
+					status:
+						state.effectiveBudget === 0
+							? 'none'
+							: overage > 0
+								? 'over'
+								: percentage > 80
+									? 'warning'
+									: 'good',
+				};
+			})
+			.filter((budget): budget is NonNullable<typeof budget> => budget !== null)
+			.sort((left, right) => right.rawSpent - left.rawSpent);
+
+		const totals = budgets.reduce(
+			(accumulator, budget) => {
+				accumulator.totalBudget += budget.effectiveBudget;
+				accumulator.totalCarryOver += budget.carryOver;
+				accumulator.remainingBudget += budget.remaining;
+				return accumulator;
+			},
+			{ totalBudget: 0, totalCarryOver: 0, remainingBudget: 0 }
+		);
+
+		return res.status(200).json({
+			month,
+			year,
+			budgets,
+			totals,
+		});
+	} catch (error) {
+		logger.error('Failed to fetch monthly budget overview', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to fetch monthly budget overview' });
+	}
+});
+
 router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		const { limit, type, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
+		const { limit, type, targetAmount, currentAmount, isDefaultReserve, dueDay, targetDate } = req.body as {
 			limit?: number;
 			type?: 'spending' | 'recurring' | 'goal' | 'reserve';
 			targetAmount?: number | null;
 			currentAmount?: number | null;
+			isDefaultReserve?: boolean;
 			dueDay?: number | null;
 			targetDate?: string | null;
 		};
@@ -2180,10 +2276,18 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			return res.status(404).json({ message: 'Category not found' });
 		}
 
-		const updateData: Prisma.CategoryUpdateInput = { amountLimit: limit };
-		if (type !== undefined) {
-			updateData.budgetType = normalizeBudgetType(type);
+		const normalizedBudgetType = type !== undefined ? normalizeBudgetType(type) : (category.budgetType || 'spending');
+		if (isDefaultReserve !== undefined && typeof isDefaultReserve !== 'boolean') {
+			return res.status(400).json({ message: 'Invalid default reserve value' });
 		}
+		const normalizedIsDefaultReserve = isDefaultReserve !== undefined
+			? isDefaultReserve && normalizedBudgetType === 'reserve'
+			: (normalizedBudgetType === 'reserve' ? Boolean(category.isDefaultReserve) : false);
+		const updateData: Prisma.CategoryUpdateInput = {
+			amountLimit: limit,
+			budgetType: normalizedBudgetType,
+			isDefaultReserve: normalizedIsDefaultReserve,
+		};
 		const normalizedTargetAmount = normalizeOptionalAmount(targetAmount);
 		if (normalizedTargetAmount !== undefined) {
 			updateData.targetAmount = normalizedTargetAmount;
@@ -2201,9 +2305,24 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			updateData.targetDate = normalizedTargetDate;
 		}
 
-		const updated = await prisma.category.update({
-			where: { id: category.id },
-			data: updateData,
+		const updated = await prisma.$transaction(async (tx) => {
+			if (normalizedIsDefaultReserve) {
+				await tx.category.updateMany({
+					where: {
+						userId: req.user.id,
+						budgetType: 'reserve',
+						isDefaultReserve: true,
+					},
+					data: {
+						isDefaultReserve: false,
+					},
+				});
+			}
+
+			return await tx.category.update({
+				where: { id: category.id },
+				data: updateData,
+			});
 		});
 
 		res.status(200).json({
@@ -2213,6 +2332,7 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			type: updated.budgetType || 'spending',
 			targetAmount: updated.targetAmount === null ? null : Number(updated.targetAmount),
 			currentAmount: updated.currentAmount === null ? null : Number(updated.currentAmount),
+			isDefaultReserve: Boolean(updated.isDefaultReserve),
 			dueDay: updated.dueDay ?? null,
 			targetDate: updated.targetDate ? updated.targetDate.toISOString() : null,
 		});

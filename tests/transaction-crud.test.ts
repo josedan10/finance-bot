@@ -105,7 +105,7 @@ describe('Transaction API (CRUD)', () => {
 			description: 'Lunch',
 			amount: new Decimal(14),
 			currency: 'USD',
-			type: 'debit',
+			type: 'expense',
 			categoryId: null,
 			paymentMethodId: paymentMethod.id,
 			referenceId: 'abc-123',
@@ -186,7 +186,34 @@ describe('Transaction API (CRUD)', () => {
 		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
 	});
 
-	it('should reject transaction creation when type casing is invalid', async () => {
+	it('should accept capitalized transaction types', async () => {
+		const category = createCategory({ id: 60, userId: 1, name: 'Food' } as never);
+		const paymentMethod = createPaymentMethod({ id: 61, userId: 1, name: 'Cash' } as never);
+		const createdTransaction = createTransaction({
+			id: 62,
+			userId: 1,
+			description: 'Case payload',
+			amount: new Decimal(10),
+			currency: 'USD',
+			type: 'income',
+			categoryId: category.id,
+			paymentMethodId: paymentMethod.id,
+		} as never);
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		jest.spyOn(BaseTransactions, 'safeCreateTransaction').mockResolvedValue({
+			transaction: createdTransaction,
+			isDuplicate: false,
+		} as never);
+		prismaMock.transaction.findFirst.mockResolvedValueOnce({
+			...createdTransaction,
+			category,
+			paymentMethod,
+			cashLot: null,
+			cashLotAllocations: [],
+		} as never);
+
 		const response = await request(app).post('/api/transactions').send({
 			date: '2026-03-20',
 			description: 'Case payload',
@@ -196,9 +223,12 @@ describe('Transaction API (CRUD)', () => {
 			currency: 'USD',
 		});
 
-		expect(response.status).toBe(400);
-		expect(response.body).toEqual({ message: 'Missing or invalid required fields' });
-		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
+		expect(response.status).toBe(201);
+		expect(response.body).toMatchObject({
+			type: 'income',
+			description: 'Case payload',
+		});
+		expect(BaseTransactions.safeCreateTransaction).toHaveBeenCalled();
 	});
 
 	it('should reject transaction creation when googleMapsUrl is invalid', async () => {
@@ -226,7 +256,7 @@ describe('Transaction API (CRUD)', () => {
 			description: 'Flight',
 			amount: new Decimal(120),
 			currency: 'USD',
-			type: 'debit',
+			type: 'expense',
 			paymentMethodId: paymentMethod.id,
 		} as never);
 
@@ -314,7 +344,7 @@ describe('Transaction API (CRUD)', () => {
 			description: 'Netflix subscription',
 			amount: new Decimal(15),
 			currency: 'USD',
-			type: 'debit',
+			type: 'expense',
 			paymentMethodId: paymentMethod.id,
 		} as never);
 		const keyword = createKeyword({ id: 11, userId: 1, name: 'netflix' } as never);
@@ -578,7 +608,7 @@ describe('Transaction API (CRUD)', () => {
 			amount: new Decimal(100),
 			originalCurrencyAmount: new Decimal(100),
 			currency: 'USD',
-			type: 'debit',
+			type: 'expense',
 			paymentMethodId: paymentMethod.id,
 			categoryId: category.id,
 		} as never);
@@ -668,7 +698,7 @@ describe('Transaction API (CRUD)', () => {
 			amount: new Decimal(20000),
 			originalCurrencyAmount: new Decimal(20000),
 			currency: 'ARS',
-			type: 'debit',
+			type: 'expense',
 			categoryId: category.id,
 			paymentMethodId: paymentMethod.id,
 		} as never);
@@ -761,7 +791,7 @@ describe('Transaction API (CRUD)', () => {
 			amount: new Decimal(20000),
 			originalCurrencyAmount: new Decimal(20000),
 			currency: 'ARS',
-			type: 'debit',
+			type: 'expense',
 			categoryId: 31,
 			paymentMethodId: 41,
 		} as never);
@@ -831,7 +861,7 @@ describe('Transaction API (CRUD)', () => {
 			amount: new Decimal(100),
 			originalCurrencyAmount: new Decimal(100),
 			currency: 'USD',
-			type: 'debit',
+			type: 'expense',
 			categoryId: category.id,
 			paymentMethodId: paymentMethod.id,
 		} as never);
