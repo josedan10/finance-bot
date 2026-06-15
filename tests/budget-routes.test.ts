@@ -49,6 +49,21 @@ describe('Budget Routes', () => {
 
 		prismaMock.category.findFirst.mockResolvedValue(category);
 		prismaMock.category.update.mockResolvedValue(updatedCategory);
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) =>
+			Promise.resolve().then(() => {
+				if (typeof callback !== 'function') {
+					throw new Error('Expected transaction callback');
+				}
+
+				// eslint-disable-next-line n/no-callback-literal
+				return callback({
+					category: {
+						updateMany: jest.fn(),
+						update: jest.fn().mockResolvedValue(updatedCategory as never),
+					},
+				});
+			})
+		);
 
 		const response = await request(app)
 			.put('/api/budgets/10')
@@ -62,16 +77,15 @@ describe('Budget Routes', () => {
 			type: 'spending',
 			targetAmount: null,
 			currentAmount: null,
+			isDefaultReserve: false,
 			dueDay: null,
 			targetDate: null,
 		});
 		expect(prismaMock.category.findFirst).toHaveBeenCalledWith({
 			where: { id: 10, userId: 1 },
 		});
-		expect(prismaMock.category.update).toHaveBeenCalledWith({
-			where: { id: category.id },
-			data: { amountLimit: 350 },
-		});
+		expect(prismaMock.category.update).not.toHaveBeenCalled();
+		expect(prismaMock.$transaction).toHaveBeenCalled();
 	});
 
 	it('should return 404 when the budget category does not belong to the authenticated user', async () => {
@@ -127,6 +141,53 @@ describe('Budget Routes', () => {
 			data: { isCumulative: false },
 		});
 		expect(prismaMock.$executeRaw).toHaveBeenCalled();
+	});
+
+	it('should mark a reserve budget as the default reserve', async () => {
+		const category = createCategory({
+			id: 33,
+			userId: 1,
+			name: 'Emergency reserve',
+			amountLimit: new Decimal(100),
+			budgetType: 'reserve',
+			isDefaultReserve: false,
+		});
+		const updatedCategory = createCategory({
+			...category,
+			isDefaultReserve: true,
+		});
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.category.update.mockResolvedValue(updatedCategory);
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) =>
+			Promise.resolve().then(() => {
+				if (typeof callback !== 'function') {
+					throw new Error('Expected transaction callback');
+				}
+
+				// eslint-disable-next-line n/no-callback-literal
+				return callback({
+					category: {
+						updateMany: jest.fn(),
+						findFirst: jest.fn().mockResolvedValue(category as never),
+						update: jest.fn().mockResolvedValue(updatedCategory as never),
+					},
+				});
+			})
+		);
+
+		const response = await request(app)
+			.put('/api/budgets/33')
+			.send({ limit: 100, type: 'reserve', isDefaultReserve: true });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			id: String(updatedCategory.id),
+			category: updatedCategory.name,
+			limit: 100,
+			type: 'reserve',
+			isDefaultReserve: true,
+		});
 	});
 
 	it('should return the backend-calculated monthly budget overview for overflow routing', async () => {

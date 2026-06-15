@@ -37,6 +37,7 @@ describe('Category Routes', () => {
 				// eslint-disable-next-line n/no-callback-literal
 				return callback({
 					category: {
+						updateMany: jest.fn(),
 						create: jest.fn().mockResolvedValue(createdCategory as never),
 					},
 					keyword: {
@@ -55,5 +56,45 @@ describe('Category Routes', () => {
 
 		expect(response.status).toBe(201);
 		expect(response.body.icon).toBe('utensils');
+	});
+
+	it('should mark a reserve category as the default reserve', async () => {
+		const createdCategory = createCategory({
+			id: 2,
+			userId: 1,
+			name: 'Emergency reserve',
+			budgetType: 'reserve',
+			isDefaultReserve: true,
+		} as never);
+
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) =>
+			Promise.resolve().then(() => {
+				if (typeof callback !== 'function') {
+					throw new Error('Expected transaction callback');
+				}
+
+				// eslint-disable-next-line n/no-callback-literal
+				return callback({
+					category: {
+						updateMany: jest.fn(),
+						create: jest.fn().mockResolvedValue(createdCategory as never),
+					},
+					keyword: {
+						upsert: jest.fn(),
+					},
+					categoryKeyword: {
+						create: jest.fn(),
+					},
+				});
+			})
+		);
+
+		const response = await request(app)
+			.post('/api/categories')
+			.send({ name: 'Emergency reserve', budgetType: 'reserve', isDefaultReserve: true, keywords: [] });
+
+		expect(response.status).toBe(201);
+		expect(response.body.budgetType).toBe('reserve');
+		expect(response.body.isDefaultReserve).toBe(true);
 	});
 });

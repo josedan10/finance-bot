@@ -2150,6 +2150,7 @@ router.get('/api/budgets', requireAuth, async (req: Request, res: Response) => {
 				type: category.budgetType || 'spending',
 				targetAmount: category.targetAmount === null ? null : Number(category.targetAmount),
 				currentAmount: category.currentAmount === null ? null : Number(category.currentAmount),
+				isDefaultReserve: Boolean(category.isDefaultReserve),
 				dueDay: category.dueDay ?? null,
 				targetDate: category.targetDate ? category.targetDate.toISOString() : null,
 			}));
@@ -2253,11 +2254,12 @@ router.get('/api/budgets/monthly-overview', requireAuth, async (req: Request, re
 router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		const { limit, type, targetAmount, currentAmount, dueDay, targetDate } = req.body as {
+		const { limit, type, targetAmount, currentAmount, isDefaultReserve, dueDay, targetDate } = req.body as {
 			limit?: number;
 			type?: 'spending' | 'recurring' | 'goal' | 'reserve';
 			targetAmount?: number | null;
 			currentAmount?: number | null;
+			isDefaultReserve?: boolean;
 			dueDay?: number | null;
 			targetDate?: string | null;
 		};
@@ -2274,10 +2276,13 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			return res.status(404).json({ message: 'Category not found' });
 		}
 
-		const updateData: Prisma.CategoryUpdateInput = { amountLimit: limit };
-		if (type !== undefined) {
-			updateData.budgetType = normalizeBudgetType(type);
-		}
+		const normalizedBudgetType = type !== undefined ? normalizeBudgetType(type) : (category.budgetType || 'spending');
+		const normalizedIsDefaultReserve = !!isDefaultReserve && normalizedBudgetType === 'reserve';
+		const updateData: Prisma.CategoryUpdateInput = {
+			amountLimit: limit,
+			budgetType: normalizedBudgetType,
+			isDefaultReserve: normalizedIsDefaultReserve,
+		};
 		const normalizedTargetAmount = normalizeOptionalAmount(targetAmount);
 		if (normalizedTargetAmount !== undefined) {
 			updateData.targetAmount = normalizedTargetAmount;
@@ -2295,9 +2300,24 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			updateData.targetDate = normalizedTargetDate;
 		}
 
-		const updated = await prisma.category.update({
-			where: { id: category.id },
-			data: updateData,
+		const updated = await prisma.$transaction(async (tx) => {
+			if (normalizedIsDefaultReserve) {
+				await tx.category.updateMany({
+					where: {
+						userId: req.user.id,
+						budgetType: 'reserve',
+						isDefaultReserve: true,
+					},
+					data: {
+						isDefaultReserve: false,
+					},
+				});
+			}
+
+			return await tx.category.update({
+				where: { id: category.id },
+				data: updateData,
+			});
 		});
 
 		res.status(200).json({
@@ -2307,6 +2327,7 @@ router.put('/api/budgets/:id', requireAuth, async (req: Request, res: Response) 
 			type: updated.budgetType || 'spending',
 			targetAmount: updated.targetAmount === null ? null : Number(updated.targetAmount),
 			currentAmount: updated.currentAmount === null ? null : Number(updated.currentAmount),
+			isDefaultReserve: Boolean(updated.isDefaultReserve),
 			dueDay: updated.dueDay ?? null,
 			targetDate: updated.targetDate ? updated.targetDate.toISOString() : null,
 		});

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prismaMock } from '../modules/database/database.module.mock';
 import { createCategory, createPaymentMethod, createTransaction } from '../prisma/factories';
 import { Decimal } from '@prisma/client/runtime/library';
+import { BaseTransactions } from '../modules/base-transactions/base-transactions.module';
 
 import app from '../app';
 
@@ -195,7 +196,28 @@ describe('Bulk Import Idempotency', () => {
 		expect(prismaMock.category.findMany).not.toHaveBeenCalled();
 	});
 
-	it('should reject bulk import when a transaction type casing is invalid', async () => {
+	it('should accept capitalized transaction types in bulk import', async () => {
+		const category = createCategory({ id: 20, userId: 1, name: 'Food' } as never);
+		const cashPaymentMethod = createPaymentMethod({ id: 21, userId: 1, name: 'Cash' } as never);
+		const createdTransaction = createTransaction({
+			id: 22,
+			userId: 1,
+			description: 'Case invalid row',
+			amount: new Decimal(20),
+			currency: 'USD',
+			type: 'income',
+			categoryId: category.id,
+			paymentMethodId: cashPaymentMethod.id,
+		} as never);
+
+		prismaMock.category.findMany.mockResolvedValue([category] as never);
+		prismaMock.paymentMethod.findMany.mockResolvedValue([cashPaymentMethod] as never);
+		prismaMock.transaction.findMany.mockResolvedValue([] as never);
+		jest.spyOn(BaseTransactions, 'safeCreateTransaction').mockResolvedValue({
+			transaction: createdTransaction,
+			isDuplicate: false,
+		} as never);
+
 		const response = await request(app)
 			.post('/api/transactions/bulk')
 			.send({
@@ -210,8 +232,12 @@ describe('Bulk Import Idempotency', () => {
 				],
 			});
 
-		expect(response.status).toBe(400);
-		expect(response.body).toEqual({ message: 'Missing or invalid required fields' });
-		expect(prismaMock.transaction.create).not.toHaveBeenCalled();
+		expect(response.status).toBe(201);
+		expect(response.body).toHaveLength(1);
+		expect(response.body[0]).toMatchObject({
+			type: 'income',
+			description: 'Case invalid row',
+		});
+		expect(BaseTransactions.safeCreateTransaction).toHaveBeenCalled();
 	});
 });
