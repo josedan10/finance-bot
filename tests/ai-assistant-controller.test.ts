@@ -153,7 +153,7 @@ describe('AI Assistant Controller', () => {
 
 		expect(saveReceiptProcessingImageMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				publicSubdir: 'receipt-review',
+				publicSubdir: 'receipt-processing',
 				label: 'queue-1',
 			})
 		);

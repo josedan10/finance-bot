@@ -38,6 +38,7 @@ import { normalizeBudgetType, normalizeOptionalAmount, normalizeOptionalDueDay, 
 import { normalizeOptionalCoordinate, normalizeTransactionLocationMetadata } from '../src/lib/transaction-location';
 import { normalizeTransactionType } from '../src/lib/transaction-type';
 import { buildSharedMonthlySummary, createShareToken, isValidShareMonth } from '../src/lib/monthly-share-summary';
+import { RELEASE_GENERATED_AT, RELEASE_VERSION } from '../src/lib/release-meta';
 import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
 import { createRedisRateLimitMiddleware } from '../src/lib/redis-rate-limit';
 import { CashLotServiceInstance } from '../modules/cash-lots/cash-lot.service';
@@ -3505,6 +3506,13 @@ router.get('/api/public/monthly-summaries/:token', publicMonthlySummaryRateLimit
 		logger.error('Failed to fetch shared monthly summary', { error });
 		return res.status(500).json({ message: 'Failed to fetch shared monthly summary' });
 	}
+});
+
+router.get('/api/public/release-meta', (_req: Request, res: Response) => {
+	return res.status(200).json({
+		version: RELEASE_VERSION,
+		generatedAt: RELEASE_GENERATED_AT,
+	});
 });
 
 // ============================================

@@ -265,7 +265,7 @@ export async function queueReceiptAnalysis(req: Request, res: Response): Promise
         requestId,
         baseUrl,
         label: `queue-${index + 1}`,
-        publicSubdir: 'receipt-review',
+        publicSubdir: 'receipt-processing',
       });
 
       queuedFiles.push({
