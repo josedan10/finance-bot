@@ -25,16 +25,31 @@ export interface SharedMonthlySummaryPayload {
     amount: number;
     percentage: number;
   }>;
+  overflowMovements: Array<{
+    id: number;
+    sourceCategoryId: number;
+    sourceCategory: string;
+    amount: number;
+    allocations: Array<{
+      id: number;
+      targetCategoryId: number;
+      targetCategory: string;
+      amount: number;
+    }>;
+  }>;
   budgets: Array<{
     categoryId: number;
     category: string;
     limit: number;
     carryOver: number;
     effectiveBudget: number;
+    rawSpent: number;
     spent: number;
     remaining: number;
     percentage: number;
     status: 'good' | 'warning' | 'over' | 'none';
+    overflowSent: number;
+    overflowReceived: number;
   }>;
 }
 
@@ -118,7 +133,7 @@ export function isValidShareMonth(month: number, year: number) {
 
 export async function buildSharedMonthlySummary(userId: number, month: number, year: number, token: string, title: string | null, createdAt: Date, expiresAt: Date | null): Promise<SharedMonthlySummaryPayload> {
   const { startDate, endDate } = getMonthDateRange(month, year);
-  const [transactions, categories] = await Promise.all([
+  const [transactions, categories, overflowMovementsResult] = await Promise.all([
     prisma.transaction.findMany({
       where: {
         userId,
@@ -153,7 +168,34 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
       },
       orderBy: { name: 'asc' },
     }),
+    prisma.budgetOverflowAssignment.findMany({
+      where: {
+        userId,
+        month,
+        year,
+      },
+      include: {
+        sourceCategory: {
+          select: {
+            name: true,
+          },
+        },
+        allocations: {
+          include: {
+            targetCategory: {
+              select: {
+                name: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+    }),
   ]);
+  const overflowMovements = overflowMovementsResult ?? [];
 
   const visibleTransactions = transactions.filter((transaction) => !isBudgetOverflowTransferTransaction(transaction.referenceId));
   const income = roundAmount(
@@ -178,10 +220,11 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
     budgetCategories.map((category) => category.id),
     startDate
   );
+  const overflowMovementList = Array.isArray(overflowMovements) ? overflowMovements : [];
 
   const budgets = budgetCategories
     .map((category) => {
-      const spent = roundAmount(
+      const rawSpent = roundAmount(
         transactions
           .filter((transaction) => {
             if (transaction.categoryId === category.id) {
@@ -198,19 +241,26 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
           })
           .reduce((sum, transaction) => {
             const amount = Number(transaction.amount ?? 0);
-            const isTransfer = isBudgetOverflowTransferTransaction(transaction.referenceId);
 
             if (transaction.type === 'expense') {
-              return sum + amount;
-            }
-
-            if (isTransfer) {
-              return sum - amount;
+              return isBudgetOverflowTransferTransaction(transaction.referenceId) ? sum : sum + amount;
             }
 
             return sum;
           }, 0)
       );
+      const overflowSent = roundAmount(
+        overflowMovementList
+          .filter((movement) => movement.sourceCategoryId === category.id)
+          .reduce((sum, movement) => sum + Number(movement.amount ?? 0), 0)
+      );
+      const overflowReceived = roundAmount(
+        overflowMovementList
+          .flatMap((movement) => movement.allocations)
+          .filter((allocation) => allocation.targetCategoryId === category.id)
+          .reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0)
+      );
+      const spent = roundAmount(rawSpent + overflowReceived - overflowSent);
       const limit = roundAmount(Number(category.amountLimit ?? 0));
       const carryOver = roundAmount(Number(budgetPeriods.get(category.id)?.carryOver ?? 0));
       const effectiveBudget = roundAmount(limit + carryOver);
@@ -225,10 +275,13 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
         limit,
         carryOver,
         effectiveBudget,
+        rawSpent,
         spent,
         remaining,
         percentage,
         status,
+        overflowSent,
+        overflowReceived,
       };
     })
     .sort((left, right) => right.spent - left.spent);
@@ -253,6 +306,21 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
     .sort((left, right) => right.amount - left.amount)
     .slice(0, 5);
 
+  const overflowMovementSummaries = overflowMovementList
+    .map((movement) => ({
+      id: movement.id,
+      sourceCategoryId: movement.sourceCategoryId,
+      sourceCategory: movement.sourceCategory.name,
+      amount: roundAmount(Number(movement.amount ?? movement.allocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0))),
+      allocations: movement.allocations.map((allocation) => ({
+        id: allocation.id,
+        targetCategoryId: allocation.targetCategoryId,
+        targetCategory: allocation.targetCategory.name,
+        amount: roundAmount(Number(allocation.amount ?? 0)),
+      })),
+    }))
+    .sort((left, right) => left.sourceCategory.localeCompare(right.sourceCategory));
+
   const totalBudget = roundAmount(budgets.reduce((sum, budget) => sum + budget.effectiveBudget, 0));
   const totalCarryOver = roundAmount(budgets.reduce((sum, budget) => sum + budget.carryOver, 0));
   const remainingBudget = roundAmount(budgets.reduce((sum, budget) => sum + budget.remaining, 0));
@@ -275,6 +343,7 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
       remainingBudget,
     },
     topCategories,
+    overflowMovements: overflowMovementSummaries,
     budgets,
   };
 }

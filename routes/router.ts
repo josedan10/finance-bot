@@ -483,100 +483,119 @@ async function loadMonthlyBudgetOverflowStates(
 async function upsertOverflowTransferTransactions(
 	tx: Prisma.TransactionClient,
 	params: {
+		movementId: number;
 		userId: number;
 		sourceCategoryId: number;
 		sourceCategoryName: string;
-		targetCategoryId: number;
-		targetCategoryName: string;
 		month: number;
 		year: number;
-		amount: number;
+		allocations: Array<{
+			targetCategoryId: number;
+			targetCategoryName: string;
+			amount: number;
+		}>;
 	}
-): Promise<{ incomeTransactionId: number; expenseTransactionId: number }> {
+): Promise<{
+	sourceTransactionId: number;
+	allocationTransactionIds: Array<{ targetCategoryId: number; transactionId: number }>;
+}> {
 	const transferDate = new Date(Date.UTC(params.year, params.month - 1, 1, 12, 0, 0, 0));
-	const incomeReferenceId = buildBudgetOverflowTransferReference(
-		params.userId,
-		params.sourceCategoryId,
-		params.month,
-		params.year,
-		'income'
-	);
-	const expenseReferenceId = buildBudgetOverflowTransferReference(
-		params.userId,
-		params.sourceCategoryId,
-		params.month,
-		params.year,
-		'expense'
-	);
+	const sourceReferenceId = buildBudgetOverflowTransferReference({
+		movementId: params.movementId,
+		sourceCategoryId: params.sourceCategoryId,
+		month: params.month,
+		year: params.year,
+		leg: 'source',
+	});
 
-	const [incomeTransaction, expenseTransaction] = await Promise.all([
-		tx.transaction.findFirst({
-			where: {
-				userId: params.userId,
-				referenceId: incomeReferenceId,
-			},
-			select: { id: true },
-		}),
-		tx.transaction.findFirst({
-			where: {
-				userId: params.userId,
-				referenceId: expenseReferenceId,
-			},
-			select: { id: true },
-		}),
-	]);
+	const sourceTransaction = await tx.transaction.findFirst({
+		where: {
+			userId: params.userId,
+			referenceId: sourceReferenceId,
+		},
+		select: { id: true },
+	});
 
-	const incomeDescription = `Budget overflow transfer from ${params.targetCategoryName} to ${params.sourceCategoryName}`;
-	const expenseDescription = `Budget overflow transfer from ${params.sourceCategoryName} to ${params.targetCategoryName}`;
+	const sourceDescription =
+		params.allocations.length === 1
+			? `Budget overflow transfer from ${params.sourceCategoryName} to ${params.allocations[0].targetCategoryName}`
+			: `Budget overflow transfer from ${params.sourceCategoryName} to multiple budgets`;
 
-	const incomePayload = {
+	const sourcePayload = {
 		userId: params.userId,
 		date: transferDate,
-		description: incomeDescription,
-		amount: params.amount,
+		description: sourceDescription,
+		amount: roundAmount(params.allocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0)),
 		currency: 'USD',
 		type: 'income' as const,
 		categoryId: params.sourceCategoryId,
-		referenceId: incomeReferenceId,
-		manualDescription: `Overflow transfer from ${params.targetCategoryName}`,
+		referenceId: sourceReferenceId,
+		manualDescription: `Overflow transfer from ${params.sourceCategoryName}`,
 	};
 
-	const expensePayload = {
-		userId: params.userId,
-		date: transferDate,
-		description: expenseDescription,
-		amount: params.amount,
-		currency: 'USD',
-		type: 'expense' as const,
-		categoryId: params.targetCategoryId,
-		referenceId: expenseReferenceId,
-		manualDescription: `Overflow transfer to ${params.targetCategoryName}`,
-	};
+	const { userId: _sourceUserId, ...sourceUpdatePayload } = sourcePayload;
 
-	const { userId: _incomeUserId, ...incomeUpdatePayload } = incomePayload;
-	const { userId: _expenseUserId, ...expenseUpdatePayload } = expensePayload;
-
-	const createdIncomeTransaction = incomeTransaction
+	const createdSourceTransaction = sourceTransaction
 		? await tx.transaction.update({
-				where: { id: incomeTransaction.id },
-				data: incomeUpdatePayload,
+				where: { id: sourceTransaction.id },
+				data: sourceUpdatePayload,
 		  })
 		: await tx.transaction.create({
-				data: incomePayload,
+				data: sourcePayload,
 		  });
 
-	const createdExpenseTransaction = expenseTransaction
-		? await tx.transaction.update({
-				where: { id: expenseTransaction.id },
-				data: expenseUpdatePayload,
-		  })
-		: await tx.transaction.create({
-				data: expensePayload,
-		  });
+	const allocationTransactionIds: Array<{ targetCategoryId: number; transactionId: number }> = [];
+
+	for (const allocation of params.allocations) {
+		const allocationReferenceId = buildBudgetOverflowTransferReference({
+			movementId: params.movementId,
+			sourceCategoryId: params.sourceCategoryId,
+			targetCategoryId: allocation.targetCategoryId,
+			month: params.month,
+			year: params.year,
+			leg: 'allocation',
+		});
+
+		const existingAllocationTransaction = await tx.transaction.findFirst({
+			where: {
+				userId: params.userId,
+				referenceId: allocationReferenceId,
+			},
+			select: { id: true },
+		});
+
+		const expensePayload = {
+			userId: params.userId,
+			date: transferDate,
+			description: `Budget overflow transfer from ${params.sourceCategoryName} to ${allocation.targetCategoryName}`,
+			amount: allocation.amount,
+			currency: 'USD',
+			type: 'expense' as const,
+			categoryId: allocation.targetCategoryId,
+			referenceId: allocationReferenceId,
+			manualDescription: `Overflow transfer to ${allocation.targetCategoryName}`,
+		};
+
+		const { userId: _allocationUserId, ...allocationUpdatePayload } = expensePayload;
+
+		const createdAllocationTransaction = existingAllocationTransaction
+			? await tx.transaction.update({
+					where: { id: existingAllocationTransaction.id },
+					data: allocationUpdatePayload,
+			  })
+			: await tx.transaction.create({
+					data: expensePayload,
+			  });
+
+		allocationTransactionIds.push({
+			targetCategoryId: allocation.targetCategoryId,
+			transactionId: createdAllocationTransaction.id,
+		});
+	}
 
 	return {
-		incomeTransactionId: createdIncomeTransaction.id,
-		expenseTransactionId: createdExpenseTransaction.id,
+		sourceTransactionId: createdSourceTransaction.id,
+		allocationTransactionIds,
 	};
 }
 
@@ -584,31 +603,23 @@ async function deleteOverflowTransferTransactions(
 	tx: Prisma.TransactionClient,
 	params: {
 		userId: number;
-		sourceCategoryId: number;
-		month: number;
-		year: number;
+		sourceTransactionId?: number | null;
+		allocationTransactionIds: Array<number | null | undefined>;
 	}
 ): Promise<void> {
-	const incomeReferenceId = buildBudgetOverflowTransferReference(
-		params.userId,
-		params.sourceCategoryId,
-		params.month,
-		params.year,
-		'income'
+	const transactionIds = [params.sourceTransactionId, ...params.allocationTransactionIds].filter(
+		(transactionId): transactionId is number => typeof transactionId === 'number'
 	);
-	const expenseReferenceId = buildBudgetOverflowTransferReference(
-		params.userId,
-		params.sourceCategoryId,
-		params.month,
-		params.year,
-		'expense'
-	);
+
+	if (transactionIds.length === 0) {
+		return;
+	}
 
 	await tx.transaction.deleteMany({
 		where: {
 			userId: params.userId,
-			referenceId: {
-				in: [incomeReferenceId, expenseReferenceId],
+			id: {
+				in: transactionIds,
 			},
 		},
 	});
@@ -2648,35 +2659,73 @@ router.get('/api/budgets/overflow-assignments', requireAuth, async (req: Request
 			return res.status(400).json({ message: 'month and year are required' });
 		}
 
-		const assignments = await prisma.$queryRaw<
-			Array<{
-				id: number;
-				sourceCategoryId: number;
-				sourceCategoryName: string;
-				targetCategoryId: number;
-				targetCategoryName: string;
-				month: number;
-				year: number;
-			}>
-		>(Prisma.sql`
-			SELECT
-				a.id,
-				a.sourceCategoryId,
-				source.name AS sourceCategoryName,
-				a.targetCategoryId,
-				target.name AS targetCategoryName,
-				a.month,
-				a.year
-			FROM BudgetOverflowAssignment a
-			INNER JOIN Category source ON source.id = a.sourceCategoryId
-			INNER JOIN Category target ON target.id = a.targetCategoryId
-			WHERE a.userId = ${req.user.id}
-			  AND a.month = ${month}
-			  AND a.year = ${year}
-			ORDER BY source.name ASC
-		`);
+		const assignments = await prisma.budgetOverflowAssignment.findMany({
+			where: {
+				userId: req.user.id,
+				month,
+				year,
+			},
+			include: {
+				sourceCategory: {
+					select: {
+						id: true,
+						name: true,
+					},
+				},
+				targetCategory: {
+					select: {
+						id: true,
+						name: true,
+					},
+				},
+				sourceTransaction: {
+					select: {
+						id: true,
+					},
+				},
+				allocations: {
+					include: {
+						targetCategory: {
+							select: {
+								id: true,
+								name: true,
+							},
+						},
+						targetTransaction: {
+							select: {
+								id: true,
+							},
+						},
+					},
+					orderBy: {
+						createdAt: 'asc',
+					},
+				},
+			},
+		});
 
-		return res.status(200).json(assignments);
+		return res.status(200).json(
+			assignments
+				.map((assignment) => ({
+					id: assignment.id,
+					sourceCategoryId: assignment.sourceCategoryId,
+					sourceCategoryName: assignment.sourceCategory.name,
+					targetCategoryId: assignment.targetCategoryId ?? null,
+					targetCategoryName: assignment.targetCategory?.name ?? null,
+					month: assignment.month,
+					year: assignment.year,
+					amount: Number(assignment.amount ?? assignment.allocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0)),
+					sourceTransactionId: assignment.sourceTransactionId ?? assignment.sourceTransaction?.id ?? null,
+					allocations: assignment.allocations.map((allocation) => ({
+						id: allocation.id,
+						targetCategoryId: allocation.targetCategoryId,
+						targetCategoryName: allocation.targetCategory.name,
+						amount: Number(allocation.amount ?? 0),
+						targetTransactionId: allocation.targetTransactionId ?? allocation.targetTransaction?.id ?? null,
+					})),
+				}))
+				.sort((left, right) => left.sourceCategoryName.localeCompare(right.sourceCategoryName))
+		);
 	} catch (error) {
 		logger.error('Failed to fetch budget overflow assignments', { error, userId: req.user.id });
 		return res.status(500).json({ message: 'Failed to fetch budget overflow assignments' });
@@ -2685,147 +2734,274 @@ router.get('/api/budgets/overflow-assignments', requireAuth, async (req: Request
 
 router.post('/api/budgets/overflow-assignments', requireAuth, async (req: Request, res: Response) => {
 	try {
-		const { sourceCategoryId, targetCategoryId, month, year } = req.body as {
+		const { sourceCategoryId, targetCategoryId, month, year, allocations } = req.body as {
 			sourceCategoryId?: number;
 			targetCategoryId?: number;
 			month?: number;
 			year?: number;
+			allocations?: Array<{
+				targetCategoryId?: number;
+				amount?: number;
+			}>;
 		};
 
 		const normalizedSourceCategoryId: number = Number(sourceCategoryId);
 		const normalizedTargetCategoryId: number = Number(targetCategoryId);
 		const normalizedMonth: number = Number(month);
 		const normalizedYear: number = Number(year);
+		const normalizedAllocations = Array.isArray(allocations)
+			? allocations
+					.map((allocation) => ({
+						targetCategoryId: Number(allocation.targetCategoryId),
+						amount: Number(allocation.amount),
+					}))
+					.filter(
+						(allocation) =>
+							Number.isInteger(allocation.targetCategoryId) &&
+							allocation.targetCategoryId > 0 &&
+							Number.isFinite(allocation.amount) &&
+							allocation.amount > 0
+					)
+			: [];
 
 		if (
 			!Number.isInteger(normalizedSourceCategoryId) ||
-			!Number.isInteger(normalizedTargetCategoryId) ||
-			normalizedSourceCategoryId === normalizedTargetCategoryId ||
 			!Number.isInteger(normalizedMonth) ||
 			normalizedMonth < 1 ||
 			normalizedMonth > 12 ||
 			!Number.isInteger(normalizedYear) ||
 			normalizedYear < 2000 ||
-			normalizedYear > 2100
+			normalizedYear > 2100 ||
+			(normalizedAllocations.length === 0 && !Number.isInteger(normalizedTargetCategoryId))
 		) {
 			return res.status(400).json({ message: 'Invalid overflow assignment request' });
 		}
 
-		const categories = await prisma.category.findMany({
-			where: {
-				id: { in: [normalizedSourceCategoryId, normalizedTargetCategoryId] },
-				userId: req.user.id,
-			},
-		});
+		const assignment = await prisma.$transaction(async (tx) => {
+			const categories = await tx.category.findMany({
+				where: {
+					id: {
+						in: [
+							normalizedSourceCategoryId,
+							...normalizedAllocations.map((allocation) => allocation.targetCategoryId),
+							Number.isInteger(normalizedTargetCategoryId) ? normalizedTargetCategoryId : -1,
+						],
+					},
+					userId: req.user.id,
+				},
+				select: {
+					id: true,
+					name: true,
+				},
+			});
 
-		if (categories.length !== 2) {
-			return res.status(404).json({ message: 'Category not found' });
-		}
-
-		const sourceCategory = categories.find((category) => category.id === normalizedSourceCategoryId);
-		const targetCategory = categories.find((category) => category.id === normalizedTargetCategoryId);
-		if (!sourceCategory || !targetCategory) {
-			return res.status(404).json({ message: 'Category not found' });
-		}
-		const overflowStateByCategoryId = await loadMonthlyBudgetOverflowStates(
-			prisma,
-			req.user.id,
-			normalizedMonth,
-			normalizedYear
-		);
-
-		const sourceState = overflowStateByCategoryId.get(normalizedSourceCategoryId);
-		const targetState = overflowStateByCategoryId.get(normalizedTargetCategoryId);
-		if (!sourceState || !targetState) {
-			return res.status(404).json({ message: 'Budget data not found' });
-		}
-
-		const sourceOverage = Math.max(sourceState.rawSpent - sourceState.limit, 0);
-		const targetOverage = Math.max(targetState.rawSpent - targetState.limit, 0);
-		const sourceAvailable = Number(sourceState.effectiveBudget - sourceState.adjustedSpent);
-		const targetAvailable = Number(targetState.effectiveBudget - targetState.adjustedSpent);
-
-		let transferPlan:
-			| {
-					sourceCategoryId: number;
-					sourceCategoryName: string;
-					targetCategoryId: number;
-					targetCategoryName: string;
-					amount: number;
-			  }
-			| null = null;
-
-		if (sourceOverage > 0 && targetAvailable >= sourceOverage) {
-			transferPlan = {
-				sourceCategoryId: normalizedSourceCategoryId,
-				sourceCategoryName: sourceCategory.name,
-				targetCategoryId: normalizedTargetCategoryId,
-				targetCategoryName: targetCategory.name,
-				amount: sourceOverage,
-			};
-		} else if (targetOverage > 0 && sourceAvailable >= targetOverage) {
-			transferPlan = {
-				sourceCategoryId: normalizedTargetCategoryId,
-				sourceCategoryName: targetCategory.name,
-				targetCategoryId: normalizedSourceCategoryId,
-				targetCategoryName: sourceCategory.name,
-				amount: targetOverage,
-			};
-		}
-
-		if (!transferPlan) {
-			if (sourceOverage <= 0 && targetOverage <= 0) {
-				return res.status(400).json({ message: 'At least one budget must be over the limit to create an overflow assignment' });
+			const sourceCategory = categories.find((category) => category.id === normalizedSourceCategoryId);
+			if (!sourceCategory) {
+				throw new AppError('Category not found', 404);
 			}
 
-			return res.status(400).json({ message: 'The donor budget does not have enough available funds' });
-		}
+			if (normalizedAllocations.some((allocation) => allocation.targetCategoryId === normalizedSourceCategoryId)) {
+				throw new AppError('Invalid overflow assignment request', 400);
+			}
 
-		const assignment = await prisma.$transaction(async (tx) => {
-			const currentAssignment = await tx.budgetOverflowAssignment.upsert({
+			const targetCategoriesById = new Map(categories.map((category) => [category.id, category] as const));
+			if (targetCategoriesById.size !== categories.length) {
+				throw new AppError('Category not found', 404);
+			}
+
+			const uniqueTargetCategoryIds = new Set(normalizedAllocations.map((allocation) => allocation.targetCategoryId));
+			if (uniqueTargetCategoryIds.size !== normalizedAllocations.length) {
+				throw new AppError('Invalid overflow assignment request', 400);
+			}
+
+			const existingAssignment = await tx.budgetOverflowAssignment.findFirst({
 				where: {
-					userId_sourceCategoryId_month_year: {
-						userId: req.user.id,
-						sourceCategoryId: transferPlan.sourceCategoryId,
-						month: normalizedMonth,
-						year: normalizedYear,
-					},
-				},
-				update: {
-					targetCategoryId: transferPlan.targetCategoryId,
-				},
-				create: {
 					userId: req.user.id,
-					sourceCategoryId: transferPlan.sourceCategoryId,
-					targetCategoryId: transferPlan.targetCategoryId,
+					sourceCategoryId: normalizedSourceCategoryId,
 					month: normalizedMonth,
 					year: normalizedYear,
+				},
+				include: {
+					allocations: true,
+				},
+			});
+
+			if (existingAssignment) {
+				await deleteOverflowTransferTransactions(tx, {
+					userId: req.user.id,
+					sourceTransactionId: existingAssignment.sourceTransactionId,
+					allocationTransactionIds: existingAssignment.allocations.map((allocation) => allocation.targetTransactionId),
+				});
+
+				await tx.budgetOverflowAssignment.deleteMany({
+					where: {
+						id: existingAssignment.id,
+						userId: req.user.id,
+					},
+				});
+			}
+
+			const overflowStateByCategoryId = await loadMonthlyBudgetOverflowStates(tx, req.user.id, normalizedMonth, normalizedYear);
+			const sourceState = overflowStateByCategoryId.get(normalizedSourceCategoryId);
+			if (!sourceState) {
+				throw new AppError('Budget data not found', 404);
+			}
+
+			const sourceOverage = roundAmount(Math.max(sourceState.rawSpent - sourceState.limit, 0));
+			const legacyTargetCategoryId = Number(targetCategoryId);
+			const hasLegacyTarget = Number.isInteger(legacyTargetCategoryId) && legacyTargetCategoryId > 0;
+			const legacyTargetState = hasLegacyTarget ? overflowStateByCategoryId.get(legacyTargetCategoryId) : undefined;
+
+			let effectiveSourceCategoryId = normalizedSourceCategoryId;
+			let effectiveSourceCategoryName = sourceCategory.name;
+			let effectiveAllocations = normalizedAllocations.map((allocation) => ({
+				targetCategoryId: allocation.targetCategoryId,
+				targetCategoryName: targetCategoriesById.get(allocation.targetCategoryId)?.name ?? 'Other',
+				amount: allocation.amount,
+			}));
+
+			if (effectiveAllocations.length === 0) {
+				if (!hasLegacyTarget || !legacyTargetState) {
+					throw new AppError('Invalid overflow assignment request', 400);
+				}
+
+				const targetCategory = targetCategoriesById.get(legacyTargetCategoryId);
+				if (!targetCategory) {
+					throw new AppError('Category not found', 404);
+				}
+
+				const targetOverage = roundAmount(Math.max(legacyTargetState.rawSpent - legacyTargetState.limit, 0));
+				const sourceAvailable = Number(sourceState.effectiveBudget - sourceState.adjustedSpent);
+				const targetAvailable = Number(legacyTargetState.effectiveBudget - legacyTargetState.adjustedSpent);
+
+				if (sourceOverage > 0 && targetAvailable >= sourceOverage) {
+					effectiveAllocations = [
+						{
+							targetCategoryId: legacyTargetCategoryId,
+							targetCategoryName: targetCategory.name,
+							amount: sourceOverage,
+						},
+					];
+				} else if (targetOverage > 0 && sourceAvailable >= targetOverage) {
+					effectiveSourceCategoryId = legacyTargetCategoryId;
+					effectiveSourceCategoryName = targetCategory.name;
+					effectiveAllocations = [
+						{
+							targetCategoryId: normalizedSourceCategoryId,
+							targetCategoryName: sourceCategory.name,
+							amount: targetOverage,
+						},
+					];
+				} else if (sourceOverage <= 0 && targetOverage <= 0) {
+					throw new AppError('At least one budget must be over the limit to create an overflow assignment', 400);
+				} else {
+					throw new AppError('The donor budget does not have enough available funds', 400);
+				}
+			} else {
+				if (sourceOverage <= 0) {
+					throw new AppError('At least one budget must be over the limit to create an overflow assignment', 400);
+				}
+
+				const splitTotalAllocationAmount = roundAmount(
+					effectiveAllocations.reduce((sum, allocation) => sum + allocation.amount, 0)
+				);
+
+				if (Math.abs(splitTotalAllocationAmount - sourceOverage) > 0.01) {
+					throw new AppError('Overflow allocations must add up to the full source overflow', 400);
+				}
+
+				for (const allocation of effectiveAllocations) {
+					const targetState = overflowStateByCategoryId.get(allocation.targetCategoryId);
+					if (!targetState) {
+						throw new AppError('Budget data not found', 404);
+					}
+
+					const targetAvailable = Number(targetState.effectiveBudget - targetState.adjustedSpent);
+					if (targetAvailable + 0.01 < allocation.amount) {
+						throw new AppError('The donor budget does not have enough available funds', 400);
+					}
+				}
+			}
+
+			const totalAllocationAmount = roundAmount(
+				effectiveAllocations.reduce((sum, allocation) => sum + allocation.amount, 0)
+			);
+
+			const currentAssignment = await tx.budgetOverflowAssignment.create({
+				data: {
+					userId: req.user.id,
+					sourceCategoryId: effectiveSourceCategoryId,
+					targetCategoryId: effectiveAllocations.length === 1 ? effectiveAllocations[0].targetCategoryId : null,
+					month: normalizedMonth,
+					year: normalizedYear,
+					amount: totalAllocationAmount,
 				},
 			});
 
 			const transferTransactionIds = await upsertOverflowTransferTransactions(tx, {
+				movementId: currentAssignment.id,
 				userId: req.user.id,
-				sourceCategoryId: transferPlan.sourceCategoryId,
-				sourceCategoryName: transferPlan.sourceCategoryName,
-				targetCategoryId: transferPlan.targetCategoryId,
-				targetCategoryName: transferPlan.targetCategoryName,
+				sourceCategoryId: effectiveSourceCategoryId,
+				sourceCategoryName: effectiveSourceCategoryName,
 				month: normalizedMonth,
 				year: normalizedYear,
-				amount: transferPlan.amount,
+				allocations: effectiveAllocations,
+			});
+
+			const allocationRows = await Promise.all(
+				transferTransactionIds.allocationTransactionIds.map((allocationTransaction) =>
+					tx.budgetOverflowAllocation.create({
+						data: {
+							userId: req.user.id,
+							assignmentId: currentAssignment.id,
+							targetCategoryId: allocationTransaction.targetCategoryId,
+							amount:
+								effectiveAllocations.find((allocation) => allocation.targetCategoryId === allocationTransaction.targetCategoryId)
+									?.amount ?? 0,
+							targetTransactionId: allocationTransaction.transactionId,
+						},
+					})
+				)
+			);
+
+			const updatedAssignment = await tx.budgetOverflowAssignment.update({
+				where: { id: currentAssignment.id },
+				data: {
+					sourceTransactionId: transferTransactionIds.sourceTransactionId,
+				},
 			});
 
 			return {
-				...currentAssignment,
-				transferAmount: transferPlan.amount,
-				sourceCategoryName: transferPlan.sourceCategoryName,
-				targetCategoryName: transferPlan.targetCategoryName,
-				incomeTransactionId: transferTransactionIds.incomeTransactionId,
-				expenseTransactionId: transferTransactionIds.expenseTransactionId,
+				id: updatedAssignment.id,
+				sourceCategoryId: updatedAssignment.sourceCategoryId,
+				sourceCategoryName: effectiveSourceCategoryName,
+				targetCategoryId: updatedAssignment.targetCategoryId ?? null,
+				targetCategoryName:
+					updatedAssignment.targetCategoryId == null
+						? null
+						: effectiveAllocations.find((allocation) => allocation.targetCategoryId === updatedAssignment.targetCategoryId)?.targetCategoryName ?? null,
+				month: updatedAssignment.month,
+				year: updatedAssignment.year,
+				amount: Number(updatedAssignment.amount ?? totalAllocationAmount),
+				sourceTransactionId: updatedAssignment.sourceTransactionId ?? null,
+				allocations: allocationRows.map((allocationRow) => ({
+					id: allocationRow.id,
+					targetCategoryId: allocationRow.targetCategoryId,
+					targetCategoryName: targetCategoriesById.get(allocationRow.targetCategoryId)?.name ?? 'Other',
+					amount: Number(allocationRow.amount ?? 0),
+					targetTransactionId: allocationRow.targetTransactionId ?? null,
+				})),
+				transferAmount: totalAllocationAmount,
+				incomeTransactionId: transferTransactionIds.sourceTransactionId,
+				expenseTransactionId: transferTransactionIds.allocationTransactionIds[0]?.transactionId ?? null,
 			};
 		});
 
 		return res.status(200).json(assignment);
 	} catch (error) {
+		if (error instanceof AppError) {
+			return res.status(error.statusCode).json({ message: error.message });
+		}
 		logger.error('Failed to save budget overflow assignment', { error, userId: req.user.id });
 		return res.status(500).json({ message: 'Failed to save budget overflow assignment' });
 	}
@@ -2850,20 +3026,33 @@ router.delete('/api/budgets/overflow-assignments/:sourceCategoryId', requireAuth
 		}
 
 		await prisma.$transaction(async (tx) => {
-			await tx.budgetOverflowAssignment.deleteMany({
+			const assignment = await tx.budgetOverflowAssignment.findFirst({
 				where: {
 					userId: req.user.id,
 					sourceCategoryId,
 					month,
 					year,
 				},
+				include: {
+					allocations: true,
+				},
 			});
+
+			if (!assignment) {
+				return;
+			}
 
 			await deleteOverflowTransferTransactions(tx, {
 				userId: req.user.id,
-				sourceCategoryId,
-				month,
-				year,
+				sourceTransactionId: assignment.sourceTransactionId,
+				allocationTransactionIds: assignment.allocations.map((allocation) => allocation.targetTransactionId),
+			});
+
+			await tx.budgetOverflowAssignment.deleteMany({
+				where: {
+					id: assignment.id,
+					userId: req.user.id,
+				},
 			});
 		});
 
