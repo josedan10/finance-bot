@@ -2,17 +2,27 @@ import { createHash } from 'crypto';
 
 export const BUDGET_OVERFLOW_TRANSFER_REFERENCE_PREFIX = 'bo:';
 
-export type BudgetOverflowTransferLeg = 'income' | 'expense';
+export type BudgetOverflowTransferLeg = 'source' | 'allocation';
 
-export function buildBudgetOverflowTransferReference(
-	userId: number,
-	sourceCategoryId: number,
-	month: number,
-	year: number,
-	leg: BudgetOverflowTransferLeg
-): string {
+export function buildBudgetOverflowTransferReference(params: {
+	movementId: number;
+	sourceCategoryId: number;
+	targetCategoryId?: number | null;
+	month: number;
+	year: number;
+	leg: BudgetOverflowTransferLeg;
+}): string {
 	const digest = createHash('sha1')
-		.update(`${userId}:${sourceCategoryId}:${month}:${year}:${leg}`)
+		.update(
+			[
+				params.movementId,
+				params.sourceCategoryId,
+				params.targetCategoryId ?? 'source',
+				params.month,
+				params.year,
+				params.leg,
+			].join(':')
+		)
 		.digest('base64url')
 		.slice(0, 12);
 

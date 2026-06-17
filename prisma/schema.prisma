@@ -24,6 +24,7 @@ model User {
   notificationPreferences NotificationPreference?
   budgetFallbackRules     BudgetFallbackRule[]
   budgetOverflowAssignments BudgetOverflowAssignment[]
+  budgetOverflowAllocations BudgetOverflowAllocation[]
   paymentMethods          PaymentMethod[]
   cashLots                CashLot[]
   cashLotAllocations      CashLotAllocation[]
@@ -60,6 +61,7 @@ model Category {
   targetFallbackRules BudgetFallbackRule[] @relation("BudgetFallbackTarget")
   sourceOverflowAssignments BudgetOverflowAssignment[] @relation("BudgetOverflowSource")
   targetOverflowAssignments BudgetOverflowAssignment[] @relation("BudgetOverflowTarget")
+  overflowAllocations BudgetOverflowAllocation[] @relation("BudgetOverflowAllocationTarget")
   monthlyReserveAllocations MonthlyReserveAllocation[]
 
   @@unique([name, userId])
@@ -87,18 +89,43 @@ model BudgetOverflowAssignment {
   id               Int      @id @default(autoincrement())
   userId           Int
   sourceCategoryId Int
-  targetCategoryId Int
+  targetCategoryId Int?
   month            Int
   year             Int
+  amount           Decimal? @db.Decimal(10, 2)
+  sourceTransactionId Int?   @unique
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceCategory   Category @relation("BudgetOverflowSource", fields: [sourceCategoryId], references: [id], onDelete: Cascade)
-  targetCategory   Category @relation("BudgetOverflowTarget", fields: [targetCategoryId], references: [id], onDelete: Cascade)
+  targetCategory   Category? @relation("BudgetOverflowTarget", fields: [targetCategoryId], references: [id], onDelete: SetNull)
+  sourceTransaction Transaction? @relation("BudgetOverflowMovementSourceTransaction", fields: [sourceTransactionId], references: [id], onDelete: SetNull)
+  allocations      BudgetOverflowAllocation[]
 
   @@unique([userId, sourceCategoryId, month, year], map: "budget_overflow_assignment_source_month_uq")
   @@index([userId], map: "BudgetOverflowAssignment_userId_fkey")
   @@index([targetCategoryId], map: "BudgetOverflowAssignment_targetCategoryId_fkey")
+  @@index([sourceTransactionId], map: "BudgetOverflowAssignment_sourceTransactionId_fkey")
+}
+
+model BudgetOverflowAllocation {
+  id                 Int      @id @default(autoincrement())
+  userId             Int
+  assignmentId       Int
+  targetCategoryId   Int
+  amount             Decimal  @db.Decimal(10, 2)
+  targetTransactionId Int?   @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignment         BudgetOverflowAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  targetCategory     Category @relation("BudgetOverflowAllocationTarget", fields: [targetCategoryId], references: [id], onDelete: Cascade)
+  targetTransaction  Transaction? @relation("BudgetOverflowAllocationTransaction", fields: [targetTransactionId], references: [id], onDelete: SetNull)
+
+  @@unique([assignmentId, targetCategoryId], map: "budget_overflow_allocation_assignment_target_uq")
+  @@index([userId], map: "BudgetOverflowAllocation_userId_fkey")
+  @@index([targetCategoryId], map: "BudgetOverflowAllocation_targetCategoryId_fkey")
+  @@index([targetTransactionId], map: "BudgetOverflowAllocation_targetTransactionId_fkey")
 }
 
 model BudgetPeriod {
@@ -197,6 +224,8 @@ model Transaction {
   user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   cashLot                CashLot?       @relation("WithdrawalCashLot")
   cashLotAllocations     CashLotAllocation[] @relation("ExpenseCashLotAllocations")
+  budgetOverflowSourceMovement BudgetOverflowAssignment? @relation("BudgetOverflowMovementSourceTransaction")
+  budgetOverflowAllocation BudgetOverflowAllocation? @relation("BudgetOverflowAllocationTransaction")
 
   @@unique([description, referenceId, date, userId])
   @@index([categoryId], map: "Transaction_categoryId_fkey")
