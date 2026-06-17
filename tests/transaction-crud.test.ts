@@ -579,6 +579,136 @@ describe('Transaction API (CRUD)', () => {
 		expect(prismaMock.keyword.findFirst).not.toHaveBeenCalled();
 	});
 
+	it('should rescan only uncategorized or other transactions and reassign by keywords', async () => {
+		const otherCategory = createCategory({ id: 13, userId: 1, name: 'Other' } as never);
+		const transportationCategory = createCategory({ id: 14, userId: 1, name: 'Transportation' } as never);
+
+		prismaMock.category.findMany.mockResolvedValue([
+			{
+				...otherCategory,
+				categoryKeyword: [],
+			},
+			{
+				...transportationCategory,
+				categoryKeyword: [{ keyword: { name: 'uber' } }],
+			},
+		] as never);
+		prismaMock.transaction.findMany.mockResolvedValue([
+			{
+				id: 201,
+				description: 'Uber to work',
+				categoryId: null,
+				category: null,
+				reviewedAt: null,
+			},
+			{
+				id: 202,
+				description: 'No keyword transaction',
+				categoryId: otherCategory.id,
+				category: { name: 'Other' },
+				reviewedAt: new Date('2026-06-05T10:00:00.000Z'),
+			},
+		] as never);
+
+		const response = await request(app)
+			.post('/api/transactions/category-keyword/rescan')
+			.send({ dryRun: true, limit: 50 });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			dryRun: true,
+			matchedTransactionCount: 2,
+			reassignedCount: 1,
+			unmatchedCount: 1,
+		});
+		expect(response.body.changes).toEqual([
+			expect.objectContaining({
+				id: '201',
+				previousCategory: null,
+				newCategory: 'Transportation',
+				newCategoryId: transportationCategory.id,
+				matchedKeyword: 'uber',
+			}),
+		]);
+		expect(prismaMock.transaction.update).not.toHaveBeenCalled();
+	});
+
+	it('should apply keyword rescan without modifying already assigned non-other transactions', async () => {
+		const otherCategory = createCategory({ id: 13, userId: 1, name: 'Other' } as never);
+		const transportationCategory = createCategory({ id: 14, userId: 1, name: 'Transportation' } as never);
+		const foodCategory = createCategory({ id: 15, userId: 1, name: 'Food' } as never);
+		const tx = {
+			transaction: {
+				update: jest.fn().mockResolvedValue({} as never),
+			},
+		};
+
+		prismaMock.category.findMany.mockResolvedValue([
+			{
+				...otherCategory,
+				categoryKeyword: [],
+			},
+			{
+				...transportationCategory,
+				categoryKeyword: [{ keyword: { name: 'uber' } }],
+			},
+			{
+				...foodCategory,
+				categoryKeyword: [{ keyword: { name: 'coffee' } }],
+			},
+		] as never);
+		prismaMock.transaction.findMany.mockResolvedValue([
+			{
+				id: 201,
+				description: 'Uber to work',
+				categoryId: null,
+				category: null,
+				reviewedAt: null,
+			},
+			{
+				id: 202,
+				description: 'No keyword transaction',
+				categoryId: otherCategory.id,
+				category: { name: 'Other' },
+				reviewedAt: new Date('2026-06-05T10:00:00.000Z'),
+			},
+		] as never);
+		prismaMock.$transaction.mockImplementation(async (callback: unknown) => {
+			if (typeof callback !== 'function') {
+				throw new Error('Expected transaction callback');
+			}
+
+			// eslint-disable-next-line n/no-callback-literal
+			return callback(tx as never);
+		});
+
+		const response = await request(app)
+			.post('/api/transactions/category-keyword/rescan')
+			.send({ dryRun: false, limit: 50 });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			dryRun: false,
+			matchedTransactionCount: 2,
+			reassignedCount: 1,
+			unmatchedCount: 1,
+		});
+		expect(tx.transaction.update).toHaveBeenCalledWith({
+			where: { id: 201 },
+			data: {
+				categoryId: transportationCategory.id,
+				reviewed: true,
+				reviewedAt: expect.any(Date),
+			},
+		});
+		expect(tx.transaction.update).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 202 },
+			})
+		);
+		expect(prismaMock.transaction.update).not.toHaveBeenCalled();
+	});
+
 	it('should reject transaction updates when locationName is too long', async () => {
 		const response = await request(app)
 			.patch('/api/transactions/22')

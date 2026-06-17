@@ -56,6 +56,58 @@ function roundAmount(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function pickBestKeywordCategory(
+  description: string | null,
+  categories: {
+    id: number;
+    name: string;
+    categoryKeyword: { keyword: { name: string } }[];
+  }[],
+  excludedKeyword: string
+): { id: number; name: string; matchedKeyword: string } | null {
+  const normalizedDescription = description?.trim().toLowerCase();
+  if (!normalizedDescription) {
+    return null;
+  }
+
+  const matches = categories
+    .map((category) => {
+      const matchedKeywords = category.categoryKeyword
+        .map((entry) => entry.keyword.name.trim().toLowerCase())
+        .filter((keyword) => keyword && keyword !== excludedKeyword && normalizedDescription.includes(keyword));
+
+      if (matchedKeywords.length === 0) {
+        return null;
+      }
+
+      const longestKeyword = matchedKeywords.reduce((longest, keyword) =>
+        keyword.length > longest.length ? keyword : longest
+      );
+
+      return {
+        id: category.id,
+        name: category.name,
+        matchedKeyword: longestKeyword,
+        matchCount: matchedKeywords.length,
+        longestKeywordLength: longestKeyword.length,
+      };
+    })
+    .filter((match): match is NonNullable<typeof match> => match !== null)
+    .sort((left, right) => {
+      if (right.longestKeywordLength !== left.longestKeywordLength) {
+        return right.longestKeywordLength - left.longestKeywordLength;
+      }
+
+      if (right.matchCount !== left.matchCount) {
+        return right.matchCount - left.matchCount;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+
+  return matches[0] ?? null;
+}
+
 export function createShareToken() {
   return crypto.randomBytes(24).toString('hex');
 }
@@ -85,6 +137,20 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
     }),
     prisma.category.findMany({
       where: { userId },
+      select: {
+        id: true,
+        name: true,
+        amountLimit: true,
+        categoryKeyword: {
+          select: {
+            keyword: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
       orderBy: { name: 'asc' },
     }),
   ]);
@@ -103,6 +169,11 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
   const net = roundAmount(income - expenses);
 
   const budgetCategories = categories.filter((category) => Number(category.amountLimit ?? 0) > 0);
+  const categoriesForInference = budgetCategories.map((category) => ({
+    id: category.id,
+    name: category.name,
+    categoryKeyword: category.categoryKeyword ?? [],
+  }));
   const budgetPeriods = await BudgetRollover.getOrCreateCurrentPeriods(
     budgetCategories.map((category) => category.id),
     startDate
@@ -112,7 +183,19 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
     .map((category) => {
       const spent = roundAmount(
         transactions
-          .filter((transaction) => transaction.categoryId === category.id)
+          .filter((transaction) => {
+            if (transaction.categoryId === category.id) {
+              return true;
+            }
+
+            const transactionCategoryName = transaction.category?.name?.trim().toLowerCase() ?? '';
+            if (transactionCategoryName && transactionCategoryName !== 'other') {
+              return false;
+            }
+
+            const inferredCategory = pickBestKeywordCategory(transaction.description ?? null, categoriesForInference, 'other');
+            return inferredCategory?.id === category.id;
+          })
           .reduce((sum, transaction) => {
             const amount = Number(transaction.amount ?? 0);
             const isTransfer = isBudgetOverflowTransferTransaction(transaction.referenceId);
@@ -153,7 +236,11 @@ export async function buildSharedMonthlySummary(userId: number, month: number, y
   const spendingByCategory = new Map<string, number>();
   for (const transaction of visibleTransactions) {
     if (transaction.type !== 'expense') continue;
-    const categoryName = transaction.category?.name ?? 'Other';
+    const normalizedTransactionCategoryName = transaction.category?.name?.trim().toLowerCase() ?? '';
+    const categoryName =
+      !normalizedTransactionCategoryName || normalizedTransactionCategoryName === 'other'
+        ? pickBestKeywordCategory(transaction.description ?? null, categoriesForInference, 'other')?.name ?? 'Other'
+        : transaction.category?.name ?? 'Other';
     spendingByCategory.set(categoryName, roundAmount((spendingByCategory.get(categoryName) ?? 0) + Number(transaction.amount ?? 0)));
   }
 

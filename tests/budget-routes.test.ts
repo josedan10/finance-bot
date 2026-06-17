@@ -250,15 +250,39 @@ describe('Budget Routes', () => {
 			name: 'Education',
 			amountLimit: new Decimal(100),
 		});
+		const transportation = createCategory({
+			id: 19,
+			userId: 1,
+			name: 'Transportation',
+			amountLimit: new Decimal(150),
+		});
 
 		mockGetOrCreateCurrentPeriods.mockResolvedValue(
 			new Map([
 				[18, { carryOver: new Decimal(0) }],
 				[15, { carryOver: new Decimal(0) }],
+				[19, { carryOver: new Decimal(0) }],
 			]) as never
 		);
 
-		prismaMock.category.findMany.mockResolvedValue([bills, education] as never);
+		prismaMock.category.findMany.mockResolvedValue([
+			{
+				...bills,
+				categoryKeyword: [],
+			},
+			{
+				...education,
+				categoryKeyword: [],
+			},
+			{
+				...transportation,
+				categoryKeyword: [
+					{
+						keyword: { name: 'uber' },
+					},
+				],
+			},
+		] as never);
 		prismaMock.transaction.findMany.mockResolvedValue([
 			{
 				id: 626,
@@ -266,6 +290,7 @@ describe('Budget Routes', () => {
 				amount: new Decimal(579.5),
 				categoryId: 18,
 				referenceId: null,
+				description: 'Bill payment',
 			},
 			{
 				id: 625,
@@ -273,6 +298,7 @@ describe('Budget Routes', () => {
 				amount: new Decimal(144),
 				categoryId: 18,
 				referenceId: null,
+				description: 'Another bill',
 			},
 			{
 				id: 627,
@@ -280,6 +306,7 @@ describe('Budget Routes', () => {
 				amount: new Decimal(6.7),
 				categoryId: 18,
 				referenceId: null,
+				description: 'Utility charge',
 			},
 			{
 				id: 658,
@@ -287,6 +314,7 @@ describe('Budget Routes', () => {
 				amount: new Decimal(1),
 				categoryId: 18,
 				referenceId: null,
+				description: 'Small fee',
 			},
 			{
 				id: 659,
@@ -294,6 +322,15 @@ describe('Budget Routes', () => {
 				amount: new Decimal(1),
 				categoryId: 18,
 				referenceId: null,
+				description: 'Small fee',
+			},
+			{
+				id: 660,
+				type: 'expense',
+				amount: new Decimal(50),
+				categoryId: null,
+				referenceId: null,
+				description: 'Uber to work',
 			},
 		] as never);
 
@@ -317,6 +354,15 @@ describe('Budget Routes', () => {
 					limit: 100,
 					rawSpent: 0,
 					adjustedSpent: 0,
+					overage: 0,
+					remaining: 100,
+				}),
+				expect.objectContaining({
+					categoryId: 19,
+					category: 'Transportation',
+					limit: 150,
+					rawSpent: 50,
+					adjustedSpent: 50,
 					overage: 0,
 					remaining: 100,
 				}),
