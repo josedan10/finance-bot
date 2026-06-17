@@ -297,6 +297,7 @@ type BudgetOverflowTransferTransaction = {
 	amount: Prisma.Decimal | number | null;
 	categoryId: number | null;
 	referenceId: string | null;
+	description?: string | null;
 };
 
 type BudgetOverflowState = {
@@ -386,7 +387,17 @@ async function loadMonthlyBudgetOverflowStates(
 			},
 			select: {
 				id: true,
+				name: true,
 				amountLimit: true,
+				categoryKeyword: {
+					select: {
+						keyword: {
+							select: {
+								name: true,
+							},
+						},
+					},
+				},
 			},
 		}),
 		BudgetRollover.getOrCreateCurrentPeriods(
@@ -420,19 +431,40 @@ async function loadMonthlyBudgetOverflowStates(
 				amount: true,
 				categoryId: true,
 				referenceId: true,
+				description: true,
 			},
 		}),
 	]);
 
+	const categoryById = new Map(categories.map((category) => [category.id, category] as const));
+	const categoriesForInference = categories.map((category) => ({
+		id: category.id,
+		name: category.name,
+		categoryKeyword: category.categoryKeyword ?? [],
+	}));
+
+	const inferBudgetCategoryId = (transaction: BudgetOverflowTransferTransaction): number | null => {
+		const category = transaction.categoryId == null ? null : categoryById.get(transaction.categoryId);
+		const normalizedCategoryName = category?.name.trim().toLowerCase() ?? '';
+
+		if (!category || normalizedCategoryName === 'other') {
+			const inferredCategory = pickBestKeywordCategory(transaction.description ?? null, categoriesForInference, 'other');
+			return inferredCategory?.id ?? transaction.categoryId;
+		}
+
+		return transaction.categoryId;
+	};
+
 	const transactionsByCategoryId = new Map<number, BudgetOverflowTransferTransaction[]>();
 	for (const transaction of transactions) {
-		if (transaction.categoryId == null) {
+		const resolvedCategoryId = inferBudgetCategoryId(transaction as BudgetOverflowTransferTransaction);
+		if (resolvedCategoryId == null) {
 			continue;
 		}
 
-		const next = transactionsByCategoryId.get(transaction.categoryId) ?? [];
+		const next = transactionsByCategoryId.get(resolvedCategoryId) ?? [];
 		next.push(transaction as BudgetOverflowTransferTransaction);
-		transactionsByCategoryId.set(transaction.categoryId, next);
+		transactionsByCategoryId.set(resolvedCategoryId, next);
 	}
 
 	const stateByCategoryId = new Map<number, BudgetOverflowState>();
@@ -2071,6 +2103,146 @@ router.post('/api/transactions/category-keyword/reassign', requireAuth, async (r
 	} catch (error) {
 		logger.error('Failed to reassign transactions by keyword', { error, userId: req.user.id });
 		return res.status(500).json({ message: 'Failed to reassign transactions by keyword' });
+	}
+});
+
+router.post('/api/transactions/category-keyword/rescan', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const {
+			month,
+			year,
+			dryRun = true,
+			limit = 1000,
+		} = req.body as {
+			month?: number;
+			year?: number;
+			dryRun?: boolean;
+			limit?: number;
+		};
+
+		const safeLimit = Math.min(Math.max(Number(limit) || 1000, 1), 1000);
+		const normalizedMonth = Number(month);
+		const normalizedYear = Number(year);
+		let dateFilter: {
+			date?: {
+				gte: Date;
+				lt: Date;
+			};
+		} = {};
+
+		if ((month !== undefined || year !== undefined) && (!Number.isInteger(normalizedMonth) || !Number.isInteger(normalizedYear))) {
+			return res.status(400).json({ message: 'month and year must be valid integers when provided' });
+		}
+
+		if (Number.isInteger(normalizedMonth) && Number.isInteger(normalizedYear)) {
+			if (normalizedMonth < 1 || normalizedMonth > 12 || normalizedYear < 2000 || normalizedYear > 2100) {
+				return res.status(400).json({ message: 'month and year are out of range' });
+			}
+
+			dateFilter = {
+				date: {
+					gte: new Date(Date.UTC(normalizedYear, normalizedMonth - 1, 1, 0, 0, 0, 0)),
+					lt: new Date(Date.UTC(normalizedYear, normalizedMonth, 1, 0, 0, 0, 0)),
+				},
+			};
+		}
+
+		const categories = await prisma.category.findMany({
+			where: { userId: req.user.id },
+			select: {
+				id: true,
+				name: true,
+				categoryKeyword: {
+					select: {
+						keyword: {
+							select: {
+								name: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const candidateTransactions = await prisma.transaction.findMany({
+			where: {
+				userId: req.user.id,
+				...dateFilter,
+				OR: [
+					{ categoryId: null },
+					{
+						category: {
+							name: {
+								equals: 'Other',
+							},
+						},
+					},
+				],
+			},
+			select: {
+				id: true,
+				description: true,
+				categoryId: true,
+				reviewedAt: true,
+				category: {
+					select: {
+						name: true,
+					},
+				},
+			},
+			orderBy: {
+				reviewedAt: 'desc',
+			},
+			take: safeLimit,
+		});
+
+		const plannedChanges = candidateTransactions
+			.map((transaction) => {
+				const reassignedCategory = pickBestKeywordCategory(transaction.description ?? null, categories, 'other');
+
+				if (!reassignedCategory || reassignedCategory.id === transaction.categoryId) {
+					return null;
+				}
+
+				return {
+					id: String(transaction.id),
+					description: transaction.description ?? 'No description',
+					previousCategory: transaction.category?.name ?? null,
+					previousCategoryId: transaction.categoryId,
+					newCategory: reassignedCategory.name,
+					newCategoryId: reassignedCategory.id,
+					matchedKeyword: reassignedCategory.matchedKeyword,
+				};
+			})
+			.filter((change): change is NonNullable<typeof change> => change !== null);
+
+		if (!dryRun && plannedChanges.length > 0) {
+			await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+				for (const change of plannedChanges) {
+					await tx.transaction.update({
+						where: { id: Number(change.id) },
+						data: {
+							categoryId: change.newCategoryId,
+							reviewed: true,
+							reviewedAt: new Date(),
+						},
+					});
+				}
+			});
+		}
+
+		return res.status(200).json({
+			dryRun,
+			month: Number.isInteger(normalizedMonth) ? normalizedMonth : null,
+			year: Number.isInteger(normalizedYear) ? normalizedYear : null,
+			matchedTransactionCount: candidateTransactions.length,
+			reassignedCount: plannedChanges.length,
+			unmatchedCount: candidateTransactions.length - plannedChanges.length,
+			changes: plannedChanges,
+		});
+	} catch (error) {
+		logger.error('Failed to rescan transactions by keyword', { error, userId: req.user.id });
+		return res.status(500).json({ message: 'Failed to rescan transactions by keyword' });
 	}
 });
 
