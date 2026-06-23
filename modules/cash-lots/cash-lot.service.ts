@@ -4,6 +4,7 @@ import { PrismaModule } from '../database/database.module';
 import { AppError } from '../../src/lib/appError';
 import logger from '../../src/lib/logger';
 import { CashLotAllocationService, type CashLotSourceRow } from './allocation.service';
+import { normalizeTransactionType } from '../../src/lib/transaction-type';
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -99,8 +100,9 @@ export class CashLotService {
 		},
 		db: DbClient = this.db
 	) {
-		const sourceAmount = roundMoney(toNumber(transaction.originalCurrencyAmount ?? transaction.amount));
-		const sourceCurrency = normalizeCurrency(transaction.currency);
+		const isCashIncome = normalizeTransactionType(transaction.type) === 'income';
+		const sourceAmount = roundMoney(toNumber(isCashIncome ? transaction.amount : transaction.originalCurrencyAmount ?? transaction.amount));
+		const sourceCurrency = isCashIncome ? 'USD' : normalizeCurrency(transaction.currency);
 		const destinationAmount = roundMoney(args.destinationAmount);
 		const destinationCurrency = normalizeCurrency(args.destinationCurrency);
 		const exchangeRate = roundRate(args.exchangeRate);
@@ -149,8 +151,9 @@ export class CashLotService {
 			return this.createWithdrawalCashLot(transaction, args, db);
 		}
 
-		const sourceAmount = roundMoney(toNumber(transaction.originalCurrencyAmount ?? transaction.amount));
-		const sourceCurrency = normalizeCurrency(transaction.currency);
+		const isCashIncome = normalizeTransactionType(transaction.type) === 'income';
+		const sourceAmount = roundMoney(toNumber(isCashIncome ? transaction.amount : transaction.originalCurrencyAmount ?? transaction.amount));
+		const sourceCurrency = isCashIncome ? 'USD' : normalizeCurrency(transaction.currency);
 		const destinationAmount = roundMoney(args.destinationAmount);
 		const destinationCurrency = normalizeCurrency(args.destinationCurrency);
 		const exchangeRate = roundRate(args.exchangeRate);

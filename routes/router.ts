@@ -1298,6 +1298,13 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			finalPaymentMethodId = cashMethod.id;
 		}
 
+		const resolvedPaymentMethod = await prisma.paymentMethod.findFirst({
+			where: {
+				id: finalPaymentMethodId ?? undefined,
+				userId: req.user.id,
+			},
+		});
+
 		// 3. Handle Creation via Gatekeeper (Deduplication & Normalization)
 		const createdTransaction = await prisma.$transaction(async (tx) => {
 			const { transaction, isDuplicate } = await BaseTransactions.safeCreateTransaction(
@@ -1341,15 +1348,24 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 					},
 					tx
 				);
-			} else {
-				const paymentMethod = await tx.paymentMethod.findFirst({
-					where: {
-						id: finalPaymentMethodId ?? undefined,
-						userId: req.user.id,
-					},
-				});
+			} else if (normalizedType === 'income' && resolvedPaymentMethod?.name === 'Cash') {
+				const cashIncomeSourceAmount = Number(transaction.amount ?? 0);
+				const cashIncomeDestinationAmount = Number(transaction.originalCurrencyAmount ?? transaction.amount);
+				const cashIncomeExchangeRate =
+					cashIncomeSourceAmount > 0 ? Math.round((cashIncomeDestinationAmount / cashIncomeSourceAmount) * 1_000_000) / 1_000_000 : 1;
 
-				if (normalizedType === 'expense' && paymentMethod?.name === 'Cash') {
+				await CashLotServiceInstance.createWithdrawalCashLot(
+					transaction,
+					{
+						destinationAmount: cashIncomeDestinationAmount,
+						destinationCurrency: transaction.currency,
+						exchangeRate: cashIncomeExchangeRate,
+						migrationStatus: 'linked',
+					},
+					tx
+				);
+			} else {
+				if (normalizedType === 'expense' && resolvedPaymentMethod?.name === 'Cash') {
 					await CashLotServiceInstance.allocateCashExpense(transaction, tx);
 				}
 			}
@@ -1737,28 +1753,39 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			}
 
 			const shouldMaintainWithdrawalCashLot =
-				Boolean(existingTransaction.cashLot) || Boolean(isCashWithdrawal);
+				Boolean(existingTransaction.cashLot) ||
+				Boolean(isCashWithdrawal) ||
+				(normalizeTransactionType(type) === 'income' && currentPaymentMethod?.name === 'Cash');
 
 			if (shouldMaintainWithdrawalCashLot) {
 				if (
 					!normalizedCashWithdrawalDestinationCurrency &&
 					!existingTransaction.cashLot &&
-					!isCashWithdrawal
+					!isCashWithdrawal &&
+					normalizeTransactionType(type) !== 'income'
 				) {
 					throw new AppError('Withdrawal destination currency is required', 400);
 				}
 
-				const withdrawalDestinationAmount =
-					normalizedCashWithdrawalDestinationAmount ??
-					(Math.round(Number(amount) * Number(
-						normalizedCashWithdrawalExchangeRate ??
-							(existingTransaction.cashLot ? Number(existingTransaction.cashLot.exchangeRate ?? 0) : 0)
-					) * 100) / 100);
+				const isCashIncome = normalizeTransactionType(type) === 'income' && currentPaymentMethod?.name === 'Cash';
+				const withdrawalDestinationAmount = isCashIncome
+					? Number(normalizedAmounts.originalCurrencyAmount ?? normalizedAmounts.amount)
+					: normalizedCashWithdrawalDestinationAmount ??
+						(Math.round(Number(amount) * Number(
+							normalizedCashWithdrawalExchangeRate ??
+								(existingTransaction.cashLot ? Number(existingTransaction.cashLot.exchangeRate ?? 0) : 0)
+						) * 100) / 100);
 				const withdrawalDestinationCurrency =
-					normalizedCashWithdrawalDestinationCurrency ||
+					(isCashIncome
+						? normalizedAmounts.currency
+						: normalizedCashWithdrawalDestinationCurrency) ||
 					(existingTransaction.cashLot ? existingTransaction.cashLot.destinationCurrency : '');
 				const withdrawalExchangeRate =
-					normalizedCashWithdrawalExchangeRate ??
+					(isCashIncome
+						? (Number(normalizedAmounts.amount) > 0
+							? Math.round((Number(normalizedAmounts.originalCurrencyAmount ?? normalizedAmounts.amount) / Number(normalizedAmounts.amount)) * 1_000_000) / 1_000_000
+							: 1)
+						: normalizedCashWithdrawalExchangeRate) ??
 					(existingTransaction.cashLot ? Number(existingTransaction.cashLot.exchangeRate ?? 0) : null);
 
 				if (

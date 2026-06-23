@@ -81,6 +81,63 @@ describe('CashLotService', () => {
 		});
 	});
 
+	it('creates a cash income lot using the normalized amount as source and the original amount as destination', async () => {
+		const incomeDate = new Date('2026-04-01T10:00:00.000Z');
+		const transaction = {
+			id: 11,
+			userId: 1,
+			date: incomeDate,
+			currency: 'ARS',
+			type: 'income',
+			amount: new Decimal(2.5),
+			originalCurrencyAmount: new Decimal(2500),
+		} as never;
+
+		db.cashLot.create.mockResolvedValue({
+			id: 2,
+			userId: 1,
+			withdrawalTransactionId: 11,
+			withdrawalDate: incomeDate,
+			sourceAmount: new Decimal(2.5),
+			sourceCurrency: 'USD',
+			destinationAmount: new Decimal(2500),
+			destinationCurrency: 'ARS',
+			exchangeRate: new Decimal(1000),
+			remainingAmount: new Decimal(2500),
+			migrationStatus: 'linked',
+			createdAt: new Date('2026-04-01T10:00:00.000Z'),
+			updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+		} as never);
+
+		const result = await service.createWithdrawalCashLot(
+			transaction as never,
+			{
+				destinationAmount: 2500,
+				destinationCurrency: 'ARS',
+				exchangeRate: 1000,
+			},
+			db as never
+		);
+
+		expect(db.cashLot.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				userId: 1,
+				withdrawalTransactionId: 11,
+				sourceAmount: 2.5,
+				sourceCurrency: 'USD',
+				destinationAmount: 2500,
+				destinationCurrency: 'ARS',
+				exchangeRate: 1000,
+				remainingAmount: 2500,
+				migrationStatus: 'linked',
+			}),
+		});
+		expect(result).toMatchObject({
+			id: 2,
+			destinationAmount: new Decimal(2500),
+		});
+	});
+
 	it('returns withdrawal lot details by transaction id', async () => {
 		db.cashLot.findFirst.mockResolvedValue({
 			id: 99,

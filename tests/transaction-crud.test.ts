@@ -818,6 +818,92 @@ describe('Transaction API (CRUD)', () => {
 		});
 	});
 
+	it('should create a cash lot when posting a cash income transaction', async () => {
+		const category = createCategory({ id: 31, userId: 1, name: 'Salary' } as never);
+		const paymentMethod = createPaymentMethod({ id: 41, userId: 1, name: 'Cash' } as never);
+		const incomeTransaction = createTransaction({
+			id: 302,
+			userId: 1,
+			description: 'Cash salary',
+			amount: new Decimal(2500),
+			originalCurrencyAmount: new Decimal(2500),
+			currency: 'USD',
+			type: 'income',
+			paymentMethodId: paymentMethod.id,
+			categoryId: category.id,
+		} as never);
+		const incomeCashLot = {
+			id: 2,
+			userId: 1,
+			withdrawalTransactionId: incomeTransaction.id,
+			withdrawalDate: incomeTransaction.date,
+			sourceAmount: new Decimal(2500),
+			sourceCurrency: 'USD',
+			destinationAmount: new Decimal(2500),
+			destinationCurrency: 'USD',
+			exchangeRate: new Decimal(1),
+			remainingAmount: new Decimal(2500),
+			migrationStatus: 'linked',
+			createdAt: new Date('2026-04-01T10:00:00.000Z'),
+			updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+			allocations: [],
+			withdrawalTransaction: {
+				...incomeTransaction,
+				category,
+				paymentMethod,
+			},
+		};
+
+		prismaMock.category.findFirst.mockResolvedValue(category);
+		prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
+		jest.spyOn(BaseTransactions, 'safeCreateTransaction').mockResolvedValue({
+			transaction: incomeTransaction,
+			isDuplicate: false,
+		} as never);
+		cashLotServiceMock.createWithdrawalCashLot.mockResolvedValue(incomeCashLot);
+		prismaMock.transaction.findFirst.mockResolvedValueOnce({
+			...incomeTransaction,
+			category,
+			paymentMethod,
+			cashLot: incomeCashLot,
+			cashLotAllocations: [],
+		} as never);
+
+		const response = await request(app).post('/api/transactions').send({
+			date: '2026-04-01',
+			description: 'Cash salary',
+			amount: 2500,
+			category: 'Salary',
+			type: 'income',
+			paymentMethodId: paymentMethod.id,
+			currency: 'USD',
+		});
+
+		expect(response.status).toBe(201);
+		expect(response.body).toMatchObject({
+			id: '302',
+			type: 'income',
+			cashLot: {
+				destinationAmount: 2500,
+				destinationCurrency: 'USD',
+				exchangeRate: 1,
+				remainingAmount: 2500,
+			},
+		});
+		expect(cashLotServiceMock.createWithdrawalCashLot).toHaveBeenCalledTimes(1);
+		expect(cashLotServiceMock.createWithdrawalCashLot.mock.calls[0]?.[0]).toMatchObject({
+			id: incomeTransaction.id,
+			description: incomeTransaction.description,
+			currency: incomeTransaction.currency,
+		});
+		expect(cashLotServiceMock.createWithdrawalCashLot.mock.calls[0]?.[1]).toEqual({
+			destinationAmount: 2500,
+			destinationCurrency: 'USD',
+			exchangeRate: 1,
+			migrationStatus: 'linked',
+		});
+	});
+
 	it('should allocate cash expenses from available cash lots', async () => {
 		const category = createCategory({ id: 31, userId: 1, name: 'Food' } as never);
 		const paymentMethod = createPaymentMethod({ id: 41, userId: 1, name: 'Cash' } as never);
