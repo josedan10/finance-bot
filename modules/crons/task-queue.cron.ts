@@ -16,7 +16,7 @@ import { redisClient } from '../../src/lib/redis';
 import { cleanupOldReceiptProcessingImages } from '../../src/lib/receipt-image-storage';
 import { ReceiptOcrQueueService } from '../ai-assistant/receipt-ocr-queue.service';
 import { processReceiptOcrJob } from '../ai-assistant/receipt-ocr-job-processor.service';
-import { fetchAndStoreArsUsdRateByDate } from '../../src/helpers/rate.helper';
+import { getArsUsdRateByDate } from '../../src/helpers/rate.helper';
 import { DefaultReserve } from '../budgets/default-reserve.service';
 
 const CRON_EXPRESSIONS = {
@@ -220,7 +220,15 @@ export class TaskQueueModule {
 	private async _syncArsUsdRate() {
 		await this.withCronLock('syncArsUsdRate', 900, async () => {
 			try {
-				const storedRate = await fetchAndStoreArsUsdRateByDate(new Date(), config.ARS_USD_EXCHANGE_HOUSE);
+				const storedRate = await getArsUsdRateByDate(new Date(), config.ARS_USD_EXCHANGE_HOUSE);
+
+				if (!storedRate) {
+					logger.warn('No ARS/USD historical rate found to sync', {
+						house: config.ARS_USD_EXCHANGE_HOUSE,
+					});
+					return;
+				}
+
 				logger.info('ARS/USD historical rate synced', {
 					house: config.ARS_USD_EXCHANGE_HOUSE,
 					date: dayjs(storedRate.rateDate).format('YYYY-MM-DD'),
