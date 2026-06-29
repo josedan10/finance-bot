@@ -1161,6 +1161,27 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 	}
 });
 
+router.get('/api/exchange-rates/history', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const limit = Math.min(parsePositiveIntegerQuery(req.query.limit, 7), 30);
+		const rates = await prisma.dailyExchangeRate.findMany({
+			orderBy: { date: 'desc' },
+			take: limit,
+		});
+
+		res.status(200).json(
+			rates.map((rate) => ({
+				bcv: Number(rate.bcvPrice || 0),
+				monitor: Number(rate.monitorPrice || 0),
+				date: rate.date.toISOString().split('T')[0],
+			}))
+		);
+	} catch (error) {
+		logger.error('Failed to fetch exchange rate history', { error });
+		res.status(500).json({ message: 'Failed to fetch exchange rate history' });
+	}
+});
+
 router.post('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const {
