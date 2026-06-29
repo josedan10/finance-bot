@@ -32,6 +32,12 @@ function normalizeCalendarDate(date?: string | Date): dayjs.Dayjs {
 	return dayjs(date ?? new Date()).startOf('day');
 }
 
+function parseQuoteDate(value: string): dayjs.Dayjs | null {
+	const parsed = dayjs(value);
+
+	return parsed.isValid() ? parsed.startOf('day') : null;
+}
+
 export function normalizeArsUsdExchangeHouse(value?: string): string {
 	const normalized = value?.trim().toLowerCase() || 'blue';
 	return VALID_ARGENTINA_DOLLAR_HOUSES.has(normalized) ? normalized : 'blue';
@@ -124,21 +130,52 @@ async function persistHistoricalExchangeRate(args: {
 	return storedRate;
 }
 
+async function fetchArgentinaDatosDollarQuotes(house: string) {
+	const response = await axios.get<ArgentinaDatosHistoricalDollarQuote[]>(
+		`${config.ARGENTINA_DATOS_API_URL}/v1/cotizaciones/dolares/${house}`,
+		{
+			timeout: 5000,
+		}
+	);
+
+	return Array.isArray(response.data) ? response.data : [];
+}
+
+function findBestQuoteForDate(
+	quotes: ArgentinaDatosHistoricalDollarQuote[],
+	requestedDate: dayjs.Dayjs
+): ArgentinaDatosHistoricalDollarQuote | null {
+	let bestQuote: ArgentinaDatosHistoricalDollarQuote | null = null;
+	let bestQuoteDate: dayjs.Dayjs | null = null;
+
+	for (const quote of quotes) {
+		const quoteDate = parseQuoteDate(quote.fecha);
+		if (!quoteDate || quoteDate.isAfter(requestedDate)) {
+			continue;
+		}
+
+		if (!bestQuoteDate || quoteDate.isAfter(bestQuoteDate)) {
+			bestQuote = quote;
+			bestQuoteDate = quoteDate;
+		}
+	}
+
+	return bestQuote;
+}
+
 export async function fetchAndStoreArsUsdRateByDate(date?: string | Date, preferredHouse?: string) {
 	const normalizedDate = normalizeCalendarDate(date);
 	const house = normalizeArsUsdExchangeHouse(preferredHouse ?? config.ARS_USD_EXCHANGE_HOUSE);
-	const requestDate = normalizedDate.format('YYYY/MM/DD');
 
 	try {
-		const response = await axios.get<ArgentinaDatosHistoricalDollarQuote>(
-			`${config.ARGENTINA_DATOS_API_URL}/v1/cotizaciones/dolares/${house}/${requestDate}`,
-			{
-				timeout: 5000,
-			}
-		);
+		const quotes = await fetchArgentinaDatosDollarQuotes(house);
+		const quote = findBestQuoteForDate(quotes, normalizedDate);
 
-		const quote = response.data;
-		const quoteDate = normalizeCalendarDate(quote.fecha);
+		if (!quote) {
+			throw new Error(`No ARS/USD quote found for ${normalizedDate.format('YYYY-MM-DD')}`);
+		}
+
+		const quoteDate = parseQuoteDate(quote.fecha) ?? normalizedDate;
 
 		return persistHistoricalExchangeRate({
 			quoteCurrency: ARS_QUOTE_CURRENCY,
@@ -151,7 +188,7 @@ export async function fetchAndStoreArsUsdRateByDate(date?: string | Date, prefer
 	} catch (error) {
 		logger.warn('Failed to fetch ARS/USD historical rate from ArgentinaDatos', {
 			error,
-			requestDate,
+			requestDate: normalizedDate.format('YYYY-MM-DD'),
 			house,
 		});
 		throw error;
