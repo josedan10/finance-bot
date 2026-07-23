@@ -3225,10 +3225,13 @@ router.get('/api/settings/balance-tracking', requireAuth, async (req: Request, r
 	try {
 		const user = await prisma.user.findUnique({
 			where: { id: req.user.id },
-			select: { balanceTrackingEnabled: true },
+			select: { balanceTrackingEnabled: true, currentBalance: true },
 		});
 
-		res.status(200).json({ enabled: user?.balanceTrackingEnabled ?? true });
+		res.status(200).json({
+			enabled: user?.balanceTrackingEnabled ?? true,
+			currentBalance: user?.currentBalance === null || user?.currentBalance === undefined ? null : Number(user.currentBalance),
+		});
 	} catch (error) {
 		logger.error('Failed to fetch balance tracking settings', { error, userId: req.user.id });
 		res.status(500).json({ message: 'Failed to fetch balance tracking settings' });
@@ -3237,18 +3240,33 @@ router.get('/api/settings/balance-tracking', requireAuth, async (req: Request, r
 
 router.put('/api/settings/balance-tracking', requireAuth, async (req: Request, res: Response) => {
 	try {
-		const { enabled } = req.body as { enabled?: boolean };
-		if (typeof enabled !== 'boolean') {
+		const { enabled, currentBalance } = req.body as { enabled?: boolean; currentBalance?: number };
+		const hasEnabled = enabled !== undefined;
+		const hasCurrentBalance = currentBalance !== undefined;
+		if (!hasEnabled && !hasCurrentBalance) {
+			return res.status(400).json({ message: 'At least one balance tracking setting is required' });
+		}
+		if (hasEnabled && typeof enabled !== 'boolean') {
 			return res.status(400).json({ message: 'The enabled setting must be a boolean' });
 		}
+		if (hasCurrentBalance && (typeof currentBalance !== 'number' || !Number.isFinite(currentBalance) || currentBalance < 0)) {
+			return res.status(400).json({ message: 'The current balance must be a non-negative number' });
+		}
+
+		const data: Prisma.UserUpdateInput = {};
+		if (hasEnabled) data.balanceTrackingEnabled = enabled;
+		if (hasCurrentBalance) data.currentBalance = currentBalance;
 
 		const user = await prisma.user.update({
 			where: { id: req.user.id },
-			data: { balanceTrackingEnabled: enabled },
-			select: { balanceTrackingEnabled: true },
+			data,
+			select: { balanceTrackingEnabled: true, currentBalance: true },
 		});
 
-		res.status(200).json({ enabled: user.balanceTrackingEnabled });
+		res.status(200).json({
+			enabled: user.balanceTrackingEnabled,
+			currentBalance: user.currentBalance === null ? null : Number(user.currentBalance),
+		});
 	} catch (error) {
 		logger.error('Failed to update balance tracking settings', { error, userId: req.user.id });
 		res.status(500).json({ message: 'Failed to update balance tracking settings' });

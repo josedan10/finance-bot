@@ -25,35 +25,51 @@ describe('Balance Tracking Settings Routes', () => {
 		const response = await request(app).get('/api/settings/balance-tracking');
 
 		expect(response.status).toBe(200);
-		expect(response.body).toEqual({ enabled: true });
+		expect(response.body).toEqual({ enabled: true, currentBalance: null });
 	});
 
 	it('returns the persisted balance tracking value', async () => {
-		prismaMock.user.findUnique.mockResolvedValue({ balanceTrackingEnabled: false } as never);
+		prismaMock.user.findUnique.mockResolvedValue({ balanceTrackingEnabled: false, currentBalance: 1250 } as never);
 
 		const response = await request(app).get('/api/settings/balance-tracking');
 
 		expect(response.status).toBe(200);
-		expect(response.body).toEqual({ enabled: false });
+		expect(response.body).toEqual({ enabled: false, currentBalance: 1250 });
 		expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
 			where: { id: 1 },
-			select: { balanceTrackingEnabled: true },
+			select: { balanceTrackingEnabled: true, currentBalance: true },
 		});
 	});
 
 	it('updates balance tracking with a validated boolean value', async () => {
-		prismaMock.user.update.mockResolvedValue({ balanceTrackingEnabled: false } as never);
+		prismaMock.user.update.mockResolvedValue({ balanceTrackingEnabled: false, currentBalance: null } as never);
 
 		const response = await request(app)
 			.put('/api/settings/balance-tracking')
 			.send({ enabled: false });
 
 		expect(response.status).toBe(200);
-		expect(response.body).toEqual({ enabled: false });
+		expect(response.body).toEqual({ enabled: false, currentBalance: null });
 		expect(prismaMock.user.update).toHaveBeenCalledWith({
 			where: { id: 1 },
 			data: { balanceTrackingEnabled: false },
-			select: { balanceTrackingEnabled: true },
+			select: { balanceTrackingEnabled: true, currentBalance: true },
+		});
+	});
+
+	it('updates the current balance without creating a transaction adjustment', async () => {
+		prismaMock.user.update.mockResolvedValue({ balanceTrackingEnabled: true, currentBalance: 500 } as never);
+
+		const response = await request(app)
+			.put('/api/settings/balance-tracking')
+			.send({ currentBalance: 500 });
+
+		expect(response.status).toBe(200);
+		expect(response.body).toEqual({ enabled: true, currentBalance: 500 });
+		expect(prismaMock.user.update).toHaveBeenCalledWith({
+			where: { id: 1 },
+			data: { currentBalance: 500 },
+			select: { balanceTrackingEnabled: true, currentBalance: true },
 		});
 	});
 
