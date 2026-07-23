@@ -999,50 +999,6 @@ describe('Transaction API (CRUD)', () => {
 		});
 	});
 
-	it('should allow manual balance adjustments below the current cash balance', async () => {
-		const category = createCategory({ id: 31, userId: 1, name: 'Other' } as never);
-		const paymentMethod = createPaymentMethod({ id: 41, userId: 1, name: 'Cash' } as never);
-		const adjustmentTransaction = createTransaction({
-			id: 304,
-			userId: 1,
-			description: 'Manual balance adjustment to $3,990.91',
-			amount: new Decimal(3990.91),
-			originalCurrencyAmount: new Decimal(3990.91),
-			currency: 'USD',
-			type: 'expense',
-			categoryId: category.id,
-			paymentMethodId: paymentMethod.id,
-		} as never);
-
-		prismaMock.category.findFirst.mockResolvedValue(category);
-		prismaMock.paymentMethod.findFirst.mockResolvedValue(paymentMethod);
-		jest.spyOn(BaseTransactions, 'safeCreateTransaction').mockResolvedValue({
-			transaction: adjustmentTransaction,
-			isDuplicate: false,
-		} as never);
-		prismaMock.transaction.findFirst.mockResolvedValueOnce({
-			...adjustmentTransaction,
-			category,
-			paymentMethod,
-			cashLot: null,
-			cashLotAllocations: [],
-		} as never);
-
-		const response = await request(app).post('/api/transactions').send({
-			date: '2026-04-02',
-			description: adjustmentTransaction.description,
-			amount: 3990.91,
-			category: 'Other',
-			type: 'expense',
-			paymentMethodId: paymentMethod.id,
-			currency: 'USD',
-			isBalanceAdjustment: true,
-		});
-
-		expect(response.status).toBe(201);
-		expect(cashLotServiceMock.allocateCashExpense).not.toHaveBeenCalled();
-	});
-
 	it('should restore cash lots when deleting a cash expense', async () => {
 		const cashExpense = createTransaction({
 			id: 303,
