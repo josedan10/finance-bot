@@ -1202,7 +1202,6 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			cashWithdrawalDestinationAmount,
 			cashWithdrawalDestinationCurrency,
 			cashWithdrawalExchangeRate,
-			isBalanceAdjustment,
 		} = req.body as {
 			date?: string;
 			description?: string;
@@ -1221,7 +1220,6 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			cashWithdrawalDestinationAmount?: number;
 			cashWithdrawalDestinationCurrency?: string;
 			cashWithdrawalExchangeRate?: number;
-			isBalanceAdjustment?: boolean;
 		};
 
 
@@ -1393,7 +1391,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 					tx
 				);
 			} else {
-				if (balanceTrackingEnabled && normalizedType === 'expense' && resolvedPaymentMethod?.name === 'Cash' && !isBalanceAdjustment) {
+				if (balanceTrackingEnabled && normalizedType === 'expense' && resolvedPaymentMethod?.name === 'Cash') {
 					await CashLotServiceInstance.allocateCashExpense(transaction, tx);
 				}
 			}
