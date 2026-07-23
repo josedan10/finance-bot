@@ -1161,6 +1161,27 @@ router.get('/api/exchange-rates/latest', requireAuth, async (req: Request, res: 
 	}
 });
 
+router.get('/api/exchange-rates/history', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const limit = Math.min(parsePositiveIntegerQuery(req.query.limit, 7), 30);
+		const rates = await prisma.dailyExchangeRate.findMany({
+			orderBy: { date: 'desc' },
+			take: limit,
+		});
+
+		res.status(200).json(
+			rates.map((rate) => ({
+				bcv: Number(rate.bcvPrice || 0),
+				monitor: Number(rate.monitorPrice || 0),
+				date: rate.date.toISOString().split('T')[0],
+			}))
+		);
+	} catch (error) {
+		logger.error('Failed to fetch exchange rate history', { error });
+		res.status(500).json({ message: 'Failed to fetch exchange rate history' });
+	}
+});
+
 router.post('/api/transactions', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const {
@@ -1181,6 +1202,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			cashWithdrawalDestinationAmount,
 			cashWithdrawalDestinationCurrency,
 			cashWithdrawalExchangeRate,
+			isBalanceAdjustment,
 		} = req.body as {
 			date?: string;
 			description?: string;
@@ -1199,6 +1221,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 			cashWithdrawalDestinationAmount?: number;
 			cashWithdrawalDestinationCurrency?: string;
 			cashWithdrawalExchangeRate?: number;
+			isBalanceAdjustment?: boolean;
 		};
 
 
@@ -1304,6 +1327,11 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 				userId: req.user.id,
 			},
 		});
+		const balanceTrackingEnabled =
+			(await prisma.user.findUnique({
+				where: { id: req.user.id },
+				select: { balanceTrackingEnabled: true },
+			}))?.balanceTrackingEnabled ?? true;
 
 		// 3. Handle Creation via Gatekeeper (Deduplication & Normalization)
 		const createdTransaction = await prisma.$transaction(async (tx) => {
@@ -1333,7 +1361,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 				return duplicateTransaction;
 			}
 
-			if (isCashWithdrawal) {
+			if (isCashWithdrawal && balanceTrackingEnabled) {
 				const destinationAmount =
 					normalizedCashWithdrawalDestinationAmount ??
 					Math.round(Number(amount) * Number(normalizedCashWithdrawalExchangeRate) * 100) / 100;
@@ -1348,7 +1376,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 					},
 					tx
 				);
-			} else if (normalizedType === 'income' && resolvedPaymentMethod?.name === 'Cash') {
+			} else if (balanceTrackingEnabled && normalizedType === 'income' && resolvedPaymentMethod?.name === 'Cash') {
 				const cashIncomeSourceAmount = Number(transaction.amount ?? 0);
 				const cashIncomeDestinationAmount = Number(transaction.originalCurrencyAmount ?? transaction.amount);
 				const cashIncomeExchangeRate =
@@ -1365,7 +1393,7 @@ router.post('/api/transactions', requireAuth, async (req: Request, res: Response
 					tx
 				);
 			} else {
-				if (normalizedType === 'expense' && resolvedPaymentMethod?.name === 'Cash') {
+				if (balanceTrackingEnabled && normalizedType === 'expense' && resolvedPaymentMethod?.name === 'Cash' && !isBalanceAdjustment) {
 					await CashLotServiceInstance.allocateCashExpense(transaction, tx);
 				}
 			}
@@ -1676,6 +1704,12 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 			return res.status(400).json({ message: 'Withdrawal transactions must be registered as expenses' });
 		}
 
+		const balanceTrackingEnabled =
+			(await prisma.user.findUnique({
+				where: { id: req.user.id },
+				select: { balanceTrackingEnabled: true },
+			}))?.balanceTrackingEnabled ?? true;
+
 		const updatedTransaction = await prisma.$transaction(async (tx) => {
 			const existingTransaction = await loadTransactionWithCashLots(tx, id, req.user.id);
 			if (!existingTransaction) {
@@ -1748,7 +1782,7 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 				include: transactionWithCashLotsInclude,
 			});
 
-			if (existingTransaction.cashLotAllocations.length > 0) {
+			if (balanceTrackingEnabled && existingTransaction.cashLotAllocations.length > 0) {
 				await CashLotServiceInstance.restoreExpenseAllocations(existingTransaction.id, req.user.id, tx);
 			}
 
@@ -1809,7 +1843,7 @@ router.patch('/api/transactions/:id', requireAuth, async (req: Request, res: Res
 					},
 					tx
 				);
-			} else if (normalizeTransactionType(type) === 'expense' && currentPaymentMethod?.name === 'Cash') {
+			} else if (balanceTrackingEnabled && normalizeTransactionType(type) === 'expense' && currentPaymentMethod?.name === 'Cash') {
 				await CashLotServiceInstance.allocateCashExpense(updated, tx);
 			}
 
@@ -3186,6 +3220,40 @@ router.post('/api/budgets/carryover-transfers', requireAuth, async (req: Request
 // ============================================
 // Dashboard Preferences API
 // ============================================
+
+router.get('/api/settings/balance-tracking', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const user = await prisma.user.findUnique({
+			where: { id: req.user.id },
+			select: { balanceTrackingEnabled: true },
+		});
+
+		res.status(200).json({ enabled: user?.balanceTrackingEnabled ?? true });
+	} catch (error) {
+		logger.error('Failed to fetch balance tracking settings', { error, userId: req.user.id });
+		res.status(500).json({ message: 'Failed to fetch balance tracking settings' });
+	}
+});
+
+router.put('/api/settings/balance-tracking', requireAuth, async (req: Request, res: Response) => {
+	try {
+		const { enabled } = req.body as { enabled?: boolean };
+		if (typeof enabled !== 'boolean') {
+			return res.status(400).json({ message: 'The enabled setting must be a boolean' });
+		}
+
+		const user = await prisma.user.update({
+			where: { id: req.user.id },
+			data: { balanceTrackingEnabled: enabled },
+			select: { balanceTrackingEnabled: true },
+		});
+
+		res.status(200).json({ enabled: user.balanceTrackingEnabled });
+	} catch (error) {
+		logger.error('Failed to update balance tracking settings', { error, userId: req.user.id });
+		res.status(500).json({ message: 'Failed to update balance tracking settings' });
+	}
+});
 
 router.get('/api/dashboard/budget-preferences', requireAuth, async (req: Request, res: Response) => {
 	try {
