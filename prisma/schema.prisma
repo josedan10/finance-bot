@@ -17,7 +17,8 @@ model User {
   approvedAt              DateTime?
   createdAt               DateTime                  @default(now())
   aiSettings              AISettings?
-  dashboardBudgetPreferences Json?
+	dashboardBudgetPreferences Json?
+	balanceTrackingEnabled   Boolean                   @default(true)
   categories              Category[]
   keywords                Keyword[]
   notificationLogs        NotificationLog[]
