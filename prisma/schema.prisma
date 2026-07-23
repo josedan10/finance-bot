@@ -19,6 +19,7 @@ model User {
   aiSettings              AISettings?
 	dashboardBudgetPreferences Json?
 	balanceTrackingEnabled   Boolean                   @default(true)
+	currentBalance           Decimal?                  @db.Decimal(14, 2)
   categories              Category[]
   keywords                Keyword[]
   notificationLogs        NotificationLog[]
