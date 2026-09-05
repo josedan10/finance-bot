@@ -224,7 +224,9 @@ describe('SubscriptionService', () => {
 			if (typeof callback !== 'function') throw new Error('Expected transaction callback');
 			return callback(prismaMock);
 		});
-		prismaMock.subscription.findFirst.mockResolvedValueOnce({ id: 7 }).mockResolvedValueOnce(subscription() as never);
+		prismaMock.subscription.findFirst
+			.mockResolvedValueOnce({ id: 7 } as never)
+			.mockResolvedValueOnce(subscription() as never);
 		prismaMock.subscription.update.mockResolvedValue({ id: 7 } as never);
 
 		await expect(service.confirmCandidate(4, candidate().candidateKey)).resolves.toEqual(
@@ -238,7 +240,7 @@ describe('SubscriptionService', () => {
 
 	it('dismisses a candidate by updating an existing record or creating a new record', async () => {
 		jest.spyOn(service, 'detectCandidates').mockResolvedValue([candidate()]);
-		prismaMock.subscription.findFirst.mockResolvedValueOnce({ id: 7 }).mockResolvedValueOnce(null);
+		prismaMock.subscription.findFirst.mockResolvedValueOnce({ id: 7 } as never).mockResolvedValueOnce(null);
 		prismaMock.subscription.update.mockResolvedValue(subscription(7, 'dismissed') as never);
 		prismaMock.subscription.create.mockResolvedValue(subscription(8, 'dismissed') as never);
 
@@ -257,7 +259,7 @@ describe('SubscriptionService', () => {
 		await expect(service.createManual(4, { name: ' ', monthlyAmount: 0, currency: 'US' })).rejects.toMatchObject({
 			status: 400,
 		});
-		prismaMock.subscription.findFirst.mockResolvedValueOnce({ id: 7 }).mockResolvedValueOnce(null);
+		prismaMock.subscription.findFirst.mockResolvedValueOnce({ id: 7 } as never).mockResolvedValueOnce(null);
 		prismaMock.subscription.update.mockResolvedValue(subscription() as never);
 		prismaMock.subscription.create.mockResolvedValue(subscription(8) as never);
 
