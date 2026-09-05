@@ -1,6 +1,8 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { NextFunction, Request, Response } from 'express';
+import app from '../app';
+import { SubscriptionServiceInstance } from '../modules/subscriptions/subscription.service';
 import { AppError } from '../src/lib/appError';
 
 jest.mock('../src/lib/auth.middleware', () => ({
@@ -22,9 +24,6 @@ jest.mock('../modules/subscriptions/subscription.service', () => ({
 		deleteSubscription: jest.fn(),
 	},
 }));
-
-import app from '../app';
-import { SubscriptionServiceInstance } from '../modules/subscriptions/subscription.service';
 
 const subscriptionService = jest.mocked(SubscriptionServiceInstance);
 
