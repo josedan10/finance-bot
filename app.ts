@@ -79,24 +79,19 @@ app.use('*', (req: Request, res: Response, next: NextFunction) => {
 	next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 
-type ErrorResponse = Error & {
-	statusCode?: number;
-	status?: string;
-};
-
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
-	const normalizedError: ErrorResponse = err instanceof Error
-		? (err as ErrorResponse)
-		: (new Error('Unknown error') as ErrorResponse);
-	normalizedError.statusCode = normalizedError.statusCode || 500;
-	normalizedError.status = normalizedError.status || 'error';
+	const normalizedError = err instanceof Error ? err : new Error('Unknown error');
+	const isAppError = err instanceof AppError;
+	const statusCode = isAppError ? err.statusCode : 500;
+	const status = isAppError ? err.status : 'error';
+	const message = isAppError ? err.message : 'Internal server error';
 
 	logger.error('Unhandled error', { error: normalizedError.message, stack: normalizedError.stack });
 	captureRequestException(normalizedError, {
 		method: req.method,
 		url: req.originalUrl,
 		requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined,
-		statusCode: normalizedError.statusCode,
+		statusCode,
 		query: req.query as Record<string, unknown>,
 		body: req.body as Record<string, unknown> | undefined,
 		headers: {
@@ -116,10 +111,10 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 			: undefined,
 	});
 
-	res.status(normalizedError.statusCode).json({
-		status: normalizedError.status,
-		message: normalizedError.message,
-		...(req.app.get('env') === 'development' && { stack: normalizedError.stack }),
+	res.status(statusCode).json({
+		status,
+		message,
+		...(isAppError && req.app.get('env') === 'development' && { stack: normalizedError.stack }),
 	});
 });
 

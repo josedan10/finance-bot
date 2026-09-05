@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { PrismaModule as prisma } from '../modules/database/database.module';
 import { TelegramRouter as telegramRouter } from './telegram';
@@ -43,6 +43,7 @@ import { BudgetRollover } from '../modules/budgets/budget-rollover.service';
 import { createRedisRateLimitMiddleware } from '../src/lib/redis-rate-limit';
 import { CashLotServiceInstance } from '../modules/cash-lots/cash-lot.service';
 import { AppError } from '../src/lib/appError';
+import { SubscriptionServiceInstance } from '../modules/subscriptions/subscription.service';
 import {
 	buildBudgetOverflowTransferReference,
 	isBudgetOverflowTransferTransaction,
@@ -1111,6 +1112,73 @@ router.get('/api/transactions', requireAuth, async (req: Request, res: Response)
 		res.status(200).json(mapped);
 	} catch (error) {
 		res.status(500).json({ message: 'Failed to fetch transactions' });
+	}
+});
+
+router.get('/api/subscriptions/candidates', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+	try {
+		return res.status(200).json(await SubscriptionServiceInstance.detectCandidates(req.user.id));
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.get('/api/subscriptions', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+	try {
+		return res.status(200).json(await SubscriptionServiceInstance.list(req.user.id));
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.post('/api/subscriptions/candidates/:candidateKey/confirm', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+	try {
+		const name = typeof req.body?.name === 'string' ? req.body.name : undefined;
+		return res.status(201).json(await SubscriptionServiceInstance.confirmCandidate(req.user.id, req.params.candidateKey, name));
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.post('/api/subscriptions/candidates/:candidateKey/dismiss', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+	try {
+		return res.status(201).json(await SubscriptionServiceInstance.dismissCandidate(req.user.id, req.params.candidateKey));
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.post('/api/subscriptions', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+	try {
+		const { name, monthlyAmount, currency } = req.body as { name?: string; monthlyAmount?: number; currency?: string };
+		if (typeof name !== 'string' || typeof currency !== 'string' || typeof monthlyAmount !== 'number' || !Number.isFinite(monthlyAmount)) {
+			return res.status(400).json({ message: 'Invalid subscription details' });
+		}
+		return res.status(201).json(await SubscriptionServiceInstance.createManual(req.user.id, { name, monthlyAmount, currency }));
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.patch('/api/subscriptions/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+	try {
+		const id = Number(req.params.id);
+		const status = typeof req.body?.status === 'string' ? req.body.status : '';
+		if (!Number.isInteger(id)) return res.status(400).json({ message: 'Invalid subscription id' });
+		return res.status(200).json(await SubscriptionServiceInstance.updateStatus(req.user.id, id, status));
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.delete('/api/subscriptions/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+	try {
+		const id = Number(req.params.id);
+		if (!Number.isInteger(id)) return res.status(400).json({ message: 'Invalid subscription id' });
+		await SubscriptionServiceInstance.deleteSubscription(req.user.id, id);
+		return res.status(204).send();
+	} catch (error) {
+		return next(error);
 	}
 });
 
