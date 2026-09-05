@@ -1157,8 +1157,10 @@ router.post('/api/subscriptions/candidates/:candidateKey/dismiss', requireAuth, 
 router.post('/api/subscriptions', requireAuth, async (req: Request, res: Response) => {
 	try {
 		const { name, monthlyAmount, currency } = req.body as { name?: string; monthlyAmount?: number; currency?: string };
-		if (typeof name !== 'string' || typeof currency !== 'string') return res.status(400).json({ message: 'Invalid subscription details' });
-		return res.status(201).json(await SubscriptionServiceInstance.createManual(req.user.id, { name, monthlyAmount: Number(monthlyAmount), currency }));
+		if (typeof name !== 'string' || typeof currency !== 'string' || typeof monthlyAmount !== 'number' || !Number.isFinite(monthlyAmount)) {
+			return res.status(400).json({ message: 'Invalid subscription details' });
+		}
+		return res.status(201).json(await SubscriptionServiceInstance.createManual(req.user.id, { name, monthlyAmount, currency }));
 	} catch (error) {
 		if (error instanceof AppError) return res.status(error.statusCode).json({ message: error.message });
 		logger.error('Failed to create subscription', { error, userId: req.user.id });

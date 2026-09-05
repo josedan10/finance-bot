@@ -209,7 +209,16 @@ export class SubscriptionService {
 	async list(userId: number) {
 		const subscriptions = await PrismaModule.subscription.findMany({
 			where: { userId, monthlyAmount: { not: null }, currency: { not: null }, status: { in: ['active', 'paused'] } },
-			include: { charges: { include: { transaction: { select: { id: true, date: true, description: true, originalCurrencyAmount: true, amount: true, currency: true } } }, orderBy: { transaction: { date: 'desc' } } },
+			include: {
+				charges: {
+					include: {
+						transaction: {
+							select: { id: true, date: true, description: true, originalCurrencyAmount: true, amount: true, currency: true },
+						},
+					},
+					orderBy: { transaction: { date: 'desc' } },
+				},
+			},
 			orderBy: [{ status: 'asc' }, { name: 'asc' }],
 		});
 		const totals = new Map<string, number>();
@@ -222,7 +231,16 @@ export class SubscriptionService {
 	private async getSubscription(userId: number, id: number) {
 		const subscription = await PrismaModule.subscription.findFirst({
 			where: { id, userId },
-			include: { charges: { include: { transaction: { select: { id: true, date: true, description: true, originalCurrencyAmount: true, amount: true, currency: true } } }, orderBy: { transaction: { date: 'desc' } } },
+			include: {
+				charges: {
+					include: {
+						transaction: {
+							select: { id: true, date: true, description: true, originalCurrencyAmount: true, amount: true, currency: true },
+						},
+					},
+					orderBy: { transaction: { date: 'desc' } },
+				},
+			},
 		});
 		if (!subscription) throw new AppError('Subscription not found', 404);
 		return this.mapSubscription(subscription);
