@@ -235,7 +235,7 @@ describe('SubscriptionService', () => {
 		expect(prismaMock.subscription.update).toHaveBeenCalled();
 
 		jest.spyOn(service, 'detectCandidates').mockResolvedValue([]);
-		await expect(service.confirmCandidate(4, 'missing')).rejects.toMatchObject({ status: 404 });
+		await expect(service.confirmCandidate(4, 'missing')).rejects.toMatchObject({ statusCode: 404 });
 	});
 
 	it('dismisses a candidate by updating an existing record or creating a new record', async () => {
@@ -252,12 +252,12 @@ describe('SubscriptionService', () => {
 			expect.objectContaining({ data: expect.objectContaining({ status: 'dismissed', userId: 4 }) })
 		);
 		jest.spyOn(service, 'detectCandidates').mockResolvedValue([]);
-		await expect(service.dismissCandidate(4, 'missing')).rejects.toMatchObject({ status: 404 });
+		await expect(service.dismissCandidate(4, 'missing')).rejects.toMatchObject({ statusCode: 404 });
 	});
 
 	it('validates manual subscriptions and upserts the matching recurring billing record', async () => {
 		await expect(service.createManual(4, { name: ' ', monthlyAmount: 0, currency: 'US' })).rejects.toMatchObject({
-			status: 400,
+			statusCode: 400,
 		});
 		prismaMock.subscription.findFirst.mockResolvedValueOnce({ id: 7 } as never).mockResolvedValueOnce(null);
 		prismaMock.subscription.update.mockResolvedValue(subscription() as never);
@@ -275,11 +275,11 @@ describe('SubscriptionService', () => {
 	});
 
 	it('updates and deletes only subscriptions owned by the user', async () => {
-		await expect(service.updateStatus(4, 7, 'dismissed')).rejects.toMatchObject({ status: 400 });
+		await expect(service.updateStatus(4, 7, 'dismissed')).rejects.toMatchObject({ statusCode: 400 });
 		prismaMock.subscription.updateMany
 			.mockResolvedValueOnce({ count: 0 } as never)
 			.mockResolvedValueOnce({ count: 1 } as never);
-		await expect(service.updateStatus(4, 7, 'paused')).rejects.toMatchObject({ status: 404 });
+		await expect(service.updateStatus(4, 7, 'paused')).rejects.toMatchObject({ statusCode: 404 });
 		prismaMock.subscription.findFirst.mockResolvedValue(subscription(7, 'paused') as never);
 		await expect(service.updateStatus(4, 7, 'paused')).resolves.toEqual(expect.objectContaining({ status: 'paused' }));
 		expect(prismaMock.subscription.updateMany).toHaveBeenLastCalledWith({
@@ -290,7 +290,7 @@ describe('SubscriptionService', () => {
 		prismaMock.subscription.deleteMany
 			.mockResolvedValueOnce({ count: 0 } as never)
 			.mockResolvedValueOnce({ count: 1 } as never);
-		await expect(service.deleteSubscription(4, 7)).rejects.toMatchObject({ status: 404 });
+		await expect(service.deleteSubscription(4, 7)).rejects.toMatchObject({ statusCode: 404 });
 		await expect(service.deleteSubscription(4, 7)).resolves.toBeUndefined();
 	});
 
