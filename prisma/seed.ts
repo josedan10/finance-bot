@@ -115,21 +115,19 @@ async function main() {
 	}
 
 	for (const suscription of suscriptions) {
-		await prisma.suscription.upsert({
-			where: {
-				name_userId: {
-					name: suscription.name,
-					userId: 1
-				}
-			},
-			update: {},
-			create: {
+		const existingSubscription = await prisma.subscription.findFirst({
+			where: { name: suscription.name, userId: 1 },
+		});
+		if (!existingSubscription) {
+			await prisma.subscription.create({
+				data: {
 				name: suscription.name,
 				type: suscription.type,
 				paymentDate: suscription?.paymentDate || null,
 				userId: 1
-			},
-		});
+				},
+			});
+		}
 	}
 }
 

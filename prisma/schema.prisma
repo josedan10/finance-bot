@@ -33,7 +33,8 @@ model User {
   platformMonthlyRegister PlatformMonthlyRegister[]
   pushSubscriptions       PushSubscription[]
   shops                   Shop[]
-  suscriptions            Suscription[]
+  subscriptions           Subscription[]
+  subscriptionTransactions SubscriptionTransaction[]
   sharedMonthlySummaries  SharedMonthlySummary[]
   monthlyReserveAllocations MonthlyReserveAllocation[]
   transactions            Transaction[]
@@ -226,6 +227,7 @@ model Transaction {
   user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   cashLot                CashLot?       @relation("WithdrawalCashLot")
   cashLotAllocations     CashLotAllocation[] @relation("ExpenseCashLotAllocations")
+  subscriptionLinks      SubscriptionTransaction[]
   budgetOverflowSourceMovement BudgetOverflowAssignment? @relation("BudgetOverflowMovementSourceTransaction")
   budgetOverflowAllocation BudgetOverflowAllocation? @relation("BudgetOverflowAllocationTransaction")
 
@@ -292,17 +294,40 @@ model PlatformMonthlyRegister {
   @@index([userId], map: "PlatformMonthlyRegister_userId_fkey")
 }
 
-model Suscription {
-  id          Int     @id @default(autoincrement())
-  name        String  @db.VarChar(20)
+model Subscription {
+  id                 Int     @id @default(autoincrement())
+  name               String  @db.VarChar(100)
   keyWord     String? @db.VarChar(20)
   paymentDate String? @db.VarChar(10)
-  type        String  @db.VarChar(20)
-  userId      Int
-  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type               String  @default("Monthly") @db.VarChar(20)
+  monthlyAmount      Decimal? @db.Decimal(10, 2)
+  currency           String? @db.VarChar(3)
+  normalizedMerchant String? @db.VarChar(255)
+  status             String  @default("active") @db.VarChar(20)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  userId             Int
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  charges            SubscriptionTransaction[]
 
-  @@unique([name, userId])
-  @@index([userId], map: "Suscription_userId_fkey")
+  @@unique([userId, normalizedMerchant, currency, monthlyAmount])
+  @@index([userId, status])
+  @@map("Suscription")
+}
+
+model SubscriptionTransaction {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  subscriptionId Int
+  transactionId  Int
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  transaction    Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, transactionId])
+  @@index([userId])
+  @@index([transactionId])
 }
 
 model Shop {
